@@ -4,7 +4,6 @@ import { DataTable } from "@/components/table";
 import {
   getExplorerCatalog,
   getExplorerQuery,
-  type ExplorerDataset,
   type ExplorerFilter
 } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
@@ -99,12 +98,6 @@ function pageHref({
   return `/data?${query.toString()}`;
 }
 
-function queryHint(dataset: ExplorerDataset, isZh: boolean) {
-  return isZh
-    ? `${dataset.description} 檔案更新於 ${formatDateTime(dataset.updated_at, "zh-Hant")}`
-    : `${dataset.description} Updated ${formatDateTime(dataset.updated_at, "en")}`;
-}
-
 export default async function DataPage({
   searchParams
 }: {
@@ -124,7 +117,7 @@ export default async function DataPage({
     return (
       <Shell
         title={isZh ? "Data Explorer" : "Data Explorer"}
-        subtitle={isZh ? "目前沒有可查詢的 parquet dataset。" : "No parquet datasets are available for exploration yet."}
+        subtitle=""
         locale={user.locale}
         username={user.username}
         role={user.role}
@@ -144,6 +137,7 @@ export default async function DataPage({
   const selectedColumns = allValues(params.columns).filter((value) => dataset.columns.some((column) => column.name === value));
   const filters = buildFilterSlots(params);
 
+  const queryStartedAt = Date.now();
   const result = await getExplorerQuery({
     dataset: dataset.key,
     search,
@@ -154,6 +148,7 @@ export default async function DataPage({
     page,
     page_size: pageSize
   });
+  const queryElapsedSeconds = ((Date.now() - queryStartedAt) / 1000).toFixed(2);
 
   const paginationBase = {
     dataset: dataset.key,
@@ -168,11 +163,7 @@ export default async function DataPage({
   return (
     <Shell
       title={isZh ? "Data Explorer" : "Data Explorer"}
-      subtitle={
-        isZh
-          ? "直接查 Step 2 到 Step 5 的全量 parquet 表。這裡支援 dataset 切換、搜尋、欄位篩選、排序、分頁與匯出。"
-          : "Explore the full step 2 to step 5 parquet datasets with search, filters, sorting, paging, and export from one place."
-      }
+      subtitle=""
       locale={user.locale}
       username={user.username}
       role={user.role}
@@ -196,19 +187,16 @@ export default async function DataPage({
                 className={`dataset-card ${item.key === dataset.key ? "dataset-card-active" : ""}`}
               >
                 <strong>{item.label}</strong>
-                <span>{formatNumber(item.row_count, user.locale)} {isZh ? "筆" : "rows"}</span>
-                <span>{formatNumber(item.column_count, user.locale)} {isZh ? "欄" : "cols"}</span>
-                <span>{formatDateTime(item.updated_at, user.locale)}</span>
+                <span className="dataset-card-metric">{formatNumber(item.row_count, user.locale)} {isZh ? "筆" : "rows"}</span>
+                <span className="dataset-card-metric">{formatNumber(item.column_count, user.locale)} {isZh ? "欄" : "cols"}</span>
+                <span className="dataset-card-metric">{formatDateTime(item.updated_at, user.locale)}</span>
               </a>
             ))}
           </div>
         </Panel>
 
         <div className="explorer-main">
-          <Panel
-            title={isZh ? "Query Builder" : "Query Builder"}
-            aside={<span className="pill">{queryHint(dataset, isZh)}</span>}
-          >
+          <Panel title={isZh ? "Query Builder" : "Query Builder"}>
             <form method="get" action="/data" className="explorer-form">
               <input type="hidden" name="dataset" value={dataset.key} />
               <div className="explorer-form-grid">
@@ -293,8 +281,8 @@ export default async function DataPage({
                 })}
               </div>
 
-              <div className="action-row">
-                <button className="auth-submit action-button" type="submit">
+              <div className="action-row explorer-actions">
+                <button className="action-button" type="submit">
                   {isZh ? "套用查詢" : "Apply Query"}
                 </button>
                 <a href={`/data?dataset=${dataset.key}`} className="action-button secondary-button">
@@ -321,9 +309,24 @@ export default async function DataPage({
             aside={<span className="pill">{formatNumber(result.filtered_rows, user.locale)} {isZh ? "筆" : "rows"}</span>}
           >
             <div className="status-meta">
-              <span>{isZh ? "搜尋" : "Search"}: {result.search || "—"}</span>
-              <span>{isZh ? "排序" : "Sort"}: {result.sort_by} / {result.sort_dir}</span>
-              <span>{isZh ? "欄位" : "Columns"}: {result.selected_columns.join(", ") || "—"}</span>
+              <span className="status-meta-item query-execution-note">
+                <span className="status-meta-value">Query executed in {queryElapsedSeconds}s</span>
+              </span>
+              <span className="status-meta-separator">•</span>
+              <span className="status-meta-item">
+                <span className="status-meta-label">{isZh ? "搜尋" : "Search"}</span>
+                <span className="status-meta-value">{result.search || "—"}</span>
+              </span>
+              <span className="status-meta-separator">•</span>
+              <span className="status-meta-item">
+                <span className="status-meta-label">{isZh ? "排序" : "Sort"}</span>
+                <span className="status-meta-value">{result.sort_by} / {result.sort_dir}</span>
+              </span>
+              <span className="status-meta-separator">•</span>
+              <span className="status-meta-item status-meta-columns">
+                <span className="status-meta-label">{isZh ? "欄位" : "Columns"}</span>
+                <span className="status-meta-value">{result.selected_columns.join(", ") || "—"}</span>
+              </span>
             </div>
             <DataTable
               rows={result.rows}

@@ -53,6 +53,8 @@ def write_daemon_state(config: SyncConfig, **updates: Any) -> None:
     state = read_json(state_path)
     daemon_state = dict(state.get("daemon") or {})
     daemon_state.update(updates)
+    if updates.get("is_running"):
+        daemon_state.pop("stopped_at", None)
     daemon_state["updated_at"] = now_iso()
     state["daemon"] = daemon_state
     write_json(state_path, state)

@@ -157,8 +157,9 @@ def merge_existing_output(path: Path, fresh_df: pd.DataFrame) -> pd.DataFrame:
     """Merge a new incremental download into an existing parquet snapshot.
 
     The batch may re-download only the newest few days for a symbol. To keep a
-    complete history file on disk, we combine the old and new rows, de-duplicate
-    by ``date``/``code``, then sort back into chronological order.
+    complete history file on disk, we combine the old and new rows by
+    ``date``/``code``. Fresh non-null values win, but fresh nulls do not erase
+    older reference fields that were already complete.
     """
     if not path.exists():
         return fresh_df.reset_index(drop=True)
@@ -167,14 +168,18 @@ def merge_existing_output(path: Path, fresh_df: pd.DataFrame) -> pd.DataFrame:
     except Exception:
         return fresh_df.reset_index(drop=True)
 
-    merged = pd.concat([existing_df, fresh_df], ignore_index=True, sort=False)
-    if "date" in merged.columns:
-        merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
-    dedupe_columns = [col for col in ["date", "code"] if col in merged.columns]
+    for frame in [existing_df, fresh_df]:
+        if "date" in frame.columns:
+            frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+
+    dedupe_columns = [col for col in ["date", "code"] if col in existing_df.columns and col in fresh_df.columns]
     if dedupe_columns:
-        merged = merged.drop_duplicates(subset=dedupe_columns, keep="last")
+        existing_indexed = existing_df.drop_duplicates(subset=dedupe_columns, keep="last").set_index(dedupe_columns)
+        fresh_indexed = fresh_df.drop_duplicates(subset=dedupe_columns, keep="last").set_index(dedupe_columns)
+        merged = fresh_indexed.combine_first(existing_indexed).reset_index()
     else:
-        merged = merged.drop_duplicates(keep="last")
+        merged = pd.concat([existing_df, fresh_df], ignore_index=True, sort=False).drop_duplicates(keep="last")
+
     sort_columns = [col for col in ["date", "code"] if col in merged.columns]
     if sort_columns:
         merged = merged.sort_values(sort_columns)
@@ -227,7 +232,9 @@ def save_state(state_path: Path, state: dict[str, Any]) -> None:
     """Persist the latest batch progress so resume is always possible."""
     state["updated_at"] = utc_now_iso()
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path = state_path.with_name(f".{state_path.name}.tmp")
+    tmp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp_path.replace(state_path)
 
 
 def mark_existing_outputs(

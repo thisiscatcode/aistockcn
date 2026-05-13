@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import multiprocessing as mp
+import queue
 from datetime import date
 from typing import Any
 
@@ -19,6 +21,11 @@ except ImportError:  # pragma: no cover - depends on image build
 
 BAOSTOCK_PROBE_CODE = "sh.600000"
 AKSHARE_PROBE_SYMBOL = "600000"
+PROVIDER_PROBE_TIMEOUT_SECONDS = 30.0
+
+
+class ProviderProbeTimeoutError(TimeoutError):
+    pass
 
 
 def _to_date_text(value: Any) -> str | None:
@@ -63,22 +70,18 @@ def _baostock_result_to_df(result: Any) -> pd.DataFrame:
 
 
 def _trade_calendar_status(local_date: str) -> tuple[str | None, bool]:
-    if bs is None:
-        raise RuntimeError("baostock dependency is unavailable")
+    if ak is None:
+        raise RuntimeError("akshare dependency is unavailable")
     end_ts = pd.to_datetime(local_date, format="%Y-%m-%d")
     start_ts = end_ts - pd.Timedelta(days=30)
-    df = _baostock_result_to_df(
-        bs.query_trade_dates(
-            start_date=start_ts.strftime("%Y-%m-%d"),
-            end_date=end_ts.strftime("%Y-%m-%d"),
-        )
-    )
-    if df.empty:
+    df = ak.tool_trade_date_hist_sina()
+    if df.empty or "trade_date" not in df.columns:
         return None, False
-    df = df[df["is_trading_day"] == "1"].copy()
-    if df.empty:
+    trade_dates = pd.to_datetime(df["trade_date"], errors="coerce").dropna()
+    trade_dates = trade_dates[(trade_dates >= start_ts) & (trade_dates <= end_ts)]
+    if trade_dates.empty:
         return None, False
-    latest_trade_date = _to_date_text(df.iloc[-1]["calendar_date"])
+    latest_trade_date = trade_dates.max().date().isoformat()
     return latest_trade_date, latest_trade_date == local_date
 
 
@@ -124,6 +127,65 @@ def _probe_akshare_market_cap() -> str | None:
     return latest_value.date().isoformat()
 
 
+def _probe_baostock_readiness(local_date: str) -> dict[str, Any]:
+    expected_trade_date, is_trading_day = _trade_calendar_status(local_date)
+    payload: dict[str, Any] = {
+        "expected_trade_date": expected_trade_date,
+        "is_trading_day": bool(is_trading_day),
+        "daily_kline_date": None,
+        "all_stock_date": None,
+        "all_stock_row_count": 0,
+        "ready": False,
+    }
+    if not is_trading_day or expected_trade_date is None:
+        return payload
+
+    _quiet_baostock_login()
+    try:
+        daily_kline_date = _probe_baostock_daily_kline(expected_trade_date)
+        all_stock_probe = _probe_baostock_all_stock(expected_trade_date)
+        payload.update(
+            {
+                "daily_kline_date": daily_kline_date,
+                "all_stock_date": all_stock_probe["latest_date"],
+                "all_stock_row_count": all_stock_probe["row_count"],
+                "ready": daily_kline_date == expected_trade_date and bool(all_stock_probe["ready"]),
+            }
+        )
+        return payload
+    finally:
+        _quiet_baostock_logout()
+
+
+def _provider_probe_entry(result_queue: Any, func: Any, args: tuple[Any, ...]) -> None:
+    try:
+        result_queue.put(("ok", func(*args)))
+    except Exception as exc:
+        result_queue.put(("error", str(exc)))
+
+
+def _run_provider_probe(func: Any, *args: Any, timeout_seconds: float = PROVIDER_PROBE_TIMEOUT_SECONDS) -> Any:
+    method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    context = mp.get_context(method)
+    result_queue = context.Queue(maxsize=1)
+    process = context.Process(target=_provider_probe_entry, args=(result_queue, func, args), daemon=True)
+    process.start()
+    process.join(timeout_seconds)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=2)
+        raise ProviderProbeTimeoutError(f"provider probe timed out after {timeout_seconds:g}s")
+
+    try:
+        status, payload = result_queue.get_nowait()
+    except queue.Empty as exc:
+        raise RuntimeError("provider probe exited without a result") from exc
+
+    if status == "error":
+        raise RuntimeError(str(payload))
+    return payload
+
+
 def get_china_market_data_readiness(*, local_date: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "local_date": local_date,
@@ -157,39 +219,39 @@ def get_china_market_data_readiness(*, local_date: str) -> dict[str, Any]:
         return result
 
     try:
-        _quiet_baostock_login()
-    except Exception as exc:
-        result["reason"] = "baostock_login_failed"
-        result["baostock"]["error"] = str(exc)
-        return result
-
-    try:
-        expected_trade_date, is_trading_day = _trade_calendar_status(local_date)
+        baostock_probe = _run_provider_probe(_probe_baostock_readiness, local_date)
+        expected_trade_date = baostock_probe["expected_trade_date"]
         result["expected_trade_date"] = expected_trade_date
-        result["is_trading_day"] = bool(is_trading_day)
-        if not is_trading_day:
+        result["is_trading_day"] = bool(baostock_probe["is_trading_day"])
+        result["baostock"]["daily_kline_date"] = baostock_probe["daily_kline_date"]
+        result["baostock"]["all_stock_date"] = baostock_probe["all_stock_date"]
+        result["baostock"]["all_stock_row_count"] = baostock_probe["all_stock_row_count"]
+        result["baostock"]["ready"] = bool(baostock_probe["ready"])
+        if not result["is_trading_day"]:
             result["reason"] = "non_trading_day"
             return result
-
-        daily_kline_date = _probe_baostock_daily_kline(expected_trade_date)
-        all_stock_probe = _probe_baostock_all_stock(expected_trade_date)
-        result["baostock"]["daily_kline_date"] = daily_kline_date
-        result["baostock"]["all_stock_date"] = all_stock_probe["latest_date"]
-        result["baostock"]["all_stock_row_count"] = all_stock_probe["row_count"]
-        result["baostock"]["ready"] = (
-            daily_kline_date == expected_trade_date and bool(all_stock_probe["ready"])
-        )
-    except Exception as exc:
-        result["reason"] = "baostock_probe_failed"
+    except ProviderProbeTimeoutError as exc:
+        result["reason"] = "baostock_probe_timeout"
         result["baostock"]["error"] = str(exc)
         return result
-    finally:
-        _quiet_baostock_logout()
+    except Exception as exc:
+        error_text = str(exc)
+        result["reason"] = (
+            "baostock_login_failed"
+            if error_text.startswith("baostock login failed")
+            else "baostock_probe_failed"
+        )
+        result["baostock"]["error"] = str(exc)
+        return result
 
     try:
-        market_cap_date = _probe_akshare_market_cap()
+        market_cap_date = _run_provider_probe(_probe_akshare_market_cap)
         result["akshare"]["market_cap_date"] = market_cap_date
         result["akshare"]["ready"] = market_cap_date == expected_trade_date
+    except ProviderProbeTimeoutError as exc:
+        result["reason"] = "akshare_probe_timeout"
+        result["akshare"]["error"] = str(exc)
+        return result
     except Exception as exc:
         result["reason"] = "akshare_probe_failed"
         result["akshare"]["error"] = str(exc)

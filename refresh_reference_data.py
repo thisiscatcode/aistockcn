@@ -51,7 +51,7 @@ def utc_now_iso() -> str:
 def load_active_universe(data_dir: Path, *, limit: int) -> Any:
     stock_df = dl.load_canonical_active_stock_list(data_dir)
     if stock_df.empty:
-        raise SystemExit("stock_list.parquet 不存在或为空，请先运行 Step 1 日常批次。")
+        raise SystemExit("stock_list.parquet is missing or empty. Run the Step 1 daily batch first.")
     if limit > 0:
         stock_df = stock_df.head(limit).copy()
     return stock_df.reset_index(drop=True)
@@ -149,9 +149,9 @@ def main() -> int:
         dl.baostock_login()
 
     try:
-        print(f"慢變資料股票數: {len(stock_df)}")
-        print(f"状态文件: {state_path}")
-        print(f"目标交易日: {trade_date}")
+        print(f"Slow-reference stock count: {len(stock_df)}")
+        print(f"State file: {state_path}")
+        print(f"Target trading day: {trade_date}")
 
         records = stock_df.to_dict(orient="records")
         for idx, stock in enumerate(records, start=1):
@@ -159,7 +159,7 @@ def main() -> int:
             exchange = dl.normalize_exchange(stock.get("exchange"))
             state["last_code"] = code
             state["last_error"] = None
-            print(f"[reference {idx}/{len(records)}] 刷新慢变资料: {code}")
+            print(f"[reference {idx}/{len(records)}] Refreshing slow reference data: {code}")
 
             try:
                 if not args.skip_industry and (
@@ -187,12 +187,12 @@ def main() -> int:
 
                 state["done_codes"] = sorted(set([*state["done_codes"], code]))
                 state["failed_codes"].pop(code, None)
-                print(f"{code} 完成")
+                print(f"{code} completed")
             except Exception as exc:  # pragma: no cover - network/API dependent
                 message = str(exc)
                 state["failed_codes"][code] = message
                 state["last_error"] = message
-                print(f"{code} 失败: {message}")
+                print(f"{code} failed: {message}")
 
             save_state(state_path, state)
             time.sleep(args.sleep)

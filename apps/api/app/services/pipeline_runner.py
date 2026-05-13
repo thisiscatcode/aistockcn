@@ -17,7 +17,7 @@ from app.services.pipeline_control import (
     start_step,
     stop_step,
 )
-from app.services.files import read_json
+from app.services.files import read_json, write_json_atomic
 
 STOP_REQUESTED = False
 CURRENT_STEP_KEY: str | None = None
@@ -38,7 +38,7 @@ def _write_state(**updates: Any) -> None:
     state.update(updates)
     state["step_key_schema_version"] = PIPELINE_STEP_KEY_SCHEMA_VERSION
     state["updated_at"] = _now_iso()
-    _state_path().write_text(__import__("json").dumps(state, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(_state_path(), state, ensure_ascii=True)
 
 
 def _log(message: str) -> None:

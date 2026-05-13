@@ -14,6 +14,12 @@ from feature_engineering import build_features, load_stock_list, trim_supported_
 DEFAULT_DATA_DIR = "quant_data"
 DEFAULT_OUTPUT = "quant_data/inference_features_latest.parquet"
 INFERENCE_HISTORY_WINDOW = 25
+RECOVERABLE_REFERENCE_COLUMNS = {
+    "total_market_cap",
+    "float_market_cap",
+    "total_shares",
+    "float_shares",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,8 +112,9 @@ def build_inference_frame(data_dir: Path, limit: int, as_of_date: pd.Timestamp |
             features_df.drop(columns=["future_return", "label"], errors="ignore")
             .sort_values(["code", "date"])
             .tail(1)
-            .dropna()
         )
+        required_columns = [col for col in latest_df.columns if col not in RECOVERABLE_REFERENCE_COLUMNS]
+        latest_df = latest_df.dropna(subset=required_columns)
         if not latest_df.empty:
             latest_rows.append(latest_df)
 

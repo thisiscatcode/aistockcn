@@ -40,6 +40,8 @@ export async function POST(request: NextRequest) {
     endpoint = `/api/control/step/${target}/${action}${profile ? `?profile=${encodeURIComponent(profile)}` : ""}`;
   } else if (target === "paper") {
     endpoint = `/api/control/paper/${action}`;
+  } else if (target === "reference") {
+    endpoint = `/api/control/reference/${action}`;
   } else if (target === "batch") {
     endpoint = `/api/control/batch/${action}`;
   }

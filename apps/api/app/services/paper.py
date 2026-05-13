@@ -60,6 +60,39 @@ def _jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
     return rows[-limit:]
 
 
+def _sort_by_numeric_desc(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    return sorted(rows, key=lambda row: float(row.get(key) or 0.0), reverse=True)
+
+
+def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
+    balance_metrics = row.get("balance_metrics") or {}
+    live_summary = row.get("live_summary") or {}
+    plan_summary = row.get("plan_summary") or {}
+    return {
+        "recorded_at": row.get("recorded_at"),
+        "status": row.get("status"),
+        "score_signal_date": row.get("score_signal_date"),
+        "message": row.get("message"),
+        "cash": balance_metrics.get("cash"),
+        "power": balance_metrics.get("power"),
+        "total_assets": balance_metrics.get("total_assets"),
+        "market_value": live_summary.get("market_value") or plan_summary.get("current_market_value"),
+        "realized_pnl": live_summary.get("realized_pnl"),
+        "unrealized_pnl": live_summary.get("unrealized_pnl"),
+        "total_pnl": live_summary.get("total_pnl"),
+        "position_count": row.get("position_count"),
+        "active_order_count": row.get("active_order_count"),
+        "target_count": plan_summary.get("target_count"),
+        "buy_order_count": plan_summary.get("buy_order_count"),
+        "sell_order_count": plan_summary.get("sell_order_count"),
+        "skip_count": plan_summary.get("skip_count"),
+        "execution_skip_count": plan_summary.get("execution_skip_count"),
+        "placed_order_ids": row.get("placed_order_ids") or [],
+        "cancelled_order_ids": row.get("cancelled_order_ids") or [],
+        "skipped_symbols": row.get("skipped_symbols") or [],
+    }
+
+
 class PaperGatewayClient:
     def __init__(self, settings: Settings) -> None:
         self.base_url = settings.futu_gateway_base_url.rstrip("/")
@@ -222,6 +255,7 @@ def get_paper_trading_overview() -> dict[str, Any]:
     return {
         **status,
         "live_summary": live_summary,
+        "live_balance": records_to_json(live_balance),
         "live_positions_count": len(live_positions),
         "live_orders_count": len(live_orders),
         "balance_rows": len(live_balance),
@@ -274,6 +308,7 @@ def get_paper_trading_positions(*, limit: int = 50) -> dict[str, Any]:
     client = PaperGatewayClient(settings)
     try:
         positions = client.get_positions()
+        positions = _sort_by_numeric_desc(positions, "market_value")
         return {"rows": len(positions), "positions": records_to_json(positions[:limit]), "error": None}
     except PaperGatewayError as exc:
         return {"rows": 0, "positions": [], "error": str(exc)}
@@ -301,4 +336,11 @@ def get_paper_trading_orders(*, limit: int = 50) -> dict[str, Any]:
 def get_paper_trading_history(*, limit: int = 50) -> dict[str, Any]:
     settings = get_settings()
     rows = _jsonl_tail(settings.paper_trading_history_path, limit=limit)
-    return {"rows": len(rows), "history": rows}
+    return {"rows": len(rows), "history": list(reversed(rows))}
+
+
+def get_paper_trading_performance(*, limit: int = 240) -> dict[str, Any]:
+    settings = get_settings()
+    rows = _jsonl_tail(settings.paper_trading_history_path, limit=limit)
+    snapshots = [_history_performance_row(row) for row in rows]
+    return {"rows": len(snapshots), "snapshots": snapshots}

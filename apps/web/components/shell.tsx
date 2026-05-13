@@ -1,9 +1,9 @@
 import type { PanelRole } from "@/lib/auth";
 import type { Route } from "next";
-import Link from "next/link";
 import { ReactNode } from "react";
 
 import { PanelLocale, getMessages } from "@/lib/i18n";
+import { NavTabs } from "@/components/nav-tabs";
 import { ShanghaiTime } from "@/components/shanghai-time";
 
 function localeTag(locale: PanelLocale) {
@@ -26,7 +26,6 @@ export function Shell({
   role: PanelRole;
 }) {
   const copy = getMessages(locale);
-  const resolvedRoleLabel = role === "admin" ? copy.shell.admin : copy.shell.viewer;
   const shanghaiTimeNow = new Intl.DateTimeFormat(localeTag(locale), {
     month: "short",
     day: "2-digit",
@@ -51,27 +50,35 @@ export function Shell({
   return (
     <div className="shell">
       <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">{copy.brand}</p>
-          <h1>{title}</h1>
-          <p className="hero-subtitle">{subtitle}</p>
-          <p className="hero-subtitle">
-            {copy.shell.signedInAs}: {username} · {copy.localeLabel} · {resolvedRoleLabel} ·{" "}
-            <ShanghaiTime locale={locale} label={copy.shell.shanghaiTime} initialValue={shanghaiTimeNow} />
-          </p>
+        <div className="hero-topline">
+          <div className="hero-copy">
+            <p className="eyebrow brand-status-line">
+              <span className="live-indicator" aria-label="Live status">
+                <span className="live-dot" aria-hidden="true">●</span>
+                <span>LIVE</span>
+              </span>
+              <span>{copy.brand}</span>
+            </p>
+            <h1>{title}</h1>
+            {subtitle ? <p className="hero-subtitle">{subtitle}</p> : null}
+          </div>
+          <div className="hero-meta" aria-label={copy.shell.signedInAs}>
+            <div className="hero-meta-line">
+              <span>{copy.shell.signedInAs}:</span> <strong>{username}</strong>
+              <form action="/auth/logout" method="post" className="hero-logout-form">
+                <button type="submit" className="logout-button">
+                  {copy.shell.logout}
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
-        <nav className="nav">
-          {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="nav-link">
-              {item.label}
-            </Link>
-          ))}
-          <form action="/auth/logout" method="post">
-            <button type="submit" className="nav-link nav-button">
-              {copy.shell.logout}
-            </button>
-          </form>
-        </nav>
+        <div className="nav-row">
+          <NavTabs items={navItems} />
+          <div className="nav-time">
+            <ShanghaiTime locale={locale} label={copy.shell.shanghaiTime} initialValue={shanghaiTimeNow} />
+          </div>
+        </div>
       </header>
       <main className="page-content">{children}</main>
     </div>

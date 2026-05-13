@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.services.batch import BatchControlError, start_batch, stop_batch
 from app.services.paper_control import start_paper_trading_daemon, stop_paper_trading_daemon
 from app.services.pipeline_control import start_pipeline_run, start_step, stop_pipeline_run, stop_step
+from app.services.reference_control import start_reference_batch, stop_reference_batch
 
 router = APIRouter(prefix="/api/control", tags=["control"])
 
@@ -88,5 +89,23 @@ def paper_stop(x_panel_admin_key: str | None = Header(default=None)) -> dict[str
     _require_admin_key(x_panel_admin_key)
     try:
         return stop_paper_trading_daemon()
+    except BatchControlError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.post("/reference/start")
+def reference_start(x_panel_admin_key: str | None = Header(default=None)) -> dict[str, object]:
+    _require_admin_key(x_panel_admin_key)
+    try:
+        return start_reference_batch()
+    except BatchControlError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.post("/reference/stop")
+def reference_stop(x_panel_admin_key: str | None = Header(default=None)) -> dict[str, object]:
+    _require_admin_key(x_panel_admin_key)
+    try:
+        return stop_reference_batch()
     except BatchControlError as exc:
         raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc

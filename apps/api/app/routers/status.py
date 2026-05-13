@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.services.batch import get_batch_status
 from app.services.pipeline_control import get_pipeline_run_status
+from app.services.reference_control import get_reference_batch_status
 from app.services.workflow import get_workflow_status
 
 router = APIRouter(prefix="/api/status", tags=["status"])
@@ -22,3 +23,8 @@ def workflow_status() -> dict[str, object]:
 @router.get("/pipeline")
 def pipeline_status() -> dict[str, object]:
     return get_pipeline_run_status()
+
+
+@router.get("/reference")
+def reference_status() -> dict[str, object]:
+    return get_reference_batch_status()

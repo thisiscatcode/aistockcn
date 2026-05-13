@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextRequest } from "next/server";
 
-import { PanelLocale, normalizeLocale } from "@/lib/i18n";
+import { PanelLocale } from "@/lib/i18n";
 
 export const SESSION_COOKIE = "aistockcn_panel_session";
 
@@ -67,7 +67,7 @@ function normalizeRole(value?: string): PanelRole {
 function sanitizeUser(user: LoadedPanelUser): PanelUser {
   return {
     username: user.username,
-    locale: normalizeLocale(user.locale),
+    locale: "en",
     displayName: user.display_name?.trim() || user.username,
     role: normalizeRole(user.role)
   };

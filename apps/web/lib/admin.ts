@@ -103,8 +103,8 @@ const fieldSections: FieldSection[] = [
 
 export function getAdminCatalog(_locale: PanelLocale) {
   return {
-    title: "Admin Control Room",
-    subtitle: "See the whole quant workflow in one place: artifact alignment, runtime health, and the field families used by each step.",
+    title: "Admin",
+    subtitle: "",
     labels: {
       field: "Field",
       meaning: "Meaning",

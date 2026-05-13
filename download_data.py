@@ -422,18 +422,51 @@ def is_a_share_code(code: str) -> bool:
 
 def get_latest_trade_date(reference_date: str) -> str:
     """Find the latest trading day on or before a reference date."""
+    trade_dates = get_recent_trade_dates(reference_date)
+    return trade_dates[-1]
+
+
+def _load_akshare_trade_dates(reference_date: str, *, lookback_days: int) -> pd.Series:
+    """Load recent China A-share trading dates from AkShare's public calendar."""
+    ensure_pandas_loaded()
     end_ts = pd.to_datetime(reference_date, format="%Y%m%d")
     start_ts = end_ts - pd.Timedelta(days=30)
+    if lookback_days != 30:
+        start_ts = end_ts - pd.Timedelta(days=lookback_days)
+    df = call_with_retry(ak.tool_trade_date_hist_sina)
+    if df.empty or "trade_date" not in df.columns:
+        return pd.Series(dtype="object")
+    trade_dates = pd.to_datetime(df["trade_date"], errors="coerce").dropna()
+    trade_dates = trade_dates[(trade_dates >= start_ts) & (trade_dates <= end_ts)]
+    return trade_dates.dt.strftime("%Y-%m-%d").drop_duplicates().sort_values().reset_index(drop=True)
+
+
+def _load_baostock_trade_dates(reference_date: str, *, lookback_days: int) -> pd.Series:
+    """Fallback to BaoStock's calendar endpoint for older package versions."""
+    end_ts = pd.to_datetime(reference_date, format="%Y%m%d")
+    start_ts = end_ts - pd.Timedelta(days=lookback_days)
     rs = query_baostock_with_retry(
         bs.query_trade_dates,
         start_date=start_ts.strftime("%Y-%m-%d"),
         end_date=end_ts.strftime("%Y-%m-%d"),
     )
     df = baostock_result_to_df(rs)
+    if df.empty or "is_trading_day" not in df.columns:
+        return pd.Series(dtype="object")
     df = df[df["is_trading_day"] == "1"].copy()
-    if df.empty:
+    return df["calendar_date"].astype(str).drop_duplicates().sort_values().reset_index(drop=True)
+
+
+def load_recent_trade_dates(reference_date: str, *, lookback_days: int = 30) -> pd.Series:
+    """Return recent trading dates using AkShare first, with BaoStock fallback."""
+    try:
+        trade_dates = _load_akshare_trade_dates(reference_date, lookback_days=lookback_days)
+    except Exception as exc:
+        print(f"AkShare 交易日历失败，回退 BaoStock: {exc}")
+        trade_dates = _load_baostock_trade_dates(reference_date, lookback_days=lookback_days)
+    if trade_dates.empty:
         raise RuntimeError(f"未找到 {reference_date} 之前的最近交易日")
-    return str(df.iloc[-1]["calendar_date"])
+    return trade_dates
 
 
 def get_recent_trade_dates(reference_date: str, *, lookback_days: int = 30) -> list[str]:
@@ -443,18 +476,10 @@ def get_recent_trade_dates(reference_date: str, *, lookback_days: int = 30) -> l
     the newest day we try. Returning a window of dates lets the caller walk
     backward until it finds a usable market snapshot.
     """
-    end_ts = pd.to_datetime(reference_date, format="%Y%m%d")
-    start_ts = end_ts - pd.Timedelta(days=lookback_days)
-    rs = query_baostock_with_retry(
-        bs.query_trade_dates,
-        start_date=start_ts.strftime("%Y-%m-%d"),
-        end_date=end_ts.strftime("%Y-%m-%d"),
-    )
-    df = baostock_result_to_df(rs)
-    df = df[df["is_trading_day"] == "1"].copy()
-    if df.empty:
+    trade_dates = load_recent_trade_dates(reference_date, lookback_days=lookback_days)
+    if trade_dates.empty:
         raise RuntimeError(f"未找到 {reference_date} 之前的交易日")
-    return df["calendar_date"].astype(str).tolist()
+    return trade_dates.tolist()
 
 
 def normalize_all_stock_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -622,6 +647,7 @@ def load_reference_valuation_df(
     code: str,
     start_date: str,
     end_date: str,
+    include_prior: bool = False,
 ) -> pd.DataFrame:
     """Load cached slow-moving valuation/reference rows for one symbol."""
     ensure_pandas_loaded()
@@ -640,10 +666,13 @@ def load_reference_valuation_df(
     for col in REFERENCE_VALUATION_COLUMNS:
         if col not in df.columns:
             df[col] = pd.NA
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").astype("datetime64[ns]")
     start_ts = pd.to_datetime(start_date, format="%Y%m%d")
     end_ts = pd.to_datetime(end_date, format="%Y%m%d")
-    df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].copy()
+    if include_prior:
+        df = df[df["date"] <= end_ts].copy()
+    else:
+        df = df[(df["date"] >= start_ts) & (df["date"] <= end_ts)].copy()
     df["code"] = str(code).zfill(6)
     df = convert_numeric_columns(
         df,
@@ -1166,6 +1195,7 @@ def build_valuation_df(
     reference cache is incomplete, because the BaoStock part is still useful
     and we prefer partial progress over total loss.
     """
+    ensure_pandas_loaded()
     df = bundle_df.copy()
     df["code"] = code
     df["pct_chg"] = df["pctChg"]
@@ -1180,6 +1210,7 @@ def build_valuation_df(
     valuation_df = df[
         [col for col in ["date", "code", "exchange", "close", "pct_chg", "pe_ttm", "pb", "ps", "pcf"] if col in df.columns]
     ].copy()
+    valuation_df["date"] = pd.to_datetime(valuation_df["date"], errors="coerce").astype("datetime64[ns]")
 
     reference_df = (
         load_reference_valuation_df(
@@ -1187,6 +1218,7 @@ def build_valuation_df(
             code=code,
             start_date=start_date,
             end_date=end_date,
+            include_prior=True,
         )
         if data_dir is not None
         else pd.DataFrame(columns=REFERENCE_VALUATION_COLUMNS)
@@ -1212,8 +1244,29 @@ def build_valuation_df(
     )
     valuation_df = valuation_df.sort_values("date").reset_index(drop=True)
 
-    # Carry forward the last known share counts so a slightly stale reference
-    # cache can still support the newest daily valuation rows.
+    # Carry forward the last known share counts at or before each trade date so
+    # a stale reference cache can still support newer daily valuation rows.
+    if not reference_df.empty:
+        share_reference_df = (
+            reference_df[["date", "total_shares", "float_shares"]]
+            .dropna(subset=["date"])
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+        if not share_reference_df.empty:
+            share_reference_df = convert_numeric_columns(
+                share_reference_df,
+                ["total_shares", "float_shares"],
+            )
+            asof_shares_df = pd.merge_asof(
+                valuation_df[["date"]].sort_values("date"),
+                share_reference_df,
+                on="date",
+                direction="backward",
+            ).sort_index()
+            for col in ["total_shares", "float_shares"]:
+                valuation_df[col] = valuation_df[col].combine_first(asof_shares_df[col])
+
     valuation_df["total_shares"] = valuation_df["total_shares"].ffill()
     valuation_df["float_shares"] = valuation_df["float_shares"].ffill()
 

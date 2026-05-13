@@ -190,11 +190,11 @@ type Messages = {
 };
 
 const messages: Messages = {
-  brand: "Aistock Control Panel",
+  brand: "AISTOCK CONTROL PANEL",
   localeLabel: "English",
   login: {
     title: "Secure Login",
-    subtitle: "Use your username and password to enter the quant dashboard.",
+    subtitle: "",
     username: "Username",
     password: "Password",
     submit: "Enter Dashboard",
@@ -203,7 +203,7 @@ const messages: Messages = {
   },
   shell: {
     signedInAs: "Signed in as",
-    shanghaiTime: "Shanghai Time",
+    shanghaiTime: "China Time",
     logout: "Logout",
     admin: "Admin",
     viewer: "Viewer",
@@ -236,20 +236,20 @@ const messages: Messages = {
     localStore: "local store"
   },
   overview: {
-    title: "Quant Mission Control",
-    subtitle: "A single place to monitor the batch, inspect the local A-share dataset, and review the latest model output without digging through shell scripts.",
-    batchStatus: "Batch Status",
-    progress: "Progress",
-    dataFiles: "Data Files",
-    topPicks: "Top Picks",
-    validationAuc: "Validation AUC",
+    title: "Trading Ops",
+    subtitle: "",
+    batchStatus: "Pipeline State",
+    progress: "Universe Progress",
+    dataFiles: "Data Coverage",
+    topPicks: "Active Signals",
+    validationAuc: "Model Health",
     stateFileOnly: "State file only",
     doneHint: "done",
     latestDateHint: "Latest date",
     noInference: "No inference snapshot",
     latestTraining: "Latest saved training metadata",
-    pulse: "Live Batch Pulse",
-    snapshot: "System Snapshot",
+    pulse: "Pipeline Telemetry",
+    snapshot: "Research Data Snapshot",
     stocksInUniverse: "Stocks in universe",
     klineFiles: "Kline files",
     valuationFiles: "Valuation files",
@@ -257,8 +257,8 @@ const messages: Messages = {
     topSavedFeatures: "Top saved features"
   },
   batch: {
-    title: "Batch Monitor",
-    subtitle: "Track the long-running A-share downloader, verify that state is still moving, and inspect recent failure reasons without touching Docker by hand.",
+    title: "Pipeline",
+    subtitle: "",
     running: "Running",
     done: "Done",
     failed: "Failed",
@@ -299,7 +299,7 @@ const messages: Messages = {
   },
   data: {
     title: "Data Explorer",
-    subtitle: "Use this page to sanity-check what the machine actually downloaded. Pick a code, inspect date ranges, and look at real rows from both kline and valuation parquet files.",
+    subtitle: "",
     stocks: "Stocks",
     stocksHint: "Rows in stock_list.parquet",
     klineFiles: "Kline Files",
@@ -314,7 +314,7 @@ const messages: Messages = {
   },
   models: {
     title: "Model Center",
-    subtitle: "Review the latest saved training metadata, inspect feature importance, and keep the backtest summary close to the training run that produced it.",
+    subtitle: "",
     auc: "AUC",
     accuracy: "Accuracy",
     trainRows: "Train Rows",
@@ -338,7 +338,7 @@ const messages: Messages = {
   },
   picks: {
     title: "Latest Picks",
-    subtitle: "Inspect the most recent inference scores and surface the highest-ranked names without opening parquet files manually.",
+    subtitle: "",
     rows: "Rows",
     latestDate: "Latest Date",
     signalDate: "Signal Date",
@@ -347,14 +347,14 @@ const messages: Messages = {
     featureTime: "Feature Time",
     modelTime: "Model Time",
     displayedPicks: "Displayed Picks",
-    rowsHint: "Rows in inference_scores_latest.parquet",
+    rowsHint: "inference_scores_latest",
     latestSnapshot: "Most recent scored snapshot",
     topRankedRows: "Top ranked rows",
     rankedSignals: "Ranked Signals"
   },
   paper: {
     title: "Auto Paper Trading",
-    subtitle: "Connect the latest scored snapshot to your existing Futu gateway, track what the strategy wants to hold, and monitor the daemon that keeps the paper account in sync.",
+    subtitle: "",
     daemon: "Daemon",
     gateway: "Gateway",
     latestSignal: "Latest Signal",

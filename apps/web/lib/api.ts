@@ -3,16 +3,32 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   "http://127.0.0.1:8000";
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    cache: "no-store"
-  });
+type FetchJsonOptions = {
+  timeoutMs?: number;
+};
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+async function fetchJson<T>(path: string, options: FetchJsonOptions = {}): Promise<T> {
+  const controller = options.timeoutMs ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), options.timeoutMs)
+    : null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      cache: "no-store",
+      signal: controller?.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    return (await response.json()) as T;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
-
-  return (await response.json()) as T;
 }
 
 export type BatchStatus = {
@@ -54,6 +70,43 @@ export type BatchLogs = {
   lines: string[];
   container_name?: string;
   path?: string;
+};
+
+export type ReferenceBatchStatus = {
+  status: string;
+  status_label: string;
+  is_running: boolean;
+  can_start: boolean;
+  can_stop: boolean;
+  container_id?: string | null;
+  container_name?: string | null;
+  container_status?: string | null;
+  container_started_at?: string | null;
+  container_finished_at?: string | null;
+  container_exit_code?: number | null;
+  oom_killed?: boolean;
+  state_file?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  last_code?: string | null;
+  last_error?: string | null;
+  done_count: number;
+  failed_count: number;
+  total_codes: number;
+  progress_pct?: number | null;
+  failure_reasons_top: Array<{ reason: string; count: number }>;
+  reference_status_file?: string | null;
+  reference_status_updated_at?: string | null;
+  target_trade_date?: string | null;
+  valuation_reference_ready_count: number;
+  valuation_reference_missing_count: number;
+  valuation_reference_stale_count: number;
+  industry_missing_count: number;
+  log_file?: string | null;
+  log_source?: string | null;
+  log_lines: string[];
 };
 
 export type WorkflowRuntimeDetail = {
@@ -312,6 +365,7 @@ export type PaperStatus = {
 
 export type PaperOverview = PaperStatus & {
   live_summary?: Record<string, unknown> | null;
+  live_balance: Array<Record<string, unknown>>;
   live_positions_count: number;
   live_orders_count: number;
   balance_rows: number;
@@ -340,6 +394,35 @@ export type PaperHistory = {
   history: Array<Record<string, unknown>>;
 };
 
+export type PaperPerformanceRow = {
+  recorded_at?: string | null;
+  status?: string | null;
+  score_signal_date?: string | null;
+  message?: string | null;
+  cash?: number | null;
+  power?: number | null;
+  total_assets?: number | null;
+  market_value?: number | null;
+  realized_pnl?: number | null;
+  unrealized_pnl?: number | null;
+  total_pnl?: number | null;
+  position_count?: number | null;
+  active_order_count?: number | null;
+  target_count?: number | null;
+  buy_order_count?: number | null;
+  sell_order_count?: number | null;
+  skip_count?: number | null;
+  execution_skip_count?: number | null;
+  placed_order_ids?: string[];
+  cancelled_order_ids?: string[];
+  skipped_symbols?: string[];
+};
+
+export type PaperPerformance = {
+  rows: number;
+  snapshots: PaperPerformanceRow[];
+};
+
 export function getBatchStatus() {
   return fetchJson<BatchStatus>("/api/status/batch");
 }
@@ -350,6 +433,10 @@ export function getWorkflowStatus() {
 
 export function getPipelineRunStatus() {
   return fetchJson<PipelineRunStatus>("/api/status/pipeline");
+}
+
+export function getReferenceBatchStatus() {
+  return fetchJson<ReferenceBatchStatus>("/api/status/reference");
 }
 
 export function getBatchLogs(tail = 120) {
@@ -430,22 +517,26 @@ export function getPaperStatus() {
   return fetchJson<PaperStatus>("/api/paper/status");
 }
 
-export function getPaperOverview() {
-  return fetchJson<PaperOverview>("/api/paper/overview");
+export function getPaperOverview(timeoutMs?: number) {
+  return fetchJson<PaperOverview>("/api/paper/overview", { timeoutMs });
 }
 
 export function getPaperTargets(limit = 25) {
   return fetchJson<PaperTargets>(`/api/paper/targets?limit=${limit}`);
 }
 
-export function getPaperPositions(limit = 50) {
-  return fetchJson<PaperPositions>(`/api/paper/positions?limit=${limit}`);
+export function getPaperPositions(limit = 50, timeoutMs?: number) {
+  return fetchJson<PaperPositions>(`/api/paper/positions?limit=${limit}`, { timeoutMs });
 }
 
-export function getPaperOrders(limit = 50) {
-  return fetchJson<PaperOrders>(`/api/paper/orders?limit=${limit}`);
+export function getPaperOrders(limit = 50, timeoutMs?: number) {
+  return fetchJson<PaperOrders>(`/api/paper/orders?limit=${limit}`, { timeoutMs });
 }
 
 export function getPaperHistory(limit = 50) {
   return fetchJson<PaperHistory>(`/api/paper/history?limit=${limit}`);
+}
+
+export function getPaperPerformance(limit = 240) {
+  return fetchJson<PaperPerformance>(`/api/paper/performance?limit=${limit}`);
 }

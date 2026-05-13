@@ -29,8 +29,8 @@ export default async function PicksPage() {
           value={formatDate(picks.source_close_date, user.locale)}
           hint={`${copy.picks.rawSyncDate}: ${formatDate(picks.raw_sync_date, user.locale)}`}
         />
-        <MetricCard label={copy.picks.featureTime} value={formatDateTime(picks.feature_time, user.locale)} hint="Step 3: quant_data/inference_features_latest.parquet" />
-        <MetricCard label={copy.picks.modelTime} value={formatDateTime(picks.model_time, user.locale)} hint="Step 4: quant_data/models/inference_scores_latest.parquet" />
+        <MetricCard label={copy.picks.featureTime} value={formatDateTime(picks.feature_time, user.locale)} />
+        <MetricCard label={copy.picks.modelTime} value={formatDateTime(picks.model_time, user.locale)} />
         <MetricCard label={copy.picks.displayedPicks} value={formatNumber(picks.picks.length, user.locale)} hint={copy.picks.topRankedRows} />
       </section>
 

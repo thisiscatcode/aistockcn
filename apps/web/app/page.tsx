@@ -18,8 +18,8 @@ import { getMessages } from "@/lib/i18n";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Aistock Quant Training",
-  description: "Public read-only overview for the Aistock quant training system."
+  title: "AiStockCN — Systematic Equity Research Platform",
+  description: "Public read-only overview for the AiStockCN systematic equity research and trading operations platform."
 };
 
 export default async function HomePage() {
@@ -39,6 +39,7 @@ export default async function HomePage() {
   const latestLines = logs?.lines.slice(-12) ?? [];
   const previewCode = stocks[0]?.code ?? data?.sample_codes[0] ?? "000001";
   const detail = await getStockDetail(previewCode).catch(() => null);
+  const latestKlineRows = (detail?.kline.tail ?? []).slice().reverse();
 
   return (
     <div className="page-dark">
@@ -48,7 +49,8 @@ export default async function HomePage() {
             <div className="hero-landing-grid">
               <div className="hero-panel-copy-wrap">
                 <p className="eyebrow hero-dark-eyebrow">{copy.brand}</p>
-                <h1 className="text-gradient-accent">Quant Training</h1>
+                <h1 className="text-gradient-accent">AiStockCN</h1>
+                <p className="hero-platform-title">Systematic Equity Research Platform</p>
                 <p className="hero-panel-copy hero-panel-copy-lead">
                   From raw data to live trades.
                   A full-stack quant research and execution system with feature pipelines, model training,
@@ -144,7 +146,7 @@ export default async function HomePage() {
           <section className="two-col-grid">
             <Panel
               title={copy.overview.pulse}
-              aside={<span className={`pill ${status?.is_running ? "live" : "warn"}`}>{status?.is_running ? copy.common.live : copy.common.checkNeeded}</span>}
+              aside={<span className={`pill ${status?.is_running ? "live" : ""}`}>{status?.is_running ? copy.common.live : copy.common.idle}</span>}
             >
               <div className="status-meta">
                 <span>{copy.common.lastStateUpdate}: {formatDateTime(status?.updated_at, "en")}</span>
@@ -155,13 +157,14 @@ export default async function HomePage() {
               <pre className="log-console">{latestLines.join("\n") || copy.common.noLogs}</pre>
             </Panel>
 
-            <Panel title={`Kline Preview · ${previewCode}`} aside={<span className="pill">Visitor Preview</span>}>
+            <Panel title={`Latest Kline Preview · ${previewCode}`} aside={<span className="pill">Visitor Preview</span>}>
               <div className="status-meta">
                 <span>{copy.common.rows}: {formatNumber(detail?.kline.rows, "en")}</span>
+                <span>Latest: {formatDate(detail?.kline.date_max, "en")}</span>
                 <span>{copy.common.dateRange}: {formatDateRange({ date_min: detail?.kline.date_min, date_max: detail?.kline.date_max }, "en", copy.common.to)}</span>
               </div>
               <DataTable
-                rows={detail?.kline.head ?? []}
+                rows={latestKlineRows}
                 columns={detail?.kline.columns.slice(0, 8)}
                 emptyLabel={copy.common.noRows}
                 locale="en"

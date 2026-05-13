@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -11,7 +10,8 @@ from docker.errors import DockerException, ImageNotFound, NotFound
 
 from app.config import get_settings
 from app.services.batch import BatchControlError, _docker_client, _get_container_by_ref, get_batch_status, start_batch, stop_batch
-from app.services.files import read_json, run_command, tail_file
+from app.services.files import read_json, run_command, tail_file, write_json_atomic
+from app.services.log_translation import translate_log_lines
 from app.services.model_profiles import resolve_model_profile
 
 PIPELINE_LOG_TAIL = 40
@@ -356,8 +356,7 @@ def _tail_container_logs(container_name: str, *, lines: int) -> list[str]:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, payload, ensure_ascii=True)
 
 
 def _write_log_stub(path: Path, lines: list[str]) -> None:
@@ -777,7 +776,7 @@ def get_pipeline_run_status() -> dict[str, Any]:
         "updated_at": effective_updated_at.isoformat() if effective_updated_at is not None else state.get("updated_at"),
         "log_file": str(latest_log_file) if latest_log_file else state.get("log_file"),
         "log_source": log_source,
-        "log_lines": log_lines,
+        "log_lines": translate_log_lines(log_lines),
         "auto_run": {
             "enabled": settings.pipeline_auto_run_enabled,
             "timezone": settings.pipeline_auto_run_timezone,

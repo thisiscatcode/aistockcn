@@ -2,7 +2,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { Shell } from "@/components/shell";
-import { getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getWorkflowStatus } from "@/lib/api";
+import { getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminCatalog } from "@/lib/admin";
 import { formatBytes, formatDate, formatDateRange, formatDateTime, formatDisplayValue, formatMetric, formatNumber } from "@/lib/format";
@@ -66,13 +66,14 @@ export default async function AdminPage() {
   const copy = getMessages(user.locale);
   const admin = getAdminCatalog(user.locale);
 
-  const [status, data, model, picks, pipeline, workflow] = await Promise.all([
+  const [status, data, model, picks, pipeline, workflow, referenceStatus] = await Promise.all([
     getBatchStatus(),
     getDataSummary(),
     getModelOverview(),
     getPicks(10),
     getPipelineSummary(),
-    getWorkflowStatus()
+    getWorkflowStatus(),
+    getReferenceBatchStatus()
   ]);
 
   const training = (model.training_metadata ?? {}) as Record<string, unknown>;
@@ -116,12 +117,13 @@ export default async function AdminPage() {
         <MetricCard label="Step 2 Codes" value={formatNumber(trainingArtifactCodes, user.locale)} hint={pipeline.training_features?.path ?? "ml_features_ready.parquet"} />
         <MetricCard label="Step 3 Codes" value={formatNumber(inferenceArtifactCodes, user.locale)} hint={formatDate(pipeline.inference_features?.date_max, user.locale)} />
         <MetricCard label="Step 4 Codes" value={formatNumber(scoreArtifactCodes ?? picks.rows, user.locale)} hint={formatDate(pipeline.inference_scores?.date_max ?? picks.latest_date, user.locale)} />
+        <MetricCard label="Reference Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
         <MetricCard label={copy.overview.validationAuc} value={formatMetric(trainingMetrics.auc, user.locale)} hint={`valid rows ${formatNumber(training.valid_rows as number | undefined, user.locale)}`} />
         <MetricCard label="Backtest OOS AUC" value={formatMetric(backtestMetrics.auc, user.locale)} hint={`${formatNumber(backtestCodes, user.locale)} codes`} />
       </section>
 
       <section className="two-col-grid">
-        <Panel title={admin.labels.runtime} aside={<span className={`pill ${status.is_running ? "live" : "warn"}`}>{status.is_running ? copy.common.live : copy.common.idle}</span>}>
+        <Panel title={admin.labels.runtime} aside={<span className={`pill ${status.is_running ? "live" : ""}`}>{status.is_running ? copy.common.live : copy.common.idle}</span>}>
           <div className="status-meta">
             <span>{copy.common.lastStateUpdate}: {formatDateTime(status.updated_at, user.locale)}</span>
             <span>{copy.overview.progress}: {typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"}</span>
@@ -165,6 +167,38 @@ export default async function AdminPage() {
                 ? "Saved model, scores, and backtest are aligned with the latest feature artifact."
                 : "The latest step 2 artifact can be newer than the saved model/backtest. This panel makes that drift visible so admin can decide whether step 4 and Backtest need to rerun."}
             </p>
+          </div>
+        </Panel>
+
+        <Panel title="Slow Reference Data" aside={<span className={`pill ${runtimePillClass(referenceStatus.status)}`}>{referenceStatus.status_label}</span>}>
+          <div className="stack">
+            <div className="status-meta">
+              <span>Progress: {formatNumber(referenceStatus.done_count, user.locale)} / {formatNumber(referenceStatus.total_codes, user.locale)}</span>
+              <span>Target trade date: {referenceStatus.target_trade_date ?? "—"}</span>
+              <span>Ready / missing / stale: {formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} / {formatNumber(referenceStatus.valuation_reference_missing_count, user.locale)} / {formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)}</span>
+              <span>Industry missing: {formatNumber(referenceStatus.industry_missing_count, user.locale)}</span>
+              <span>Last code: {referenceStatus.last_code ?? "—"}</span>
+              <span>Updated: {formatDateTime(referenceStatus.updated_at ?? referenceStatus.reference_status_updated_at, user.locale)}</span>
+              <span>Container: {referenceStatus.container_name ?? "—"}</span>
+            </div>
+            <div className="action-row">
+              {referenceStatus.can_start ? (
+                <form action="/batch/control" method="post">
+                  <input type="hidden" name="target" value="reference" />
+                  <input type="hidden" name="action" value="start" />
+                  <button className="auth-submit action-button" type="submit">Refresh Reference Data</button>
+                </form>
+              ) : null}
+              {referenceStatus.can_stop ? (
+                <form action="/batch/control" method="post">
+                  <input type="hidden" name="target" value="reference" />
+                  <input type="hidden" name="action" value="stop" />
+                  <button className="action-button danger-button" type="submit">Stop Reference Batch</button>
+                </form>
+              ) : null}
+            </div>
+            {referenceStatus.last_error ? <p className="panel-copy status-warn">Last error: {referenceStatus.last_error}</p> : null}
+            <pre className="log-console compact-log">{referenceStatus.log_lines.join("\n") || copy.common.noLogs}</pre>
           </div>
         </Panel>
       </section>

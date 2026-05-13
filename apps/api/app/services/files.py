@@ -17,6 +17,13 @@ def read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+def write_json_atomic(path: Path, payload: dict[str, Any], *, ensure_ascii: bool = True) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=ensure_ascii, indent=2) + "\n", encoding="utf-8")
+    tmp_path.replace(path)
+
+
 def tail_file(path: Path, lines: int = 100) -> list[str]:
     if not path.exists():
         return []

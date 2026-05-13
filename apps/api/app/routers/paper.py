@@ -6,6 +6,7 @@ from app.services.paper import (
     get_paper_trading_history,
     get_paper_trading_orders,
     get_paper_trading_overview,
+    get_paper_trading_performance,
     get_paper_trading_positions,
     get_paper_trading_status,
     get_paper_trading_targets,
@@ -42,3 +43,8 @@ def paper_orders(limit: int = Query(default=50, ge=1, le=200)) -> dict[str, obje
 @router.get("/history")
 def paper_history(limit: int = Query(default=50, ge=1, le=200)) -> dict[str, object]:
     return get_paper_trading_history(limit=limit)
+
+
+@router.get("/performance")
+def paper_performance(limit: int = Query(default=240, ge=1, le=500)) -> dict[str, object]:
+    return get_paper_trading_performance(limit=limit)

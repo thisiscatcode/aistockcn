@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.services.batch import _docker_client, _get_container_by_ref, get_batch_logs, get_batch_status
 from app.services.data import get_data_summary, get_pipeline_summary
 from app.services.files import run_command, tail_file
+from app.services.log_translation import translate_log_line, translate_log_lines
 from app.services.model import get_model_overview
 from app.services.paper import get_paper_trading_status
 
@@ -83,6 +84,27 @@ def _path_snapshot(path: Path | None) -> dict[str, Any] | None:
         "path": str(path),
         "size_bytes": int(stat.st_size),
         "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+    }
+
+
+def _backtest_artifact_snapshot(backtests_dir: Path) -> dict[str, Any] | None:
+    summary_path = backtests_dir / "summary.json"
+    if not summary_path.exists():
+        return None
+
+    artifact_paths = [
+        summary_path,
+        backtests_dir / "equity_curve.parquet",
+        backtests_dir / "trade_log.parquet",
+        backtests_dir / "oos_predictions.parquet",
+    ]
+    existing_paths = [path for path in artifact_paths if path.exists()]
+    stats = [path.stat() for path in existing_paths]
+    latest_mtime = max(stat.st_mtime for stat in stats)
+    return {
+        "path": str(backtests_dir),
+        "size_bytes": int(sum(stat.st_size for stat in stats)),
+        "updated_at": datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat(),
     }
 
 
@@ -247,7 +269,7 @@ def _resolve_log_payload(
 
 
 def _translate_log_line(line: str, translations: tuple[tuple[str, str], ...]) -> str:
-    text = line.rstrip("\n")
+    text = translate_log_line(line)
     for pattern, replacement in translations:
         translated = re.sub(pattern, replacement, text)
         if translated != text:
@@ -260,7 +282,7 @@ def _display_log_lines(*, step: int, key: str, lines: list[str]) -> list[str]:
         return [_translate_log_line(line, STEP1_LOG_TRANSLATIONS) for line in lines]
     if step == 2 or key == "feature_engineering":
         return [_translate_log_line(line, STEP2_LOG_TRANSLATIONS) for line in lines]
-    return lines
+    return translate_log_lines(lines)
 
 
 def _detail(label: str, value: Any) -> dict[str, str]:
@@ -320,6 +342,7 @@ def _build_runtime_step(
     command_markers: list[str] | None,
     artifact_path: Path | None,
     details: list[dict[str, str]],
+    artifact_snapshot: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
@@ -332,7 +355,7 @@ def _build_runtime_step(
     )
     container_info = _snapshot_container(container)
     latest_log_file = _latest_matching_log_file(settings.logs_dir, log_patterns) if log_patterns else None
-    artifact = _path_snapshot(artifact_path)
+    artifact = artifact_snapshot if artifact_snapshot is not None else _path_snapshot(artifact_path)
     log_payload = _resolve_log_payload(
         container_info=container_info,
         latest_log_file=latest_log_file,
@@ -666,6 +689,7 @@ def get_workflow_status() -> dict[str, Any]:
             exact_names=None,
             command_markers=["backtest_profile_runner.py", "backtest_walk_forward.py"],
             artifact_path=settings.backtests_dir / "summary.json",
+            artifact_snapshot=_backtest_artifact_snapshot(settings.backtests_dir),
             details=[
                 _detail("Runner", "bash run_step5_backtest.sh"),
                 _detail("Profile", backtest_summary.get("profile_label") or backtest_summary.get("profile_name")),

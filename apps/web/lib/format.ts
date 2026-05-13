@@ -171,6 +171,13 @@ export function formatBytes(value: unknown, locale: PanelLocale) {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return EMPTY_VALUE;
   }
+  if (value < 1024) {
+    return `${formatNumber(value, locale)} B`;
+  }
+  const kb = value / 1024;
+  if (kb < 1024) {
+    return `${formatNumber(kb, locale, { maximumFractionDigits: 1 })} KB`;
+  }
   const mb = value / (1024 * 1024);
   if (mb < 1024) {
     return `${formatNumber(mb, locale, { maximumFractionDigits: 1 })} MB`;

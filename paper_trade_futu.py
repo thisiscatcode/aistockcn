@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ DEFAULT_CASH_BUFFER_PCT = 0.02
 DEFAULT_BUY_LIMIT_BPS = 50.0
 DEFAULT_SELL_LIMIT_BPS = 50.0
 DEFAULT_MAX_ORDER_QTY = 1000
+ORDER_ATTEMPT_INTERVAL_SECONDS = 2.2
 
 TERMINAL_ORDER_STATUSES = {
     "CANCELLED",
@@ -49,7 +51,15 @@ TERMINAL_ORDER_STATUSES = {
     "SUBMIT_FAILED",
 }
 
-PRICE_LIMIT_ERROR_TEXT = "报单价格不在涨跌停区间"
+PRICE_LIMIT_ERROR_TEXTS = (
+    "报单价格不在涨跌停区间",
+    "not in the limit move",
+    "price is not in the limit",
+)
+ORDER_RATE_LIMIT_ERROR_TEXTS = (
+    "high frequency",
+    "maximum 15 times per 30 seconds",
+)
 
 
 def now_iso() -> str:
@@ -147,7 +157,13 @@ def build_price(base_price: float, side: str, *, buy_limit_bps: float, sell_limi
 
 
 def is_price_limit_error(message: str) -> bool:
-    return PRICE_LIMIT_ERROR_TEXT in str(message or "")
+    normalized = str(message or "").lower()
+    return any(text.lower() in normalized for text in PRICE_LIMIT_ERROR_TEXTS)
+
+
+def is_order_rate_limit_error(message: str) -> bool:
+    normalized = str(message or "").lower()
+    return any(text.lower() in normalized for text in ORDER_RATE_LIMIT_ERROR_TEXTS)
 
 
 def candidate_prices(row: pd.Series, primary_field: str) -> list[float]:
@@ -408,6 +424,32 @@ def normalize_orders(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def snapshot_order_event(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "broker_order_id": str(row.get("broker_order_id") or row.get("order_id") or ""),
+        "symbol": normalize_symbol(row.get("symbol") or row.get("code")),
+        "side": str(row.get("side") or row.get("trd_side") or "").upper(),
+        "order_status": normalize_status(row.get("order_status")),
+        "quantity": int(round(to_float(row.get("quantity") or row.get("qty")))),
+        "price": to_float(row.get("price")),
+        "dealt_qty": to_float(row.get("dealt_qty")),
+        "dealt_avg_price": to_float(row.get("dealt_avg_price")),
+        "remark": str(row.get("remark") or ""),
+        "created_at": str(row.get("created_at") or row.get("create_time") or ""),
+        "updated_at": str(row.get("updated_at") or row.get("create_time") or row.get("created_at") or ""),
+    }
+
+
+def snapshot_skipped_order(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": normalize_symbol(row.get("symbol")),
+        "side": str(row.get("side") or "").upper(),
+        "quantity": int(round(to_float(row.get("quantity")))),
+        "attempted_prices": [round_price(to_float(price)) for price in list(row.get("attempted_prices") or []) if to_float(price) > 0],
+        "error": str(row.get("error") or ""),
+    }
 
 
 def determine_total_capital(
@@ -683,6 +725,7 @@ def execute_plan(
 
     sell_rows = execution_rows[execution_rows["sell_order_qty"] > 0].sort_values(["score", "rank"], ascending=[True, True], na_position="last")
     buy_rows = execution_rows[execution_rows["buy_order_qty"] > 0].sort_values(["rank", "score"], ascending=[True, False], na_position="last")
+    last_order_attempt_at = 0.0
 
     for side, rows, qty_col, price_col in [
         ("SELL", sell_rows, "sell_order_qty", "sell_limit_price"),
@@ -700,6 +743,10 @@ def execute_plan(
             last_error: str | None = None
             for price in prices:
                 try:
+                    elapsed = time.monotonic() - last_order_attempt_at
+                    if elapsed < ORDER_ATTEMPT_INTERVAL_SECONDS:
+                        time.sleep(ORDER_ATTEMPT_INTERVAL_SECONDS - elapsed)
+                    last_order_attempt_at = time.monotonic()
                     order = client.place_order(
                         symbol=str(row["code"]),
                         side=side,
@@ -716,6 +763,14 @@ def execute_plan(
                 except GatewayError as exc:
                     last_error = str(exc)
                     if is_price_limit_error(last_error):
+                        continue
+                    if is_order_rate_limit_error(last_error):
+                        print(
+                            f"broker rate limit while placing {side} {row['code']}; waiting before retry",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        time.sleep(30)
                         continue
                     raise
 
@@ -797,6 +852,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "score_signal_date": signal_date,
                     "last_score_signature": signature,
                     "gateway_healthy": health_ok,
+                    "balance_metrics": balance_metrics,
                     "plan_summary": plan_summary,
                     "live_summary": live_summary,
                     "active_order_count": len(active_orders),
@@ -804,6 +860,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "cancelled_order_ids": [],
                     "placed_order_ids": [],
                     "skipped_symbols": [],
+                    "cancelled_orders": [],
+                    "placed_orders": [],
+                    "skipped_orders": [],
                 }
                 updated = update_state(
                     paths,
@@ -848,10 +907,17 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "score_signal_date": signal_date,
                 "last_score_signature": signature,
                 "gateway_healthy": health_ok,
+                "balance_metrics": balance_metrics,
                 "plan_summary": plan_summary,
                 "live_summary": live_summary,
                 "active_order_count": len(active_orders),
                 "position_count": len(positions),
+                "cancelled_order_ids": [],
+                "placed_order_ids": [],
+                "skipped_symbols": [],
+                "cancelled_orders": [],
+                "placed_orders": [],
+                "skipped_orders": [],
             }
             updated = update_state(
                 paths,
@@ -919,6 +985,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             "score_signal_date": signal_date,
             "last_score_signature": signature,
             "gateway_healthy": health_ok,
+            "balance_metrics": balance_metrics,
             "plan_summary": plan_summary,
             "live_summary": live_summary,
             "active_order_count": len([row for row in refreshed_orders if is_active_order(row.get('order_status'))]),
@@ -934,6 +1001,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 if item
             ],
             "skipped_symbols": skipped_symbols,
+            "cancelled_orders": [snapshot_order_event(item) for item in execution["cancelled_orders"] if item],
+            "placed_orders": [snapshot_order_event(item) for item in execution["placed_orders"] if item],
+            "skipped_orders": [snapshot_skipped_order(item) for item in execution["skipped_orders"] if item],
         }
         updated = update_state(
             paths,

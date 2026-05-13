@@ -79,8 +79,10 @@ fi
 cd "$ROOT_DIR"
 docker compose build data-prep
 
+rm -f "$PID_FILE" "$LOGGER_PID_FILE"
 CONTAINER_ID="$(docker compose "${ARGS[@]}")"
 echo "$CONTAINER_ID" > "$PID_FILE"
+docker update --restart unless-stopped "$CONTAINER_ID" >/dev/null
 
 nohup docker logs -f "$CONTAINER_NAME" > "$LOG_FILE" 2>&1 &
 echo $! > "$LOGGER_PID_FILE"

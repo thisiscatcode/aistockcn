@@ -12,6 +12,7 @@ from docker.errors import DockerException, ImageNotFound, NotFound
 
 from app.config import get_settings
 from app.services.files import count_lines, read_json, run_command, tail_file
+from app.services.log_translation import translate_log_lines
 
 
 class BatchControlError(Exception):
@@ -399,6 +400,12 @@ def get_batch_status() -> dict[str, Any]:
         stat = latest_log_file.stat()
         latest_log_updated_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
         latest_log_line_count = count_lines(latest_log_file)
+    state_file_updated_at = None
+    if settings.state_file.exists():
+        try:
+            state_file_updated_at = datetime.fromtimestamp(settings.state_file.stat().st_mtime, tz=timezone.utc).isoformat()
+        except OSError:
+            state_file_updated_at = None
 
     stock_count = 0
     if settings.stock_list_path.exists():
@@ -418,10 +425,11 @@ def get_batch_status() -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     updated_at = _parse_iso(state.get("updated_at"))
     latest_log_updated_dt = _parse_iso(latest_log_updated_at)
+    state_file_updated_dt = _parse_iso(state_file_updated_at)
     stale_after = timedelta(minutes=20)
-    is_stale = updated_at is None or (now - updated_at) > stale_after
-    last_activity_at = _latest_timestamp(updated_at, latest_log_updated_dt)
+    last_activity_at = _latest_timestamp(updated_at, state_file_updated_dt, latest_log_updated_dt)
     activity_age = (now - last_activity_at) if last_activity_at is not None else None
+    is_stale = activity_age is None or activity_age > stale_after
     container_known_stopped = bool(container_ref) and not container["is_running"] and container["status"] is not None
     inferred_running_from_state = not container_known_stopped and not is_stale
     is_running = bool(container["is_running"] or inferred_running_from_state)
@@ -451,6 +459,7 @@ def get_batch_status() -> dict[str, Any]:
         "state_file": str(settings.state_file),
         "created_at": state.get("created_at"),
         "updated_at": state.get("updated_at"),
+        "state_file_updated_at": state_file_updated_at,
         "last_activity_at": last_activity_at.isoformat() if last_activity_at is not None else None,
         "activity_age_seconds": round(activity_age.total_seconds(), 2) if activity_age is not None else None,
         "start_date": state.get("start_date"),
@@ -488,7 +497,7 @@ def get_batch_logs(*, lines: int = 120) -> dict[str, Any]:
                 return {
                     "source": "docker",
                     "container_name": container["container_name"],
-                    "lines": log_bytes.decode("utf-8", errors="replace").splitlines(),
+                    "lines": translate_log_lines(log_bytes.decode("utf-8", errors="replace").splitlines()),
                 }
             except (DockerException, NotFound):
                 pass
@@ -501,7 +510,7 @@ def get_batch_logs(*, lines: int = 120) -> dict[str, Any]:
             return {
                 "source": "docker",
                 "container_name": container["container_name"],
-                "lines": output.splitlines(),
+                "lines": translate_log_lines(output.splitlines()),
             }
 
     latest_log_file = _latest_log_file(settings.logs_dir)
@@ -509,7 +518,7 @@ def get_batch_logs(*, lines: int = 120) -> dict[str, Any]:
         return {
             "source": "file",
             "path": str(latest_log_file),
-            "lines": tail_file(latest_log_file, lines=lines),
+            "lines": translate_log_lines(tail_file(latest_log_file, lines=lines)),
         }
 
     return {"source": "none", "lines": []}

@@ -6,6 +6,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 
+apps/web/.next/
+apps/web/node_modules/
+apps/web/tsconfig.tsbuildinfo
+
 quant_data/
 
 logs/

@@ -21,6 +21,7 @@ COPY build_inference_features.py .
 COPY train_lightgbm.py .
 COPY backtest_walk_forward.py .
 COPY batch_download_all_a.py .
+COPY repair_valuation_reference_fields.py .
 COPY paper_trade_futu.py .
 COPY paper_trade_daemon.py .
 
