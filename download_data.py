@@ -196,7 +196,7 @@ def load_dependencies() -> None:
         import pandas as pd_module
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise SystemExit(
-            "缺少依赖，请先安装 requirements.txt 中的包后再运行下载任务。"
+            "Missing dependencies. Install packages from requirements.txt before running the data job."
         ) from exc
 
     ak = ak_module
@@ -299,7 +299,7 @@ def call_with_retry(func: Any, *args: Any, **kwargs: Any) -> Any:
             last_error = exc
             if attempt == REQUEST_RETRY_TIMES:
                 break
-            print(f"请求失败，{REQUEST_RETRY_SLEEP:.1f} 秒后重试 ({attempt}/{REQUEST_RETRY_TIMES}): {exc}")
+            print(f"Request failed, retrying in {REQUEST_RETRY_SLEEP:.1f}s ({attempt}/{REQUEST_RETRY_TIMES}): {exc}")
             time.sleep(REQUEST_RETRY_SLEEP)
     raise last_error if last_error else RuntimeError("unknown request error")
 
@@ -318,7 +318,7 @@ def query_baostock_with_retry(query_func: Any, *args: Any, **kwargs: Any) -> Any
             if getattr(rs, "error_code", "0") == "0":
                 return rs
             if getattr(rs, "error_code", "") == "10001001":
-                print("Baostock 会话已失效，正在自动重新登录...")
+                print("Baostock session expired, re-authenticating...")
                 baostock_logout()
                 time.sleep(1.0)
                 baostock_login()
@@ -328,7 +328,7 @@ def query_baostock_with_retry(query_func: Any, *args: Any, **kwargs: Any) -> Any
             last_error = exc
             if attempt == REQUEST_RETRY_TIMES:
                 break
-            print(f"请求失败，{REQUEST_RETRY_SLEEP:.1f} 秒后重试 ({attempt}/{REQUEST_RETRY_TIMES}): {exc}")
+            print(f"Request failed, retrying in {REQUEST_RETRY_SLEEP:.1f}s ({attempt}/{REQUEST_RETRY_TIMES}): {exc}")
             time.sleep(REQUEST_RETRY_SLEEP)
     raise last_error if last_error else RuntimeError("unknown baostock query error")
 
@@ -345,7 +345,7 @@ def baostock_login() -> None:
     """Open a BaoStock session and fail fast if login never succeeds."""
     login_result = call_with_retry(bs.login)
     if getattr(login_result, "error_code", None) != "0":  # pragma: no cover - network/API dependent
-        raise SystemExit(f"Baostock 登录失败: {login_result.error_code} {login_result.error_msg}")
+        raise SystemExit(f"Baostock login failed: {login_result.error_code} {login_result.error_msg}")
 
 
 def baostock_logout() -> None:
@@ -462,10 +462,10 @@ def load_recent_trade_dates(reference_date: str, *, lookback_days: int = 30) -> 
     try:
         trade_dates = _load_akshare_trade_dates(reference_date, lookback_days=lookback_days)
     except Exception as exc:
-        print(f"AkShare 交易日历失败，回退 BaoStock: {exc}")
+        print(f"AkShare trading calendar failed, falling back to BaoStock: {exc}")
         trade_dates = _load_baostock_trade_dates(reference_date, lookback_days=lookback_days)
     if trade_dates.empty:
-        raise RuntimeError(f"未找到 {reference_date} 之前的最近交易日")
+        raise RuntimeError(f"No latest trading day found before {reference_date}")
     return trade_dates
 
 
@@ -478,7 +478,7 @@ def get_recent_trade_dates(reference_date: str, *, lookback_days: int = 30) -> l
     """
     trade_dates = load_recent_trade_dates(reference_date, lookback_days=lookback_days)
     if trade_dates.empty:
-        raise RuntimeError(f"未找到 {reference_date} 之前的交易日")
+        raise RuntimeError(f"No trading day found before {reference_date}")
     return trade_dates.tolist()
 
 
@@ -511,14 +511,14 @@ def get_latest_all_stock_universe(reference_date: str) -> tuple[pd.DataFrame, st
     recent_trade_dates = get_recent_trade_dates(reference_date)
 
     for trade_date in reversed(recent_trade_dates):
-        print(f"正在通过 Baostock 获取全市场 A 股名单，交易日: {trade_date}...")
+        print(f"Fetching full A-share universe from Baostock, trade date: {trade_date}...")
         rs = query_baostock_with_retry(bs.query_all_stock, trade_date)
         df = normalize_all_stock_df(baostock_result_to_df(rs))
         if df.empty:
             # Some days can produce an empty universe response even though the
             # market calendar says they are trading days. In that case we keep
             # walking backward until we find a usable snapshot.
-            print(f"{trade_date} 返回空股票列表，回退到更早交易日继续尝试。")
+            print(f"{trade_date} returned an empty stock list, falling back to an earlier trade date.")
             continue
 
         # Keep only the code families we treat as A-shares and drop obviously
@@ -526,7 +526,7 @@ def get_latest_all_stock_universe(reference_date: str) -> tuple[pd.DataFrame, st
         df = df[df["code"].map(is_a_share_code)].copy()
         df = df[df["code_name"].map(is_investable_stock_name)].copy()
         if df.empty:
-            print(f"{trade_date} 过滤后无有效 A 股列表，回退到更早交易日继续尝试。")
+            print(f"{trade_date} returned no investable A-shares after filtering, falling back to an earlier trade date.")
             continue
 
         df["exchange"] = df["code"].map(get_exchange_from_baostock_code)
@@ -536,13 +536,13 @@ def get_latest_all_stock_universe(reference_date: str) -> tuple[pd.DataFrame, st
         df = df[["code", "exchange", "name", "trade_date"]].drop_duplicates(subset=["code"]).reset_index(drop=True)
         return df, trade_date
 
-    raise RuntimeError(f"未能在 {reference_date} 之前的最近交易日中获取非空全市场股票列表")
+    raise RuntimeError(f"Could not load a non-empty full-market universe before {reference_date}")
 
 
 def get_selected_universe(universe: str, reference_date: str) -> tuple[pd.DataFrame, str]:
     """Return either HS300 or the full latest A-share universe."""
     if universe == "hs300":
-        print("正在通过 Baostock 获取沪深300成分股名单...")
+        print("Fetching CSI 300 constituents from Baostock...")
         rs = query_baostock_with_retry(bs.query_hs300_stocks)
         df = baostock_result_to_df(rs)
         df["exchange"] = df["code"].map(get_exchange_from_baostock_code)
@@ -850,9 +850,9 @@ def build_stock_list(
             stock_df["industry_classification"] = None
 
         print(
-            "行业补全已启用："
-            f"当前已知行业 {coverage_before['known']}/{coverage_before['total']}，"
-            f"待补 {coverage_before['missing']}。"
+            "Industry enrichment enabled: "
+            f"{coverage_before['known']}/{coverage_before['total']} industries already known, "
+            f"{coverage_before['missing']} to fill."
         )
         missing_mask = ~stock_df["industry"].map(_is_known_category_value)
         missing_indices = stock_df.index[missing_mask].tolist()
@@ -860,14 +860,14 @@ def build_stock_list(
         for idx, row_index in enumerate(missing_indices, start=1):
             code = str(stock_df.at[row_index, "code"]).zfill(6)
             exchange = stock_df.at[row_index, "exchange"]
-            print(f"[stock_list {idx}/{total_missing}] 正在通过 Baostock 补充行业信息: {code}")
+            print(f"[stock_list {idx}/{total_missing}] Filling industry metadata from Baostock: {code}")
             try:
                 # A failure here should not destroy the entire universe refresh.
                 # We keep the stock and leave industry fields blank if the
                 # provider does not respond cleanly.
                 industry_row = get_stock_industry(code, exchange, trade_date)
             except Exception as exc:  # pragma: no cover - network/API dependent
-                print(f"补充 {code} 行业信息失败: {exc}")
+                print(f"Failed to fill industry metadata for {code}: {exc}")
                 industry_row = {"industry": None, "industry_classification": None}
 
             stock_df.at[row_index, "industry"] = industry_row.get("industry")
@@ -875,16 +875,16 @@ def build_stock_list(
             time.sleep(sleep_seconds)
         coverage_after = summarize_industry_coverage(stock_df)
         print(
-            "行业补全完成："
-            f"已知行业 {coverage_after['known']}/{coverage_after['total']}，"
-            f"仍缺失 {coverage_after['missing']}。"
+            "Industry enrichment finished: "
+            f"{coverage_after['known']}/{coverage_after['total']} industries known, "
+            f"{coverage_after['missing']} still missing."
         )
     else:
         print(
-            "行业补全已跳过："
-            f"当前已知行业 {coverage_before['known']}/{coverage_before['total']}，"
-            f"缺失 {coverage_before['missing']}。"
-            "如需恢复 industry 特征，请启用 --include-industry。"
+            "Industry enrichment skipped: "
+            f"{coverage_before['known']}/{coverage_before['total']} industries known, "
+            f"{coverage_before['missing']} missing. "
+            "Enable --include-industry to restore the industry feature."
         )
 
     preferred_order = [
@@ -1382,33 +1382,33 @@ def main() -> int:
                     target_trade_date=trade_date,
                 )
                 stock_df = active_df
-                print(f"活跃股票池已保存至 {active_path}，共 {len(active_df)} 只股票。")
-                print(f"主注册表已保存至 {registry_path}，共 {len(registry_df)} 只股票。")
+                print(f"Active universe saved to {active_path}, {len(active_df)} stocks.")
+                print(f"Master registry saved to {registry_path}, {len(registry_df)} stocks.")
                 print(
-                    "股票池同步结果: "
-                    f"新增 {sync_summary['new_count']}，"
-                    f"恢复 {sync_summary['reactivated_count']}，"
-                    f"停用 {sync_summary['deactivated_count']}"
+                    "Universe sync result: "
+                    f"added {sync_summary['new_count']}, "
+                    f"reactivated {sync_summary['reactivated_count']}, "
+                    f"deactivated {sync_summary['deactivated_count']}"
                 )
             else:
-                # Subset runs are treated as experimental/test runs and must not
+                # Scoped runs must not
                 # overwrite the project's canonical full-universe metadata.
                 subset_path = data_dir / STOCK_LIST_SUBSET_FILENAME
                 stock_df.to_parquet(subset_path, index=False)
-                print(f"子集股票列表已保存至 {subset_path}，共 {len(stock_df)} 只股票。")
-                print(f"当前任务为子集/测试模式，未覆盖 {data_dir / STOCK_LIST_FILENAME} 和 {data_dir / STOCK_REGISTRY_FILENAME}。")
+                print(f"Scoped universe list saved to {subset_path}, {len(stock_df)} stocks.")
+                print(f"Scoped run active; {data_dir / STOCK_LIST_FILENAME} and {data_dir / STOCK_REGISTRY_FILENAME} were not overwritten.")
 
         stock_records = stock_df[["code", "exchange"]].to_dict("records")
-        print(f"本次任务股票数量: {len(stock_records)}，股票池: {args.universe}")
+        print(f"Stocks in this run: {len(stock_records)}, universe: {args.universe}")
 
         failures: list[dict[str, str]] = []
         kline_success_count = 0
         valuation_success_count = 0
 
         if not args.skip_kline:
-            print("开始下载前复权日 K 线数据...")
+            print("Starting adjusted daily K-line download...")
         if not args.skip_valuation:
-            print("开始下载每日估值数据...")
+            print("Starting daily valuation download...")
 
         for idx, stock in enumerate(stock_records, start=1):
             code = str(stock["code"]).zfill(6)
@@ -1429,7 +1429,7 @@ def main() -> int:
                     valuation_success_count += 1
                 continue
 
-                print(f"[{idx}/{len(stock_records)}] 正在通过 Baostock 下载: {code}")
+                print(f"[{idx}/{len(stock_records)}] Downloading from Baostock: {code}")
             bundle_df, reason = download_baostock_daily_bundle(
                 code,
                 exchange=exchange,
@@ -1441,7 +1441,7 @@ def main() -> int:
                     failures.append({"dataset": "kline", "code": code, "exchange": exchange or "", "reason": reason or "unknown"})
                 if need_valuation:
                     failures.append({"dataset": "valuation", "code": code, "exchange": exchange or "", "reason": reason or "unknown"})
-                print(f"下载 {code} 失败: {reason}")
+                print(f"Download failed for {code}: {reason}")
                 time.sleep(args.sleep)
                 continue
 
@@ -1455,7 +1455,7 @@ def main() -> int:
                     kline_success_count += 1
                 except Exception as exc:  # pragma: no cover - file/data dependent
                     failures.append({"dataset": "kline", "code": code, "exchange": exchange or "", "reason": str(exc)})
-                    print(f"写入 {code} 日 K 线失败: {exc}")
+                    print(f"Failed to write daily K-line for {code}: {exc}")
 
             if not args.skip_valuation:
                 try:
@@ -1474,24 +1474,24 @@ def main() -> int:
                             failures.append(
                                 {"dataset": "valuation_warning", "code": code, "exchange": exchange or "", "reason": warning}
                             )
-                            print(f"{code} 估值补充提醒: {warning}")
+                            print(f"{code} valuation supplement note: {warning}")
                     valuation_success_count += 1
                 except Exception as exc:  # pragma: no cover - file/data dependent
                     failures.append({"dataset": "valuation", "code": code, "exchange": exchange or "", "reason": str(exc)})
-                    print(f"写入 {code} 估值数据失败: {exc}")
+                    print(f"Failed to write valuation data for {code}: {exc}")
 
             time.sleep(args.sleep)
 
         if not args.skip_kline:
-            print(f"前复权日 K 线下载完成，成功 {kline_success_count}/{len(stock_records)}。")
+            print(f"Adjusted daily K-line download completed, succeeded {kline_success_count}/{len(stock_records)}.")
         if not args.skip_valuation:
-            print(f"每日估值数据下载完成，成功 {valuation_success_count}/{len(stock_records)}。")
+            print(f"Daily valuation download completed, succeeded {valuation_success_count}/{len(stock_records)}.")
 
         write_failures(data_dir, failures)
         if failures:
-            print(f"失败明细已写入 {data_dir / FAILURES_FILENAME}")
+            print(f"Failure details written to {data_dir / FAILURES_FILENAME}")
 
-        print("全部任务完成。")
+        print("All tasks completed.")
         return 0
     finally:
         baostock_logout()

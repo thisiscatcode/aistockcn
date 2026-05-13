@@ -52,7 +52,7 @@ TERMINAL_ORDER_STATUSES = {
 }
 
 PRICE_LIMIT_ERROR_TEXTS = (
-    "报单价格不在涨跌停区间",
+    "\u62a5\u5355\u4ef7\u683c\u4e0d\u5728\u6da8\u8dcc\u505c\u533a\u95f4",
     "not in the limit move",
     "price is not in the limit",
 )

@@ -110,14 +110,14 @@ def split_date_masks(dates: pd.Series, valid_days: int) -> tuple[np.ndarray, np.
     date_values = pd.to_datetime(dates).to_numpy()
     unique_dates = np.sort(np.unique(date_values[~pd.isna(date_values)]))
     if len(unique_dates) <= valid_days:
-        raise SystemExit(f"可用交易日只有 {len(unique_dates)} 个，无法切出 {valid_days} 天验证集。")
+        raise SystemExit(f"Only {len(unique_dates)} trading days are available; cannot reserve {valid_days} validation days.")
 
     valid_start = unique_dates[-valid_days]
     train_mask = date_values < valid_start
     valid_mask = date_values >= valid_start
 
     if not train_mask.any() or not valid_mask.any():
-        raise SystemExit("训练集或验证集为空，请调整 valid-days。")
+        raise SystemExit("Training or validation split is empty. Adjust --valid-days.")
 
     return date_values, train_mask, valid_mask
 
@@ -224,13 +224,13 @@ def main() -> int:
     feature_cols, categorical_cols = choose_feature_columns_from_schema(train_column_types)
     train_columns = list(dict.fromkeys(["date", "label", *feature_cols]))
 
-    log(f"加载训练数据: {train_path}")
-    log(f"训练列数: {len(train_columns)}，模型特征数: {len(feature_cols)}，类别特征: {len(categorical_cols)}")
+    log(f"Loading training data: {train_path}")
+    log(f"Training columns: {len(train_columns)}, model features: {len(feature_cols)}, categorical features: {len(categorical_cols)}")
     train_df = load_frame(train_path, columns=train_columns)
 
-    log(f"加载打分数据: {inference_path}")
+    log(f"Loading scoring data: {inference_path}")
     inference_df = load_frame(inference_path)
-    log(f"训练集形状: {train_df.shape}，打分集形状: {inference_df.shape}")
+    log(f"Training shape: {train_df.shape}, scoring shape: {inference_df.shape}")
 
     train_df["date"] = pd.to_datetime(train_df["date"])
     inference_df["date"] = pd.to_datetime(inference_df["date"])
@@ -239,13 +239,13 @@ def main() -> int:
     date_values, train_mask, valid_mask = split_date_masks(train_df["date"], args.valid_days)
     train_rows = int(train_mask.sum())
     valid_rows = int(valid_mask.sum())
-    log(f"训练/验证切分完成: train={train_rows:,}，valid={valid_rows:,}")
+    log(f"Train/validation split completed: train={train_rows:,}, valid={valid_rows:,}")
 
     label_values = train_df["label"].to_numpy(dtype=np.int8, na_value=0)
     y_train = label_values[train_mask]
     y_valid = label_values[valid_mask]
 
-    log("构建训练与验证特征矩阵...")
+    log("Building training and validation feature matrices...")
     X_train, X_valid = build_split_feature_frames(
         train_df,
         feature_cols,
@@ -265,7 +265,7 @@ def main() -> int:
     del train_df
     gc.collect()
 
-    log(f"特征矩阵完成: X_train={X_train.shape}，X_valid={X_valid.shape}")
+    log(f"Feature matrices completed: X_train={X_train.shape}, X_valid={X_valid.shape}")
 
     model = lgb.LGBMClassifier(
         objective="binary",
@@ -279,7 +279,7 @@ def main() -> int:
         class_weight="balanced",
     )
 
-    log("开始训练 LightGBM...")
+    log("Starting LightGBM training...")
     model.fit(
         X_train,
         y_train,
@@ -291,7 +291,7 @@ def main() -> int:
 
     valid_prob = pd.Series(model.predict_proba(X_valid)[:, 1])
     metrics = compute_metrics(y_valid, valid_prob, args.threshold)
-    log("训练完成，开始写出模型与指标...")
+    log("Training completed, writing model and metrics...")
 
     model.booster_.save_model(str(model_dir / "lightgbm_model.txt"))
     pd.DataFrame(
@@ -334,7 +334,7 @@ def main() -> int:
     del y_valid
     gc.collect()
 
-    log("构建推理特征矩阵并生成分数...")
+    log("Building inference feature matrix and generating scores...")
     X_inference = build_feature_frame(inference_df, feature_cols, categorical_cols, category_mappings)
     del category_mappings
     gc.collect()
@@ -344,9 +344,9 @@ def main() -> int:
     inference_scored = inference_scored.sort_values("score", ascending=False).reset_index(drop=True)
     inference_scored.to_parquet(model_dir / "inference_scores_latest.parquet", index=False)
 
-    print("训练完成。")
+    print("Training completed.")
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
-    print(f"模型目录: {model_dir}")
+    print(f"Model directory: {model_dir}")
     print(inference_scored[["date", "code", "name", "industry", "score"]].head(args.top_k).to_string())
     return 0
 

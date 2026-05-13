@@ -55,4 +55,4 @@ This project relies on simple, inspectable artifacts instead of hiding state beh
 - JSON metadata for model and runtime state
 - log files for batch and daemon visibility
 
-That choice makes the system easier to debug, demo, and operate in a small-team environment.
+That choice makes the system easier to inspect, validate, and operate in a small-team environment.

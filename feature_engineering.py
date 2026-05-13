@@ -68,7 +68,7 @@ def load_stock_list(data_dir: Path, limit: int) -> pd.DataFrame:
     stock_list_path = data_dir / "stock_list.parquet"
     stock_df = pd.read_parquet(stock_list_path)
     if "exchange" not in stock_df.columns:
-        raise SystemExit("stock_list.parquet 缺少 exchange 列，请先重新运行 download_data.py 刷新股票列表。")
+        raise SystemExit("stock_list.parquet is missing the exchange column. Re-run download_data.py to refresh the stock list.")
     stock_df["code"] = stock_df["code"].astype(str).str.zfill(6)
     stock_df["exchange"] = stock_df["exchange"].astype(str).str.lower()
     if "name" not in stock_df.columns:
@@ -130,7 +130,7 @@ def load_panel_data(data_dir: Path, stock_df: pd.DataFrame) -> pd.DataFrame:
         frames.append(merged)
 
     if not frames:
-        raise SystemExit("没有可用的 K 线/估值 parquet 可合并。")
+        raise SystemExit("No K-line / valuation parquet files are available to merge.")
 
     return pd.concat(frames, ignore_index=True)
 
@@ -282,19 +282,19 @@ def main() -> int:
 
         if idx % 500 == 0:
             print(
-                f"已处理 {idx}/{len(stock_records)} 只股票，"
-                f"当前累计 {total_train_codes} 只进入训练集，"
-                f"{total_train_rows} 行。"
+                f"Processed {idx}/{len(stock_records)} stocks, "
+                f"{total_train_codes} included in training so far, "
+                f"{total_train_rows} rows."
             )
 
     if writer is None:
-        raise SystemExit("没有生成任何可用训练样本。")
+        raise SystemExit("No usable training samples were generated.")
 
     writer.close()
 
-    print(f"原始面板数据维度: ({total_panel_rows}, {total_panel_cols})")
-    print(f"特征工程完成，可训练数据维度: ({total_train_rows}, {output_cols_count})")
-    print(f"输出文件: {output_path}")
+    print(f"Raw panel shape: ({total_panel_rows}, {total_panel_cols})")
+    print(f"Feature engineering completed, trainable shape: ({total_train_rows}, {output_cols_count})")
+    print(f"Output file: {output_path}")
 
     metadata = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -310,7 +310,7 @@ def main() -> int:
     }
     metadata_path = metadata_path_for_output(output_path)
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"特征元数据文件: {metadata_path}")
+    print(f"Feature metadata file: {metadata_path}")
 
     if preview_frames:
         preview_df = pd.concat(preview_frames, ignore_index=True).head(10)

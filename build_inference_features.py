@@ -119,10 +119,10 @@ def build_inference_frame(data_dir: Path, limit: int, as_of_date: pd.Timestamp |
             latest_rows.append(latest_df)
 
         if idx % 500 == 0:
-            print(f"已处理 {idx}/{len(stock_df)} 只股票...")
+            print(f"Processed {idx}/{len(stock_df)} stocks...")
 
     if not latest_rows:
-        raise SystemExit("没有生成任何可用的推理特征。")
+        raise SystemExit("No usable inference features were generated.")
 
     return pd.concat(latest_rows, ignore_index=True).sort_values(["date", "code"]).reset_index(drop=True)
 
@@ -137,8 +137,8 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     latest_df.to_parquet(output_path, index=False)
 
-    print(f"推理特征完成，数据维度: {latest_df.shape}")
-    print(f"输出文件: {output_path}")
+    print(f"Inference features completed, shape: {latest_df.shape}")
+    print(f"Output file: {output_path}")
 
     preview_cols = [
         "date",

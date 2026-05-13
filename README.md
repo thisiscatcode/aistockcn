@@ -157,6 +157,7 @@ Safe examples are included instead:
 - [User Guide](docs/USER_GUIDE.md)
 - [System Design Spec](docs/SYSTEM_DESIGN_SPEC.md)
 - [System Manual](docs/SYSTEM_MANUAL.md)
+- [Production Research Results](docs/RESULTS.md)
 
 ## Engineering Scope
 

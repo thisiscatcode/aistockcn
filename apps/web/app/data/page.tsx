@@ -105,7 +105,6 @@ export default async function DataPage({
 }) {
   const user = await requireAuth();
   const copy = getMessages(user.locale);
-  const isZh = user.locale === "zh-Hant";
   const params = (await searchParams) ?? {};
   const catalog = await getExplorerCatalog();
   const availableDatasets = catalog.datasets.filter((dataset) => dataset.column_count > 0);
@@ -116,13 +115,13 @@ export default async function DataPage({
   if (!dataset) {
     return (
       <Shell
-        title={isZh ? "Data Explorer" : "Data Explorer"}
+        title="Data Explorer"
         subtitle=""
         locale={user.locale}
         username={user.username}
         role={user.role}
       >
-        <Panel title={isZh ? "沒有資料" : "No Data"}>
+        <Panel title="No Data">
           <p className="empty-state">{copy.common.noRows}</p>
         </Panel>
       </Shell>
@@ -162,23 +161,23 @@ export default async function DataPage({
 
   return (
     <Shell
-      title={isZh ? "Data Explorer" : "Data Explorer"}
+      title="Data Explorer"
       subtitle=""
       locale={user.locale}
       username={user.username}
       role={user.role}
     >
       <section className="metrics-grid">
-        <MetricCard label={isZh ? "目前 Dataset" : "Current Dataset"} value={dataset.label} hint={dataset.key} />
-        <MetricCard label={isZh ? "總筆數" : "Total Rows"} value={formatNumber(result.total_rows, user.locale)} hint={isZh ? "落地 parquet 總列數" : "Rows in saved parquet"} />
-        <MetricCard label={isZh ? "查詢結果" : "Filtered Rows"} value={formatNumber(result.filtered_rows, user.locale)} hint={isZh ? "符合目前查詢條件" : "Rows matching current query"} />
-        <MetricCard label={isZh ? "欄位數" : "Columns"} value={formatNumber(dataset.column_count, user.locale)} hint={formatBytes(dataset.size_bytes, user.locale)} />
-        <MetricCard label={isZh ? "頁面" : "Page"} value={`${result.page}/${result.total_pages}`} hint={`${formatNumber(result.page_size, user.locale)} ${isZh ? "列 / 頁" : "rows / page"}`} />
-        <MetricCard label={isZh ? "檔案更新" : "Updated"} value={formatDateTime(dataset.updated_at, user.locale)} hint={dataset.path} />
+        <MetricCard label="Current Dataset" value={dataset.label} hint={dataset.key} />
+        <MetricCard label="Total Rows" value={formatNumber(result.total_rows, user.locale)} hint="Rows in saved parquet" />
+        <MetricCard label="Filtered Rows" value={formatNumber(result.filtered_rows, user.locale)} hint="Rows matching current query" />
+        <MetricCard label="Columns" value={formatNumber(dataset.column_count, user.locale)} hint={formatBytes(dataset.size_bytes, user.locale)} />
+        <MetricCard label="Page" value={`${result.page}/${result.total_pages}`} hint={`${formatNumber(result.page_size, user.locale)} rows / page`} />
+        <MetricCard label="Updated" value={formatDateTime(dataset.updated_at, user.locale)} hint={dataset.path} />
       </section>
 
       <section className="explorer-layout">
-        <Panel title={isZh ? "Datasets" : "Datasets"}>
+        <Panel title="Datasets">
           <div className="dataset-catalog">
             {catalog.datasets.map((item) => (
               <a
@@ -187,8 +186,8 @@ export default async function DataPage({
                 className={`dataset-card ${item.key === dataset.key ? "dataset-card-active" : ""}`}
               >
                 <strong>{item.label}</strong>
-                <span className="dataset-card-metric">{formatNumber(item.row_count, user.locale)} {isZh ? "筆" : "rows"}</span>
-                <span className="dataset-card-metric">{formatNumber(item.column_count, user.locale)} {isZh ? "欄" : "cols"}</span>
+                <span className="dataset-card-metric">{formatNumber(item.row_count, user.locale)} rows</span>
+                <span className="dataset-card-metric">{formatNumber(item.column_count, user.locale)} cols</span>
                 <span className="dataset-card-metric">{formatDateTime(item.updated_at, user.locale)}</span>
               </a>
             ))}
@@ -196,16 +195,16 @@ export default async function DataPage({
         </Panel>
 
         <div className="explorer-main">
-          <Panel title={isZh ? "Query Builder" : "Query Builder"}>
+          <Panel title="Query Builder">
             <form method="get" action="/data" className="explorer-form">
               <input type="hidden" name="dataset" value={dataset.key} />
               <div className="explorer-form-grid">
                 <label className="field-block">
-                  <span>{isZh ? "搜尋" : "Search"}</span>
-                  <input type="text" name="search" defaultValue={search} placeholder={isZh ? "code / name / industry" : "code / name / industry"} />
+                  <span>Search</span>
+                  <input type="text" name="search" defaultValue={search} placeholder="code / name / industry" />
                 </label>
                 <label className="field-block">
-                  <span>{isZh ? "排序欄位" : "Sort By"}</span>
+                  <span>Sort By</span>
                   <select name="sort_by" defaultValue={result.sort_by}>
                     {dataset.columns.map((column) => (
                       <option key={column.name} value={column.name}>
@@ -215,14 +214,14 @@ export default async function DataPage({
                   </select>
                 </label>
                 <label className="field-block">
-                  <span>{isZh ? "排序方向" : "Sort Direction"}</span>
+                  <span>Sort Direction</span>
                   <select name="sort_dir" defaultValue={result.sort_dir}>
-                    <option value="desc">{isZh ? "遞減" : "Descending"}</option>
-                    <option value="asc">{isZh ? "遞增" : "Ascending"}</option>
+                    <option value="desc">Descending</option>
+                    <option value="asc">Ascending</option>
                   </select>
                 </label>
                 <label className="field-block">
-                  <span>{isZh ? "每頁筆數" : "Rows Per Page"}</span>
+                  <span>Rows Per Page</span>
                   <select name="page_size" defaultValue={String(result.page_size)}>
                     {[25, 50, 100, 200].map((size) => (
                       <option key={size} value={size}>
@@ -239,7 +238,7 @@ export default async function DataPage({
                   return (
                     <div key={index} className="filter-row">
                       <select name={`f${index}_column`} defaultValue={current?.column ?? ""}>
-                        <option value="">{isZh ? `Filter ${index} 欄位` : `Filter ${index} Column`}</option>
+                        <option value="">{`Filter ${index} Column`}</option>
                         {dataset.columns.map((column) => (
                           <option key={column.name} value={column.name}>
                             {column.name}
@@ -247,22 +246,22 @@ export default async function DataPage({
                         ))}
                       </select>
                       <select name={`f${index}_operator`} defaultValue={current?.operator ?? ""}>
-                        <option value="">{isZh ? "條件" : "Operator"}</option>
+                        <option value="">Operator</option>
                         <option value="eq">=</option>
                         <option value="neq">!=</option>
                         <option value="gt">&gt;</option>
                         <option value="gte">&gt;=</option>
                         <option value="lt">&lt;</option>
                         <option value="lte">&lt;=</option>
-                        <option value="between">{isZh ? "區間" : "Between"}</option>
-                        <option value="contains">{isZh ? "包含" : "Contains"}</option>
-                        <option value="starts_with">{isZh ? "前綴" : "Starts With"}</option>
-                        <option value="ends_with">{isZh ? "後綴" : "Ends With"}</option>
-                        <option value="is_null">{isZh ? "為空" : "Is Null"}</option>
-                        <option value="not_null">{isZh ? "非空" : "Not Null"}</option>
+                        <option value="between">Between</option>
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts With</option>
+                        <option value="ends_with">Ends With</option>
+                        <option value="is_null">Is Null</option>
+                        <option value="not_null">Not Null</option>
                       </select>
-                      <input type="text" name={`f${index}_value`} defaultValue={current?.value ?? ""} placeholder={isZh ? "值" : "Value"} />
-                      <input type="text" name={`f${index}_value_to`} defaultValue={current?.value_to ?? ""} placeholder={isZh ? "第二值 / 區間上限" : "Second Value / Upper Bound"} />
+                      <input type="text" name={`f${index}_value`} defaultValue={current?.value ?? ""} placeholder="Value" />
+                      <input type="text" name={`f${index}_value_to`} defaultValue={current?.value_to ?? ""} placeholder="Second Value / Upper Bound" />
                     </div>
                   );
                 })}
@@ -283,30 +282,28 @@ export default async function DataPage({
 
               <div className="action-row explorer-actions">
                 <button className="action-button" type="submit">
-                  {isZh ? "套用查詢" : "Apply Query"}
+                  Apply Query
                 </button>
                 <a href={`/data?dataset=${dataset.key}`} className="action-button secondary-button">
-                  {isZh ? "重設" : "Reset"}
+                  Reset
                 </a>
                 <a href={pageHref({ ...paginationBase, page: 1, exportFormat: "csv" })} className="action-button secondary-button">
-                  {isZh ? "匯出 CSV" : "Export CSV"}
+                  Export CSV
                 </a>
                 <a href={pageHref({ ...paginationBase, page: 1, exportFormat: "parquet" })} className="action-button secondary-button">
-                  {isZh ? "匯出 Parquet" : "Export Parquet"}
+                  Export Parquet
                 </a>
               </div>
 
               <p className="panel-copy">
-                {isZh
-                  ? `匯出上限為 ${formatNumber(result.max_export_rows, user.locale)} 筆。若要匯出更多，先縮小條件。`
-                  : `Exports are capped at ${formatNumber(result.max_export_rows, user.locale)} rows. Narrow the query first if you need more.`}
+                {`Exports are capped at ${formatNumber(result.max_export_rows, user.locale)} rows. Narrow the query first if you need more.`}
               </p>
             </form>
           </Panel>
 
           <Panel
-            title={isZh ? "Result Table" : "Result Table"}
-            aside={<span className="pill">{formatNumber(result.filtered_rows, user.locale)} {isZh ? "筆" : "rows"}</span>}
+            title="Result Table"
+            aside={<span className="pill">{formatNumber(result.filtered_rows, user.locale)} rows</span>}
           >
             <div className="status-meta">
               <span className="status-meta-item query-execution-note">
@@ -314,17 +311,17 @@ export default async function DataPage({
               </span>
               <span className="status-meta-separator">•</span>
               <span className="status-meta-item">
-                <span className="status-meta-label">{isZh ? "搜尋" : "Search"}</span>
+                <span className="status-meta-label">Search</span>
                 <span className="status-meta-value">{result.search || "—"}</span>
               </span>
               <span className="status-meta-separator">•</span>
               <span className="status-meta-item">
-                <span className="status-meta-label">{isZh ? "排序" : "Sort"}</span>
+                <span className="status-meta-label">Sort</span>
                 <span className="status-meta-value">{result.sort_by} / {result.sort_dir}</span>
               </span>
               <span className="status-meta-separator">•</span>
               <span className="status-meta-item status-meta-columns">
-                <span className="status-meta-label">{isZh ? "欄位" : "Columns"}</span>
+                <span className="status-meta-label">Columns</span>
                 <span className="status-meta-value">{result.selected_columns.join(", ") || "—"}</span>
               </span>
             </div>
@@ -340,17 +337,17 @@ export default async function DataPage({
                 className={`action-button secondary-button ${result.page <= 1 ? "button-disabled" : ""}`}
                 aria-disabled={result.page <= 1}
               >
-                {isZh ? "上一頁" : "Previous"}
+                Previous
               </a>
               <span className="pill">
-                {isZh ? "第" : "Page"} {result.page} / {result.total_pages}
+                Page {result.page} / {result.total_pages}
               </span>
               <a
                 href={pageHref({ ...paginationBase, page: Math.min(result.total_pages, result.page + 1) })}
                 className={`action-button secondary-button ${result.page >= result.total_pages ? "button-disabled" : ""}`}
                 aria-disabled={result.page >= result.total_pages}
               >
-                {isZh ? "下一頁" : "Next"}
+                Next
               </a>
             </div>
           </Panel>

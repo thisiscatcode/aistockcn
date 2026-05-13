@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 from typing import Any
 
 from docker.errors import DockerException, NotFound
@@ -16,46 +15,6 @@ from app.services.model import get_model_overview
 from app.services.paper import get_paper_trading_status
 
 STEP_LOG_TAIL = 24
-
-
-STEP1_LOG_TRANSLATIONS: tuple[tuple[str, str], ...] = (
-    (r"^请求失败，([0-9.]+) 秒后重试 \((\d+)/(\d+)\): (.+)$", r"Request failed, retrying in \1s (\2/\3): \4"),
-    (r"^Baostock 会话已失效，正在自动重新登录\.\.\.$", r"Baostock session expired, re-authenticating..."),
-    (r"^正在通过 Baostock 获取全市场 A 股名单，交易日: (.+)\.\.\.$", r"Fetching full A-share universe from Baostock, trade date: \1..."),
-    (r"^(.+) 返回空股票列表，回退到更早交易日继续尝试。$", r"\1 returned an empty stock list, falling back to an earlier trade date."),
-    (r"^(.+) 过滤后无有效 A 股列表，回退到更早交易日继续尝试。$", r"\1 returned no investable A-shares after filtering, falling back to an earlier trade date."),
-    (r"^正在通过 Baostock 获取沪深300成分股名单\.\.\.$", r"Fetching CSI 300 constituents from Baostock..."),
-    (r"^行业补全已启用：当前已知行业 (\d+)/(\d+)，待补 (\d+)。$", r"Industry enrichment enabled: \1/\2 industries already known, \3 to fill."),
-    (r"^\[stock_list (\d+)/(\d+)\] 正在通过 Baostock 补充行业信息: (\d+)$", r"[stock_list \1/\2] Filling industry metadata from Baostock: \3"),
-    (r"^补充 (\d+) 行业信息失败: (.+)$", r"Failed to fill industry metadata for \1: \2"),
-    (r"^行业补全完成：已知行业 (\d+)/(\d+)，仍缺失 (\d+)。$", r"Industry enrichment finished: \1/\2 industries known, \3 still missing."),
-    (r"^行业补全已跳过：当前已知行业 (\d+)/(\d+)，缺失 (\d+)。如需恢复 industry 特征，请启用 --include-industry。$", r"Industry enrichment skipped: \1/\2 industries known, \3 missing. Enable --include-industry to restore the industry feature."),
-    (r"^活跃股票池已保存至 (.+)，共 (\d+) 只股票。$", r"Active universe saved to \1, \2 stocks."),
-    (r"^主注册表已保存至 (.+)，共 (\d+) 只股票。$", r"Master registry saved to \1, \2 stocks."),
-    (r"^股票池同步结果: 新增 (\d+)，恢复 (\d+)，停用 (\d+)$", r"Universe sync result: added \1, reactivated \2, deactivated \3"),
-    (r"^全市场股票数: (\d+)$", r"Full-market stock count: \1"),
-    (r"^已完成: (\d+)$", r"Completed: \1"),
-    (r"^状态文件: (.+)$", r"State file: \1"),
-    (r"^开始第 (\d+)/(\d+) 轮，待处理股票数: (\d+)$", r"Starting pass \1/\2, pending stocks: \3"),
-    (r"^\[pass (\d+) (\d+)/(\d+)\] 下载 (\d+)，尝试次数 (\d+)/(\d+)$", r"[pass \1 \2/\3] Downloading \4, attempt \5/\6"),
-    (r"^达到重新登录阈值，重连 Baostock\.\.\.$", r"Reached re-login threshold, reconnecting to Baostock..."),
-    (r"^(\d{6}) 完成，提醒: (.+)$", r"\1 completed, note: \2"),
-    (r"^(\d{6}) 完成$", r"\1 completed"),
-    (r"^(\d{6}) 失败: (.+)$", r"\1 failed: \2"),
-    (r"^第 (\d+) 轮结束，累计完成 (\d+)/(\d+)，剩余待重试 (\d+)$", r"Pass \1 finished, completed \2/\3, remaining for retry: \4"),
-    (r"^暂停 ([0-9.]+) 分钟后进入下一轮\.\.\.$", r"Pausing \1 minutes before the next pass..."),
-)
-
-STEP2_LOG_TRANSLATIONS: tuple[tuple[str, str], ...] = (
-    (r"^stock_list\.parquet 缺少 exchange 列，请先重新运行 download_data\.py 刷新股票列表。$", r"stock_list.parquet is missing the exchange column. Re-run download_data.py to refresh the stock list."),
-    (r"^没有可用的 K 线/估值 parquet 可合并。$", r"No K-line / valuation parquet files are available to merge."),
-    (r"^已处理 (\d+)/(\d+) 只股票，当前累计 (\d+) 只进入训练集，(\d+) 行。$", r"Processed \1/\2 stocks, \3 included in training so far, \4 rows."),
-    (r"^没有生成任何可用训练样本。$", r"No usable training samples were generated."),
-    (r"^原始面板数据维度: \((.+)\)$", r"Raw panel shape: (\1)"),
-    (r"^特征工程完成，可训练数据维度: \((.+)\)$", r"Feature engineering completed, trainable shape: (\1)"),
-    (r"^输出文件: (.+)$", r"Output file: \1"),
-    (r"^特征元数据文件: (.+)$", r"Feature metadata file: \1"),
-)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -268,20 +227,7 @@ def _resolve_log_payload(
     return {"source": "none", "path": None, "updated_at": None, "lines": []}
 
 
-def _translate_log_line(line: str, translations: tuple[tuple[str, str], ...]) -> str:
-    text = translate_log_line(line)
-    for pattern, replacement in translations:
-        translated = re.sub(pattern, replacement, text)
-        if translated != text:
-            return translated
-    return text
-
-
 def _display_log_lines(*, step: int, key: str, lines: list[str]) -> list[str]:
-    if step == 1 or key == "data_prepare":
-        return [_translate_log_line(line, STEP1_LOG_TRANSLATIONS) for line in lines]
-    if step == 2 or key == "feature_engineering":
-        return [_translate_log_line(line, STEP2_LOG_TRANSLATIONS) for line in lines]
     return translate_log_lines(lines)
 
 

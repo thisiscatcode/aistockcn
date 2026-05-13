@@ -82,7 +82,7 @@ function cleanBrokerMessage(value: unknown): string | null {
   if (!text) {
     return null;
   }
-  if (text.includes("涨跌停") || text.toLowerCase().includes("price outside")) {
+  if (text.includes("\u6da8\u8dcc\u505c") || text.toLowerCase().includes("price outside")) {
     return "Price outside CN daily limit band";
   }
   if (/HTTP\s+\d{3}/i.test(text) || text.toLowerCase().includes("gateway")) {

@@ -122,11 +122,11 @@ def main() -> int:
 
     unique_dates = pd.Index(pd.unique(date_values[~pd.isna(date_values)]))
     if len(unique_dates) <= args.min_train_days:
-        raise SystemExit("交易日数量不足，无法启动 walk-forward 回测。")
+        raise SystemExit("Not enough trading days to start walk-forward backtest.")
 
     rebalance_dates = unique_dates[args.min_train_days :: args.rebalance_every]
     if len(rebalance_dates) == 0:
-        raise SystemExit("没有可用于回测的调仓日期。")
+        raise SystemExit("No rebalance dates are available for backtesting.")
 
     prediction_path = output_dir / "oos_predictions.parquet"
     trade_log_path = output_dir / "trade_log.parquet"
@@ -224,7 +224,7 @@ def main() -> int:
         trade_log_writer.close()
 
     if not metric_label_chunks or not equity_rows:
-        raise SystemExit("回测没有生成任何预测结果。")
+        raise SystemExit("Backtest produced no predictions.")
 
     metric_labels = np.concatenate(metric_label_chunks)
     metric_scores = np.concatenate(metric_score_chunks)
@@ -271,7 +271,7 @@ def main() -> int:
     equity_tmp_path.replace(equity_path)
     summary_tmp_path.replace(summary_path)
 
-    print("严格 OOS 回测完成。")
+    print("Strict OOS backtest completed.")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(equity_df.tail(10).to_string(index=False))
     return 0

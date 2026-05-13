@@ -199,7 +199,7 @@ const messages: Messages = {
     password: "Password",
     submit: "Enter Dashboard",
     error: "Invalid username or password.",
-    accountHint: "Replace the sample users and password hashes before exposing the panel to anyone else."
+    accountHint: "Replace the configured users and password hashes before exposing the panel to anyone else."
   },
   shell: {
     signedInAs: "Signed in as",

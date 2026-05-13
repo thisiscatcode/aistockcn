@@ -311,13 +311,13 @@ def refresh_stock_list(
         registry_df=registry_df,
         active_df=active_df,
     )
-    print(f"活跃股票池已保存至 {stock_list_path}，共 {len(active_df)} 只股票。")
-    print(f"主注册表已保存至 {registry_path}，共 {len(registry_df)} 只股票。")
+    print(f"Active universe saved to {stock_list_path}, {len(active_df)} stocks.")
+    print(f"Master registry saved to {registry_path}, {len(registry_df)} stocks.")
     print(
-        "股票池同步结果: "
-        f"新增 {sync_summary['new_count']}，"
-        f"恢复 {sync_summary['reactivated_count']}，"
-        f"停用 {sync_summary['deactivated_count']}"
+        "Universe sync result: "
+        f"added {sync_summary['new_count']}, "
+        f"reactivated {sync_summary['reactivated_count']}, "
+        f"deactivated {sync_summary['deactivated_count']}"
     )
     return active_df, trade_date
 
@@ -463,14 +463,14 @@ def run_batch(args: argparse.Namespace) -> int:
             state["last_code"] = ""
         save_state(state_path, state)
 
-        print(f"全市场股票数: {len(codes)}")
-        print(f"已完成: {len(state['done_codes'])}")
-        print(f"状态文件: {state_path}")
+        print(f"Full-market stock count: {len(codes)}")
+        print(f"Completed: {len(state['done_codes'])}")
+        print(f"State file: {state_path}")
 
         for pass_index in range(state["pass_index"], args.max_passes):
             state["pass_index"] = pass_index
             todo = pending_codes(codes, state, args.max_attempts)
-            print(f"开始第 {pass_index + 1}/{args.max_passes} 轮，待处理股票数: {len(todo)}")
+            print(f"Starting pass {pass_index + 1}/{args.max_passes}, pending stocks: {len(todo)}")
             if not todo:
                 # No remaining work means either everything succeeded or all
                 # symbols were already current before this pass started.
@@ -481,14 +481,14 @@ def run_batch(args: argparse.Namespace) -> int:
                 state["attempts"][code] = int(state["attempts"].get(code, 0)) + 1
                 print(
                     f"[pass {pass_index + 1} {idx}/{len(todo)}] "
-                    f"下载 {code}，尝试次数 {state['attempts'][code]}/{args.max_attempts}"
+                    f"Downloading {code}, attempt {state['attempts'][code]}/{args.max_attempts}"
                 )
 
                 if processed_since_login >= args.relogin_every:
                     # Long Baostock sessions occasionally become unreliable, so
                     # we proactively refresh the session after a fixed amount of
                     # work instead of waiting for a hard failure.
-                    print("达到重新登录阈值，重连 Baostock...")
+                    print("Reached re-login threshold, reconnecting to Baostock...")
                     baostock_logout()
                     time.sleep(2.0)
                     baostock_login()
@@ -517,10 +517,10 @@ def run_batch(args: argparse.Namespace) -> int:
                         state["done_codes"].append(code)
                         state["done_codes"] = sorted(set(normalize_codes(state["done_codes"])))
                     state["failed_codes"].pop(code, None)
-                    print(f"{code} 完成" + (f"，提醒: {reason}" if reason else ""))
+                    print(f"{code} completed" + (f", note: {reason}" if reason else ""))
                 else:
                     state["failed_codes"][code] = reason or "unknown"
-                    print(f"{code} 失败: {reason}")
+                    print(f"{code} failed: {reason}")
 
                 # Persist after every symbol so the control panel and any
                 # resumed run can continue from nearly the exact last point.
@@ -529,15 +529,15 @@ def run_batch(args: argparse.Namespace) -> int:
 
             remaining = pending_codes(codes, state, args.max_attempts)
             print(
-                f"第 {pass_index + 1} 轮结束，累计完成 {len(state['done_codes'])}/{len(codes)}，"
-                f"剩余待重试 {len(remaining)}"
+                f"Pass {pass_index + 1} finished, completed {len(state['done_codes'])}/{len(codes)}, "
+                f"remaining for retry: {len(remaining)}"
             )
             save_state(state_path, state)
             if remaining and pass_index < args.max_passes - 1:
                 # Give transient provider/network problems time to settle
                 # before attempting the remaining symbols again.
                 pause_seconds = max(args.pause_minutes, 0.0) * 60.0
-                print(f"暂停 {args.pause_minutes} 分钟后进入下一轮...")
+                print(f"Pausing {args.pause_minutes} minutes before the next pass...")
                 time.sleep(pause_seconds)
 
         remaining = pending_codes(codes, state, args.max_attempts)

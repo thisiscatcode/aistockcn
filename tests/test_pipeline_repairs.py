@@ -15,10 +15,12 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from batch_download_all_a import merge_existing_output
+from backtest_walk_forward import annualized_return, max_drawdown
 from build_inference_features import build_inference_frame
 from download_data import build_valuation_df
 from app.services import batch as batch_service
 from app.services import source_readiness
+from app.services.log_translation import translate_log_line
 
 
 class PipelineRepairTests(unittest.TestCase):
@@ -200,6 +202,38 @@ class PipelineRepairTests(unittest.TestCase):
 
         self.assertFalse(status["is_stalled"])
         self.assertEqual(status["state_file_updated_at"], status["last_activity_at"])
+
+    def test_backtest_metric_helpers_report_drawdown_and_annualized_return(self) -> None:
+        equity = pd.Series([1.0, 1.2, 0.9, 1.5])
+        dates = pd.Series(pd.to_datetime(["2025-01-01", "2025-04-01", "2025-07-01", "2026-01-01"]))
+
+        self.assertAlmostEqual(max_drawdown(equity), -0.25)
+        self.assertGreater(annualized_return(equity, dates), 0.45)
+
+    def test_legacy_provider_logs_are_translated_before_display(self) -> None:
+        line = "\u8bf7\u6c42\u5931\u8d25\uff0c1.0 \u79d2\u540e\u91cd\u8bd5 (1/3): timeout"
+
+        self.assertEqual(translate_log_line(line), "Request failed, retrying in 1.0s (1/3): timeout")
+
+    def test_public_ui_sources_are_english_only(self) -> None:
+        checked_roots = [ROOT / "apps" / "web" / "app", ROOT / "apps" / "web" / "lib"]
+        offenders: list[str] = []
+        for root in checked_roots:
+            for path in root.rglob("*.ts*"):
+                text = path.read_text(encoding="utf-8")
+                if any("\u4e00" <= char <= "\u9fff" for char in text):
+                    offenders.append(str(path.relative_to(ROOT)))
+
+        self.assertEqual(offenders, [])
+
+    def test_results_doc_uses_aggregate_metrics_only(self) -> None:
+        results_doc = (ROOT / "docs" / "RESULTS.md").read_text(encoding="utf-8")
+
+        self.assertIn("Production Research Results", results_doc)
+        self.assertIn("Validation AUC", results_doc)
+        self.assertIn("Walk-Forward OOS Backtest", results_doc)
+        self.assertNotIn("FUTU_GATEWAY", results_doc)
+        self.assertNotIn("account_id", results_doc.lower())
 
 
 if __name__ == "__main__":
