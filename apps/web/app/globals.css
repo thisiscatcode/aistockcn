@@ -1701,6 +1701,62 @@ select {
   padding: 12px;
 }
 
+.admin-single-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.admin-metrics-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.admin-metrics-list .metric-card {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(92px, 0.45fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+}
+
+.admin-metrics-list .metric-label,
+.admin-metrics-list .metric-value,
+.admin-metrics-list .metric-hint {
+  margin: 0;
+}
+
+.admin-metrics-list .metric-label {
+  font-size: 0.72rem;
+}
+
+.admin-metrics-list .metric-value {
+  font-size: 1.08rem;
+}
+
+.admin-metrics-list .metric-hint {
+  font-size: 0.78rem;
+}
+
+.admin-single-grid .panel,
+.admin-single-grid .workflow-step-card,
+.admin-single-grid .catalog-panel {
+  padding: 12px;
+}
+
+.admin-single-grid .panel-header {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.admin-single-grid .status-meta {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+}
+
+.admin-single-grid .log-console {
+  max-height: 220px;
+}
+
 .control-center-grid .panel-header {
   align-items: center;
   gap: 8px;
@@ -2295,6 +2351,10 @@ select {
 
   .model-profile-selector {
     width: 100%;
+  }
+
+  .admin-metrics-list .metric-card {
+    grid-template-columns: 1fr;
   }
 
   .feature-chart-row {

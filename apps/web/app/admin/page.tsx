@@ -110,7 +110,7 @@ export default async function AdminPage() {
       role={user.role}
     >
       <AutoRefresh intervalSeconds={15} />
-      <section className="metrics-grid">
+      <section className="metrics-grid admin-metrics-list">
         <MetricCard label="Active Universe" value={formatNumber(data.active_stock_count, user.locale)} hint="stock_list.parquet" />
         <MetricCard label="Registry History" value={formatNumber(data.registry_stock_count, user.locale)} hint="stock_registry.parquet" />
         <MetricCard label="Raw File Pairs" value={formatNumber(data.paired_file_count, user.locale)} hint={`${formatNumber(data.kline_file_count, user.locale)} kline / ${formatNumber(data.valuation_file_count, user.locale)} valuation`} />
@@ -122,7 +122,7 @@ export default async function AdminPage() {
         <MetricCard label="Backtest OOS AUC" value={formatMetric(backtestMetrics.auc, user.locale)} hint={`${formatNumber(backtestCodes, user.locale)} codes`} />
       </section>
 
-      <section className="two-col-grid">
+      <section className="two-col-grid admin-single-grid">
         <Panel title={admin.labels.runtime} aside={<span className={`pill ${status.is_running ? "live" : ""}`}>{status.is_running ? copy.common.live : copy.common.idle}</span>}>
           <div className="status-meta">
             <span>{copy.common.lastStateUpdate}: {formatDateTime(status.updated_at, user.locale)}</span>
@@ -207,7 +207,7 @@ export default async function AdminPage() {
         title="Workflow Live Monitor"
         aside={<span className="pill">{formatDateTime(workflow.generated_at, user.locale)}</span>}
       >
-        <div className="workflow-runtime-grid">
+        <div className="workflow-runtime-grid admin-single-grid">
           {admin.workflowSteps.map((step) => {
             const runtime = runtimeByStep.get(step.step);
             return (
@@ -256,7 +256,7 @@ export default async function AdminPage() {
       </Panel>
 
       <Panel title={admin.labels.workflow}>
-        <div className="workflow-grid">
+        <div className="workflow-grid admin-single-grid">
           {admin.workflowSteps.map((step) => (
             <section key={step.step} className="workflow-step-card">
               <p className="workflow-step-kicker">Step {step.step}</p>
@@ -275,7 +275,7 @@ export default async function AdminPage() {
       </Panel>
 
       <Panel title={admin.labels.catalog}>
-        <div className="catalog-grid">
+        <div className="catalog-grid admin-single-grid">
           {admin.fieldSections.map((section) => (
             <section key={section.key} className="catalog-panel">
               <div className="stack">
