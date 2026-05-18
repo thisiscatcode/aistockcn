@@ -159,12 +159,18 @@ function BacktestControls({
   canStart,
   canStop,
   isPipelineRunning,
+  pipelineStepLabel,
+  batchProgressLabel,
+  batchLastCode,
   profiles
 }: {
   isAdmin: boolean;
   canStart: boolean;
   canStop: boolean;
   isPipelineRunning: boolean;
+  pipelineStepLabel?: string | null;
+  batchProgressLabel?: string;
+  batchLastCode?: string | null;
   profiles: Array<Record<string, unknown>>;
 }) {
   if (!isAdmin) {
@@ -186,7 +192,11 @@ function BacktestControls({
   }
 
   if (isPipelineRunning) {
-    return <p className="panel-copy status-warn">Daily pipeline is running. Stop it before starting a single backtest manually.</p>;
+    return (
+      <p className="panel-copy status-warn">
+        {`${pipelineStepLabel || "Daily pipeline"} is running${batchProgressLabel ? ` (${batchProgressLabel}` : ""}${batchLastCode ? `, last code ${batchLastCode}` : ""}${batchProgressLabel ? ")" : ""}. Backtest unlocks when it finishes or the daily pipeline is stopped.`}
+      </p>
+    );
   }
 
   if (!canStart) {
@@ -289,6 +299,9 @@ export default async function BatchPage({
   const runtimeByStep = new Map(workflow.steps.map((step) => [step.step, step]));
   const runningSteps = workflow.steps.filter((step) => step.is_running).length;
   const completedStepsLabel = pipeline.completed_steps.map((key) => stepLabels[key] ?? key).join(" -> ");
+  const batchProgressLabel = typeof batchStatus.progress_pct === "number"
+    ? `${formatNumber(batchStatus.done_count, user.locale)}/${formatNumber(batchStatus.total_codes, user.locale)} · ${formatNumber(batchStatus.progress_pct, user.locale, { maximumFractionDigits: 1 })}%`
+    : `${formatNumber(batchStatus.done_count, user.locale)}/${formatNumber(batchStatus.total_codes, user.locale)}`;
   const stepCards = [
     {
       key: "step1",
@@ -439,6 +452,9 @@ export default async function BatchPage({
                   canStart={card.canStart}
                   canStop={card.canStop}
                   isPipelineRunning={pipeline.is_running}
+                  pipelineStepLabel={pipeline.current_step_label}
+                  batchProgressLabel={batchStatus.is_running ? batchProgressLabel : undefined}
+                  batchLastCode={batchStatus.is_running ? batchStatus.last_code : null}
                   profiles={modelProfiles}
                 />
               ) : renderControlButtons({
