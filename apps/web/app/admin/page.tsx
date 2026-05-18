@@ -110,7 +110,7 @@ export default async function AdminPage() {
       role={user.role}
     >
       <AutoRefresh intervalSeconds={15} />
-      <section className="metrics-grid admin-metrics-list">
+      <section className="metrics-grid">
         <MetricCard label="Active Universe" value={formatNumber(data.active_stock_count, user.locale)} hint="stock_list.parquet" />
         <MetricCard label="Registry History" value={formatNumber(data.registry_stock_count, user.locale)} hint="stock_registry.parquet" />
         <MetricCard label="Raw File Pairs" value={formatNumber(data.paired_file_count, user.locale)} hint={`${formatNumber(data.kline_file_count, user.locale)} kline / ${formatNumber(data.valuation_file_count, user.locale)} valuation`} />
@@ -256,7 +256,7 @@ export default async function AdminPage() {
       </Panel>
 
       <Panel title={admin.labels.workflow}>
-        <div className="workflow-grid admin-single-grid">
+        <div className="workflow-grid">
           {admin.workflowSteps.map((step) => (
             <section key={step.step} className="workflow-step-card">
               <p className="workflow-step-kicker">Step {step.step}</p>
