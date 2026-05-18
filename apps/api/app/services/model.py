@@ -50,7 +50,12 @@ def _parquet_date_max(path: Path, *, column: str) -> str | None:
     return pd.Timestamp(date_series.max()).date().isoformat()
 
 
-def _enrich_backtest_profile(summary: dict[str, Any], profiles: list[dict[str, Any]]) -> dict[str, Any]:
+def _enrich_backtest_profile(
+    summary: dict[str, Any],
+    profiles: list[dict[str, Any]],
+    *,
+    fallback_to_first: bool = True,
+) -> dict[str, Any]:
     if not summary:
         return {}
     if summary.get("profile_name") and summary.get("profile_label"):
@@ -66,7 +71,7 @@ def _enrich_backtest_profile(summary: dict[str, Any], profiles: list[dict[str, A
         ):
             candidate = profile
             break
-    if candidate is None and profiles:
+    if candidate is None and profiles and fallback_to_first:
         candidate = profiles[0]
     if candidate is None:
         return summary
@@ -75,6 +80,38 @@ def _enrich_backtest_profile(summary: dict[str, Any], profiles: list[dict[str, A
     enriched.setdefault("profile_name", candidate.get("name"))
     enriched.setdefault("profile_label", candidate.get("label"))
     return enriched
+
+
+def _profile_name(value: Any) -> str | None:
+    profile_name = str(value or "").strip()
+    return profile_name or None
+
+
+def _profile_label(profile_name: str | None, profiles: list[dict[str, Any]]) -> str | None:
+    if not profile_name:
+        return None
+    for profile in profiles:
+        if profile.get("name") == profile_name:
+            return str(profile.get("label") or profile_name)
+    return profile_name
+
+
+def _backtest_summary_for_profile(profile_name: str | None, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    if not profile_name:
+        return {}
+
+    settings = get_settings()
+    runs_dir = settings.backtests_dir / "runs"
+    candidate_paths = list(runs_dir.glob("*/summary.json"))
+    latest_path = settings.backtests_dir / "summary.json"
+    if latest_path.exists():
+        candidate_paths.append(latest_path)
+    summary_files = sorted(set(candidate_paths), key=lambda path: path.stat().st_mtime, reverse=True)
+    for summary_path in summary_files:
+        summary = _enrich_backtest_profile(read_json(summary_path), profiles, fallback_to_first=False)
+        if _profile_name(summary.get("profile_name")) == profile_name:
+            return summary
+    return {}
 
 
 def _backtest_run_rows() -> list[dict[str, Any]]:
@@ -134,16 +171,23 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
     return []
 
 
-def get_model_overview() -> dict[str, Any]:
+def get_model_overview(profile_name: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     metadata = read_json(settings.models_dir / "training_metadata.json")
     profile_catalog = get_model_profile_catalog()
-    backtest = _enrich_backtest_profile(read_json(settings.backtests_dir / "summary.json"), profile_catalog["profiles"])
+    training_profile = _profile_name(metadata.get("profile_name")) or profile_catalog["default_profile"]
+    profile_names = {profile["name"] for profile in profile_catalog["profiles"]}
+    selected_profile = _profile_name(profile_name)
+    if selected_profile not in profile_names:
+        selected_profile = training_profile
+    selected_profile_label = _profile_label(selected_profile, profile_catalog["profiles"])
+    selected_training = metadata if selected_profile == training_profile else {}
+    backtest = _backtest_summary_for_profile(selected_profile, profile_catalog["profiles"])
     importance_df = _safe_read_csv(settings.models_dir / "feature_importance.csv")
     backtest_runs = _backtest_run_rows()
 
     top_features: list[dict[str, Any]] = []
-    if not importance_df.empty:
+    if selected_profile == training_profile and not importance_df.empty:
         columns = [col for col in ["feature", "importance_gain", "importance_split"] if col in importance_df.columns]
         top_features = records_to_json(
             importance_df[columns]
@@ -153,7 +197,10 @@ def get_model_overview() -> dict[str, Any]:
         )
 
     return {
-        "training_metadata": metadata,
+        "current_profile": selected_profile,
+        "current_profile_label": selected_profile_label,
+        "training_profile": training_profile,
+        "training_metadata": selected_training,
         "backtest_summary": backtest,
         "backtest_runs": backtest_runs,
         "model_profiles": profile_catalog["profiles"],

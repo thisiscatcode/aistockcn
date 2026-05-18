@@ -132,8 +132,12 @@ type Messages = {
     validRows: string;
     validationMetric: string;
     thresholdValidation: string;
+    currentView: string;
+    profile: string;
     trainingSnapshot: string;
     backtestSnapshot: string;
+    noMatchingBacktest: string;
+    latestBacktestDifferentProfile: string;
     topFeatureImportance: string;
     features: string;
     categoricals: string;
@@ -321,8 +325,12 @@ const messages: Messages = {
     validRows: "Valid Rows",
     validationMetric: "Validation metric",
     thresholdValidation: "Threshold-based validation",
+    currentView: "Currently viewing model",
+    profile: "Profile",
     trainingSnapshot: "Training Snapshot",
     backtestSnapshot: "Backtest Snapshot",
+    noMatchingBacktest: "No matching backtest snapshot for this model profile.",
+    latestBacktestDifferentProfile: "Latest saved backtest belongs to a different profile and is shown only in Backtest Comparison below.",
     topFeatureImportance: "Top Feature Importance",
     features: "Features",
     categoricals: "Categoricals",

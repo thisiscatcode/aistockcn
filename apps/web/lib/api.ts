@@ -297,6 +297,9 @@ export type StockDetail = {
 };
 
 export type ModelOverview = {
+  current_profile?: string | null;
+  current_profile_label?: string | null;
+  training_profile?: string | null;
   training_metadata?: Record<string, unknown>;
   backtest_summary?: Record<string, unknown>;
   backtest_runs?: Array<Record<string, unknown>>;
@@ -505,8 +508,9 @@ export function getStockDetail(code: string) {
   return fetchJson<StockDetail>(`/api/data/stock/${code}`);
 }
 
-export function getModelOverview() {
-  return fetchJson<ModelOverview>("/api/model/latest");
+export function getModelOverview(profile?: string) {
+  const query = profile ? `?profile=${encodeURIComponent(profile)}` : "";
+  return fetchJson<ModelOverview>(`/api/model/latest${query}`);
 }
 
 export function getPicks(limit = 25) {

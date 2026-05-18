@@ -8,8 +8,8 @@ router = APIRouter(prefix="/api/model", tags=["model"])
 
 
 @router.get("/latest")
-def model_latest() -> dict[str, object]:
-    return get_model_overview()
+def model_latest(profile: str | None = None) -> dict[str, object]:
+    return get_model_overview(profile_name=profile)
 
 
 @router.get("/picks")

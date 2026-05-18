@@ -154,6 +154,72 @@ function renderControlButtons({
   );
 }
 
+function BacktestControls({
+  isAdmin,
+  canStart,
+  canStop,
+  isPipelineRunning,
+  profiles
+}: {
+  isAdmin: boolean;
+  canStart: boolean;
+  canStop: boolean;
+  isPipelineRunning: boolean;
+  profiles: Array<Record<string, unknown>>;
+}) {
+  if (!isAdmin) {
+    return <p className="panel-copy status-warn">Backtest controls are available only to admin accounts.</p>;
+  }
+
+  if (canStop) {
+    return (
+      <div className="action-row">
+        <form action="/batch/control" method="post">
+          <input type="hidden" name="target" value="step5" />
+          <input type="hidden" name="action" value="stop" />
+          <button className="action-button danger-button" type="submit">
+            Stop Backtest
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (isPipelineRunning) {
+    return <p className="panel-copy status-warn">Daily pipeline is running. Stop it before starting a single backtest manually.</p>;
+  }
+
+  if (!canStart) {
+    return <p className="panel-copy status-warn">Backtest is not available right now. Refresh the page after the current step finishes.</p>;
+  }
+
+  if (!profiles.length) {
+    return <p className="panel-copy status-warn">No model profiles are configured for backtesting.</p>;
+  }
+
+  return (
+    <div className="action-row">
+      {profiles.map((profile) => {
+        const profileName = String(profile.name ?? "").trim();
+        const profileLabel = String(profile.label ?? profileName).trim() || profileName;
+        if (!profileName) {
+          return null;
+        }
+        return (
+          <form key={profileName} action="/batch/control" method="post">
+            <input type="hidden" name="target" value="step5" />
+            <input type="hidden" name="action" value="start" />
+            <input type="hidden" name="profile" value={profileName} />
+            <button className="auth-submit action-button" type="submit">
+              {`Backtest ${profileLabel}`}
+            </button>
+          </form>
+        );
+      })}
+    </div>
+  );
+}
+
 function InfoRow({
   label,
   value
@@ -368,36 +434,13 @@ export default async function BatchPage({
               </div>
               <WarningList warnings={card.runtime?.warnings ?? []} />
               {card.key === "step5" ? (
-                <div className="action-row">
-                  {isAdmin && card.canStart
-                    ? modelProfiles.map((profile) => {
-                        const profileName = String(profile.name ?? "").trim();
-                        const profileLabel = String(profile.label ?? profileName).trim() || profileName;
-                        if (!profileName) {
-                          return null;
-                        }
-                        return (
-                          <form key={profileName} action="/batch/control" method="post">
-                            <input type="hidden" name="target" value={card.key} />
-                            <input type="hidden" name="action" value="start" />
-                            <input type="hidden" name="profile" value={profileName} />
-                            <button className="auth-submit action-button" type="submit">
-                              {`Backtest ${profileLabel}`}
-                            </button>
-                          </form>
-                        );
-                      })
-                    : null}
-                  {isAdmin && card.canStop ? (
-                    <form action="/batch/control" method="post">
-                      <input type="hidden" name="target" value={card.key} />
-                      <input type="hidden" name="action" value="stop" />
-                      <button className="action-button danger-button" type="submit">
-                        {card.stopLabel}
-                      </button>
-                    </form>
-                  ) : null}
-                </div>
+                <BacktestControls
+                  isAdmin={isAdmin}
+                  canStart={card.canStart}
+                  canStop={card.canStop}
+                  isPipelineRunning={pipeline.is_running}
+                  profiles={modelProfiles}
+                />
               ) : renderControlButtons({
                 target: card.key,
                 isAdmin,

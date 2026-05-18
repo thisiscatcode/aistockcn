@@ -5,7 +5,7 @@ export function MetricCard({
   value,
   hint
 }: {
-  label: string;
+  label: ReactNode;
   value: ReactNode;
   hint?: string;
 }) {
