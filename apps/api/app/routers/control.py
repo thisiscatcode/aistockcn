@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 from app.config import get_settings
 from app.services.batch import BatchControlError, start_batch, stop_batch
+from app.services.paper import PaperGatewayError, cancel_paper_trading_order
 from app.services.paper_control import start_paper_trading_daemon, stop_paper_trading_daemon
 from app.services.pipeline_control import start_pipeline_run, start_step, stop_pipeline_run, stop_step
 from app.services.reference_control import start_reference_batch, stop_reference_batch
@@ -91,6 +92,15 @@ def paper_stop(x_panel_admin_key: str | None = Header(default=None)) -> dict[str
         return stop_paper_trading_daemon()
     except BatchControlError as exc:
         raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.post("/paper/orders/{order_id}/cancel")
+def paper_order_cancel(order_id: str, x_panel_admin_key: str | None = Header(default=None)) -> dict[str, object]:
+    _require_admin_key(x_panel_admin_key)
+    try:
+        return cancel_paper_trading_order(order_id)
+    except PaperGatewayError as exc:
+        raise HTTPException(status_code=502, detail={"code": "cancel_failed", "message": str(exc)}) from exc
 
 
 @router.post("/reference/start")

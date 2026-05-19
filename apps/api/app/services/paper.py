@@ -103,10 +103,22 @@ class PaperGatewayClient:
             settings.futu_gateway_agent_key_header: settings.futu_gateway_agent_key or "",
         }
 
-    def _request(self, method: str, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         query_params = {key: value for key, value in (params or {}).items() if value is not None and value != ""}
         query = f"?{urlencode(query_params)}" if query_params else ""
-        request = Request(f"{self.base_url}{path}{query}", method=method, headers=self.headers)
+        data = None
+        headers = dict(self.headers)
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = Request(f"{self.base_url}{path}{query}", data=data, method=method, headers=headers)
         try:
             with urlopen(request, timeout=8) as response:
                 body = response.read().decode("utf-8")
@@ -147,6 +159,11 @@ class PaperGatewayClient:
 
     def get_balance(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/v1/balance", params={"market": self.market, "account_id": self.account_id}).get("balance", []))
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        payload = {"market": self.market, "order_id": str(order_id)}
+        response = self._request("POST", "/v1/orders/cancel", params={"account_id": self.account_id}, payload=payload)
+        return dict(response.get("order", response))
 
 
 def _gateway_status(settings: Settings) -> dict[str, Any]:
@@ -331,6 +348,20 @@ def get_paper_trading_orders(*, limit: int = 50) -> dict[str, Any]:
         return {"rows": len(orders), "orders": records_to_json(orders[:limit]), "error": None}
     except PaperGatewayError as exc:
         return {"rows": 0, "orders": [], "error": str(exc)}
+
+
+def cancel_paper_trading_order(order_id: str) -> dict[str, Any]:
+    normalized_order_id = str(order_id or "").strip()
+    if not normalized_order_id:
+        raise PaperGatewayError("missing order id")
+    settings = get_settings()
+    client = PaperGatewayClient(settings)
+    order = client.cancel_order(normalized_order_id)
+    try:
+        client.sync()
+    except PaperGatewayError:
+        pass
+    return {"code": "cancelled_order", "order": records_to_json([order])[0] if order else {}}
 
 
 def get_paper_trading_history(*, limit: int = 50) -> dict[str, Any]:

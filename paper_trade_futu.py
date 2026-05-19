@@ -10,12 +10,13 @@ import sys
 import time
 import traceback
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time as dt_time, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -32,10 +33,15 @@ DEFAULT_TOP_K = 5
 DEFAULT_MIN_SCORE = 0.5
 DEFAULT_LOT_SIZE = 100
 DEFAULT_CASH_BUFFER_PCT = 0.02
-DEFAULT_BUY_LIMIT_BPS = 50.0
-DEFAULT_SELL_LIMIT_BPS = 50.0
 DEFAULT_MAX_ORDER_QTY = 1000
 ORDER_ATTEMPT_INTERVAL_SECONDS = 2.2
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+ACTIVE_TRADING_WINDOWS = (
+    (dt_time(9, 35, 0), dt_time(11, 30, 0)),
+    (dt_time(13, 0, 0), dt_time(14, 55, 0)),
+)
+MARKETABLE_BUY_MULTIPLIER = 1.01
+MARKETABLE_SELL_MULTIPLIER = 0.99
 
 TERMINAL_ORDER_STATUSES = {
     "CANCELLED",
@@ -64,6 +70,21 @@ ORDER_RATE_LIMIT_ERROR_TEXTS = (
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def now_beijing() -> datetime:
+    return datetime.now(BEIJING_TZ)
+
+
+def is_active_trading_hours(moment: datetime | None = None) -> bool:
+    current = moment or now_beijing()
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    beijing = current.astimezone(BEIJING_TZ)
+    if beijing.weekday() >= 5:
+        return False
+    beijing_time = beijing.time()
+    return any(start <= beijing_time <= end for start, end in ACTIVE_TRADING_WINDOWS)
 
 
 def normalize_date_text(value: Any) -> str | None:
@@ -148,12 +169,17 @@ def clamp_non_negative(value: float) -> float:
     return max(float(value), 0.0)
 
 
-def build_price(base_price: float, side: str, *, buy_limit_bps: float, sell_limit_bps: float) -> float:
+def build_reference_price(base_price: float) -> float:
     if base_price <= 0:
         return 0.0
-    if side == "BUY":
-        return round_price(base_price * (1.0 + buy_limit_bps / 10_000.0))
-    return round_price(base_price * (1.0 - sell_limit_bps / 10_000.0))
+    return round_price(base_price)
+
+
+def build_marketable_limit_price(latest_price: float, side: str) -> float:
+    if latest_price <= 0:
+        return 0.0
+    multiplier = MARKETABLE_BUY_MULTIPLIER if side == "BUY" else MARKETABLE_SELL_MULTIPLIER
+    return round_price(latest_price * multiplier)
 
 
 def is_price_limit_error(message: str) -> bool:
@@ -166,18 +192,12 @@ def is_order_rate_limit_error(message: str) -> bool:
     return any(text.lower() in normalized for text in ORDER_RATE_LIMIT_ERROR_TEXTS)
 
 
-def candidate_prices(row: pd.Series, primary_field: str) -> list[float]:
-    prices: list[float] = []
-    for field in [primary_field, "close", "current_last_price", "current_avg_cost"]:
-        if field not in row:
-            continue
-        price = round_price(to_float(row.get(field)))
-        if price <= 0:
-            continue
-        if any(abs(existing - price) < 0.0001 for existing in prices):
-            continue
-        prices.append(price)
-    return prices
+def extract_latest_snapshot_price(snapshot: dict[str, Any]) -> float:
+    for key in ["last_price", "latest_price", "current_price", "price", "nominal_price", "close"]:
+        price = to_float(snapshot.get(key))
+        if price > 0:
+            return price
+    return 0.0
 
 
 def choose_balance_record(records: list[dict[str, Any]], account_id: int | None) -> dict[str, Any]:
@@ -233,8 +253,6 @@ class SyncConfig:
     min_score: float
     lot_size: int
     cash_buffer_pct: float
-    buy_limit_bps: float
-    sell_limit_bps: float
     budget_total: float | None
     max_order_qty: int
     cancel_open_orders: bool
@@ -320,6 +338,30 @@ class GatewayClient:
 
     def get_agent_orders(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/v1/agents/me/orders", params={"market": self.market}).get("orders", []))
+
+    def get_market_snapshot(self, symbol: str) -> dict[str, Any]:
+        response = self._request(
+            "GET",
+            "/v1/market/snapshot",
+            params={"market": self.market, "symbol": normalize_symbol(symbol)},
+        )
+        snapshot = response.get("snapshot")
+        if isinstance(snapshot, dict):
+            return dict(snapshot)
+        snapshots = response.get("snapshots")
+        if isinstance(snapshots, list) and snapshots:
+            return dict(snapshots[0])
+        quote = response.get("quote")
+        if isinstance(quote, dict):
+            return dict(quote)
+        return dict(response)
+
+    def get_latest_price(self, symbol: str) -> float:
+        snapshot = self.get_market_snapshot(symbol)
+        price = extract_latest_snapshot_price(snapshot)
+        if price <= 0:
+            raise GatewayError(f"no latest market price available for {symbol}: {snapshot}")
+        return price
 
     def place_order(
         self,
@@ -521,8 +563,8 @@ def build_plan(
         current = positions.get(symbol, {})
         current_qty = int(round(to_float(current.get("quantity"))))
         close_price = to_float(row["close"])
-        buy_price = build_price(close_price, "BUY", buy_limit_bps=config.buy_limit_bps, sell_limit_bps=config.sell_limit_bps)
-        sell_price = build_price(close_price, "SELL", buy_limit_bps=config.buy_limit_bps, sell_limit_bps=config.sell_limit_bps)
+        buy_price = build_reference_price(close_price)
+        sell_price = build_reference_price(close_price)
         theoretical_qty = int(target_value / buy_price) if buy_price > 0 else 0
         target_qty = compute_order_quantity(side="BUY", raw_quantity=theoretical_qty, lot_size=config.lot_size)
         plan_rows.append(
@@ -566,8 +608,8 @@ def build_plan(
                 "industry": "",
                 "score": None,
                 "close": base_price,
-                "buy_limit_price": build_price(base_price, "BUY", buy_limit_bps=config.buy_limit_bps, sell_limit_bps=config.sell_limit_bps),
-                "sell_limit_price": build_price(base_price, "SELL", buy_limit_bps=config.buy_limit_bps, sell_limit_bps=config.sell_limit_bps),
+                "buy_limit_price": build_reference_price(base_price),
+                "sell_limit_price": build_reference_price(base_price),
                 "target_weight": 0.0,
                 "target_value": 0.0,
                 "target_qty": 0,
@@ -684,6 +726,7 @@ def persist_targets(paths: dict[str, Path], plan: pd.DataFrame) -> None:
         "sent_order_id",
         "sent_status",
         "sent_price",
+        "sent_reference_price",
         "sent_error",
         "estimated_order_notional",
         "reason",
@@ -710,6 +753,26 @@ def execute_plan(
     placed_orders: list[dict[str, Any]] = []
     skipped_orders: list[dict[str, Any]] = []
 
+    execution_rows = plan.copy()
+    execution_rows["sent_order_id"] = None
+    execution_rows["sent_status"] = None
+    execution_rows["sent_price"] = None
+    execution_rows["sent_reference_price"] = None
+    execution_rows["sent_error"] = None
+
+    if not is_active_trading_hours():
+        message = "Outside active trading hours, skipping order execution..."
+        print(message, flush=True)
+        return {
+            "execution_rows": execution_rows,
+            "cancelled_orders": cancelled_orders,
+            "placed_orders": placed_orders,
+            "skipped_orders": skipped_orders,
+            "execution_skipped": True,
+            "skip_reason": "outside_active_trading_hours",
+            "message": message,
+        }
+
     if config.cancel_open_orders:
         for order in active_orders:
             order_id = str(order.get("broker_order_id") or order.get("order_id") or "").strip()
@@ -717,38 +780,52 @@ def execute_plan(
                 continue
             cancelled_orders.append(client.cancel_order(order_id))
 
-    execution_rows = plan.copy()
-    execution_rows["sent_order_id"] = None
-    execution_rows["sent_status"] = None
-    execution_rows["sent_price"] = None
-    execution_rows["sent_error"] = None
-
     sell_rows = execution_rows[execution_rows["sell_order_qty"] > 0].sort_values(["score", "rank"], ascending=[True, True], na_position="last")
     buy_rows = execution_rows[execution_rows["buy_order_qty"] > 0].sort_values(["rank", "score"], ascending=[True, False], na_position="last")
     last_order_attempt_at = 0.0
 
-    for side, rows, qty_col, price_col in [
-        ("SELL", sell_rows, "sell_order_qty", "sell_limit_price"),
-        ("BUY", buy_rows, "buy_order_qty", "buy_limit_price"),
+    for side, rows, qty_col in [
+        ("SELL", sell_rows, "sell_order_qty"),
+        ("BUY", buy_rows, "buy_order_qty"),
     ]:
         for index, row in rows.iterrows():
             quantity = int(row[qty_col])
             if quantity <= 0:
                 continue
             quantity = min(quantity, config.max_order_qty)
-            prices = candidate_prices(row, price_col)
-            if not prices:
+            symbol = str(row["code"])
+            try:
+                latest_price = client.get_latest_price(symbol)
+                price = build_marketable_limit_price(latest_price, side)
+            except GatewayError as exc:
+                last_error = str(exc)
+                execution_rows.at[index, "sent_status"] = "SKIPPED_NO_LIVE_PRICE"
+                execution_rows.at[index, "sent_error"] = last_error
+                execution_rows.at[index, "action"] = "SKIP_NO_LIVE_PRICE"
+                skipped_orders.append(
+                    {
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": quantity,
+                        "attempted_prices": [],
+                        "error": last_error,
+                    }
+                )
+                print(f"skip {side} {symbol} qty={quantity}: {last_error}", file=sys.stderr, flush=True)
                 continue
+            if price <= 0:
+                continue
+            execution_rows.at[index, "sent_reference_price"] = round_price(latest_price)
             remark = f"aistock sig={signal_date} r={row['rank'] or '-'}"
             last_error: str | None = None
-            for price in prices:
+            while True:
                 try:
                     elapsed = time.monotonic() - last_order_attempt_at
                     if elapsed < ORDER_ATTEMPT_INTERVAL_SECONDS:
                         time.sleep(ORDER_ATTEMPT_INTERVAL_SECONDS - elapsed)
                     last_order_attempt_at = time.monotonic()
                     order = client.place_order(
-                        symbol=str(row["code"]),
+                        symbol=symbol,
                         side=side,
                         quantity=quantity,
                         price=price,
@@ -762,33 +839,31 @@ def execute_plan(
                     break
                 except GatewayError as exc:
                     last_error = str(exc)
-                    if is_price_limit_error(last_error):
-                        continue
                     if is_order_rate_limit_error(last_error):
                         print(
-                            f"broker rate limit while placing {side} {row['code']}; waiting before retry",
+                            f"broker rate limit while placing {side} {symbol}; waiting before retry",
                             file=sys.stderr,
                             flush=True,
                         )
                         time.sleep(30)
                         continue
-                    raise
+                    break
 
             if last_error:
-                execution_rows.at[index, "sent_status"] = "SKIPPED_PRICE_LIMIT"
+                execution_rows.at[index, "sent_status"] = "SKIPPED_PRICE_LIMIT" if is_price_limit_error(last_error) else "SKIPPED_ORDER_ERROR"
                 execution_rows.at[index, "sent_error"] = last_error
-                execution_rows.at[index, "action"] = "SKIP_PRICE_LIMIT"
+                execution_rows.at[index, "action"] = "SKIP_PRICE_LIMIT" if is_price_limit_error(last_error) else "SKIP_ORDER_ERROR"
                 skipped_orders.append(
                     {
-                        "symbol": str(row["code"]),
+                        "symbol": symbol,
                         "side": side,
                         "quantity": quantity,
-                        "attempted_prices": prices,
+                        "attempted_prices": [price],
                         "error": last_error,
                     }
                 )
                 print(
-                    f"skip {side} {row['code']} qty={quantity} after price retries {prices}: {last_error}",
+                    f"skip {side} {symbol} qty={quantity} at marketable price {price}: {last_error}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -798,6 +873,7 @@ def execute_plan(
         "cancelled_orders": cancelled_orders,
         "placed_orders": placed_orders,
         "skipped_orders": skipped_orders,
+        "execution_skipped": False,
     }
 
 
@@ -875,8 +951,6 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                         "min_score": config.min_score,
                         "lot_size": config.lot_size,
                         "cash_buffer_pct": config.cash_buffer_pct,
-                        "buy_limit_bps": config.buy_limit_bps,
-                        "sell_limit_bps": config.sell_limit_bps,
                         "budget_total": config.budget_total,
                     },
                     last_attempt_at=now_iso(),
@@ -930,8 +1004,6 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "min_score": config.min_score,
                     "lot_size": config.lot_size,
                     "cash_buffer_pct": config.cash_buffer_pct,
-                    "buy_limit_bps": config.buy_limit_bps,
-                    "sell_limit_bps": config.sell_limit_bps,
                     "budget_total": config.budget_total,
                 },
                 last_attempt_at=now_iso(),
@@ -961,6 +1033,57 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         )
         execution_rows = execution["execution_rows"]
         persist_targets(paths, execution_rows)
+
+        if execution.get("execution_skipped"):
+            result = {
+                "status": "noop",
+                "message": str(execution.get("message") or "order execution skipped"),
+                "score_signal_date": signal_date,
+                "last_score_signature": signature,
+                "gateway_healthy": health_ok,
+                "balance_metrics": balance_metrics,
+                "plan_summary": {**plan_summary, "execution_skip_reason": execution.get("skip_reason")},
+                "live_summary": live_summary,
+                "active_order_count": len(active_orders),
+                "position_count": len(positions),
+                "cancelled_order_ids": [],
+                "placed_order_ids": [],
+                "skipped_symbols": [],
+                "cancelled_orders": [],
+                "placed_orders": [],
+                "skipped_orders": [],
+            }
+            updated = update_state(
+                paths,
+                strategy="futu_gateway_auto_paper_trading",
+                market=config.market,
+                agent_id=config.agent_id,
+                gateway_base_url=config.gateway_base_url,
+                config_snapshot={
+                    "top_k": config.top_k,
+                    "min_score": config.min_score,
+                    "lot_size": config.lot_size,
+                    "cash_buffer_pct": config.cash_buffer_pct,
+                    "budget_total": config.budget_total,
+                },
+                last_attempt_at=now_iso(),
+                last_status="noop",
+                last_message=result["message"],
+                score_signal_date=signal_date,
+                last_error=None,
+                last_traceback=None,
+                gateway_healthy=health_ok,
+                live_summary=live_summary,
+                balance_metrics=balance_metrics,
+                plan_summary=result["plan_summary"],
+                active_order_count=len(active_orders),
+                position_count=len(positions),
+                cancelled_order_ids=[],
+                placed_order_ids=[],
+                skipped_symbols=[],
+            )
+            append_jsonl(paths["history"], {**result, "recorded_at": now_iso()})
+            return 0, updated
 
         try:
             gateway.sync_agent()
@@ -1016,8 +1139,6 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "min_score": config.min_score,
                 "lot_size": config.lot_size,
                 "cash_buffer_pct": config.cash_buffer_pct,
-                "buy_limit_bps": config.buy_limit_bps,
-                "sell_limit_bps": config.sell_limit_bps,
                 "budget_total": config.budget_total,
             },
             last_attempt_at=now_iso(),
@@ -1084,8 +1205,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-score", type=float, default=DEFAULT_MIN_SCORE)
     parser.add_argument("--lot-size", type=int, default=DEFAULT_LOT_SIZE)
     parser.add_argument("--cash-buffer-pct", type=float, default=DEFAULT_CASH_BUFFER_PCT)
-    parser.add_argument("--buy-limit-bps", type=float, default=DEFAULT_BUY_LIMIT_BPS)
-    parser.add_argument("--sell-limit-bps", type=float, default=DEFAULT_SELL_LIMIT_BPS)
+    parser.add_argument("--buy-limit-bps", type=float, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--sell-limit-bps", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--budget-total", type=float, default=None)
     parser.add_argument("--max-order-qty", type=int, default=DEFAULT_MAX_ORDER_QTY)
     parser.add_argument("--force", action="store_true")
@@ -1110,8 +1231,6 @@ def build_config(args: argparse.Namespace) -> SyncConfig:
         min_score=float(args.min_score),
         lot_size=max(int(args.lot_size), 1),
         cash_buffer_pct=max(min(float(args.cash_buffer_pct), 0.95), 0.0),
-        buy_limit_bps=max(float(args.buy_limit_bps), 0.0),
-        sell_limit_bps=max(float(args.sell_limit_bps), 0.0),
         budget_total=float(args.budget_total) if args.budget_total is not None else None,
         max_order_qty=max(int(args.max_order_qty), 1),
         cancel_open_orders=not bool(args.no_cancel_open_orders),

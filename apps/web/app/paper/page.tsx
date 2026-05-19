@@ -27,6 +27,20 @@ type SummaryItem = {
   hint?: string;
 };
 
+const TERMINAL_ORDER_STATUSES = new Set([
+  "CANCELLED",
+  "CANCELLED_ALL",
+  "CANCELLED_PART",
+  "CANCELLED_PART_ALL",
+  "DELETED",
+  "DISABLED",
+  "EXPIRED",
+  "FAILED",
+  "FILLED_ALL",
+  "REJECTED",
+  "SUBMIT_FAILED",
+]);
+
 function asRecord(value: unknown): DashboardRow {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as DashboardRow) : {};
 }
@@ -55,6 +69,18 @@ function normalizeSymbol(value: unknown): string {
     return text.split(".", 2)[1] ?? text;
   }
   return /^\d+$/.test(text) ? text.padStart(6, "0") : text;
+}
+
+function normalizeOrderStatus(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[-\s/]+/g, "_");
+}
+
+function isPendingOrder(row: DashboardRow): boolean {
+  const status = normalizeOrderStatus(row.order_status ?? row.status);
+  return Boolean(status) && !TERMINAL_ORDER_STATUSES.has(status);
 }
 
 function compactStrings(value: unknown): string[] {
@@ -89,6 +115,85 @@ function cleanBrokerMessage(value: unknown): string | null {
     return "Broker gateway rejected the order";
   }
   return text;
+}
+
+function orderIdFrom(row: DashboardRow): string {
+  return String(row.broker_order_id ?? row.order_id ?? "").trim();
+}
+
+function PendingOrdersTable({
+  rows,
+  isAdmin,
+  locale,
+  emptyLabel,
+}: {
+  rows: DashboardRow[];
+  isAdmin: boolean;
+  locale: PanelLocale;
+  emptyLabel: string;
+}) {
+  if (!rows.length) {
+    return <p className="empty-state">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Order ID</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Status</th>
+            <th className="data-table-cell-numeric">Qty</th>
+            <th className="data-table-cell-numeric">Dealt</th>
+            <th className="data-table-cell-numeric">Remaining</th>
+            <th className="data-table-cell-numeric">Price</th>
+            <th className="data-table-cell-numeric">Est. Notional</th>
+            <th>Estimated Order Time</th>
+            <th>Updated At</th>
+            <th>Remark</th>
+            {isAdmin ? <th>Action</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const orderId = orderIdFrom(row);
+            return (
+              <tr key={orderId || `${row.symbol}-${row.estimated_order_time}`}>
+                <td><span className="data-table-cell-content" title={orderId}>{orderId || "—"}</span></td>
+                <td><span className="data-table-cell-content">{formatDisplayValue(row.symbol, { locale, key: "symbol" })}</span></td>
+                <td><span className="data-table-cell-content">{formatDisplayValue(row.side, { locale, key: "side" })}</span></td>
+                <td><span className="data-table-cell-content">{formatDisplayValue(row.order_status, { locale, key: "order_status" })}</span></td>
+                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.quantity, { locale, key: "quantity" })}</span></td>
+                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.dealt_qty, { locale, key: "dealt_qty" })}</span></td>
+                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.remaining_qty, { locale, key: "remaining_qty" })}</span></td>
+                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.price, { locale, key: "price" })}</span></td>
+                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.estimated_notional, { locale, key: "estimated_order_notional" })}</span></td>
+                <td><span className="data-table-cell-content">{formatDateTime(row.estimated_order_time, locale)}</span></td>
+                <td><span className="data-table-cell-content">{formatDateTime(row.updated_at, locale)}</span></td>
+                <td><span className="data-table-cell-content" title={String(row.remark ?? "")}>{formatDisplayValue(row.remark, { locale, key: "remark" })}</span></td>
+                {isAdmin ? (
+                  <td>
+                    {orderId ? (
+                      <form action="/paper/orders/cancel" method="post">
+                        <input type="hidden" name="order_id" value={orderId} />
+                        <button className="action-button danger-button table-action-button" type="submit">
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <span className="data-table-cell-content">—</span>
+                    )}
+                  </td>
+                ) : null}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function paperLiveFallback(status: Awaited<ReturnType<typeof getPaperStatus>>, error: unknown) {
@@ -249,10 +354,18 @@ function flashMessage(_isZh: boolean, params: { notice?: string; error?: string;
     image_missing: "A required Docker image is missing.",
     start_failed: `${targetLabel} failed to start.`,
     stop_failed: `${targetLabel} failed to stop.`,
+    missing_order_id: "No pending order ID was provided.",
+    cancel_failed: "Pending order cancellation failed. Check the gateway logs.",
   };
+  const paperSuccess = {
+    cancelled_order: "Pending order cancellation request sent.",
+  } as const;
 
   if (params.notice && code in success) {
     return { tone: "success", text: success[code as keyof typeof success] };
+  }
+  if (params.notice && code in paperSuccess) {
+    return { tone: "success", text: paperSuccess[code as keyof typeof paperSuccess] };
   }
   if (code in errors) {
     return { tone: "error", text: errors[code] };
@@ -303,6 +416,28 @@ export default async function PaperPage({
   const portfolioMarketValue =
     asNumber(liveSummary.market_value) ??
     livePositions.reduce((total, row) => total + (asNumber(row.market_value) ?? 0), 0);
+  const pendingOrders = recentOrders
+    .filter(isPendingOrder)
+    .map((row) => {
+      const quantity = asNumber(row.quantity ?? row.qty) ?? 0;
+      const dealtQty = asNumber(row.dealt_qty) ?? 0;
+      const price = asNumber(row.price);
+      const remainingQty = Math.max(quantity - dealtQty, 0);
+      return {
+        ...row,
+        broker_order_id: orderIdFrom(row),
+        symbol: normalizeSymbol(row.symbol ?? row.code),
+        side: String(row.side ?? row.trd_side ?? "").toUpperCase(),
+        order_status: normalizeOrderStatus(row.order_status ?? row.status),
+        quantity,
+        dealt_qty: dealtQty,
+        remaining_qty: remainingQty,
+        price,
+        estimated_notional: price !== null ? remainingQty * price : null,
+        estimated_order_time: row.created_at ?? row.create_time ?? row.submitted_at ?? row.updated_at ?? null,
+        updated_at: row.updated_at ?? row.create_time ?? row.created_at ?? null,
+      };
+    });
 
   const ordersBySymbol = new Map<string, DashboardRow>();
   for (const order of recentOrders) {
@@ -612,6 +747,18 @@ export default async function PaperPage({
           <SummaryList items={planSummaryItems} locale={user.locale} />
         </Panel>
       </section>
+
+      <Panel title="Pending Orders" aside={<span className="pill">{formatNumber(pendingOrders.length, user.locale)} active</span>}>
+        <p className="table-note">
+          Active broker orders that are still working, including submitted time, remaining quantity, estimated notional, and broker status.
+        </p>
+        <PendingOrdersTable
+          rows={pendingOrders}
+          isAdmin={isAdmin}
+          locale={user.locale}
+          emptyLabel={orders.error ? "Live order feed is refreshing." : "No pending orders."}
+        />
+      </Panel>
 
       <Panel title="Holdings vs Targets" aside={<span className="pill">{formatNumber(holdingsRows.length, user.locale)} rows</span>}>
         <p className="table-note">

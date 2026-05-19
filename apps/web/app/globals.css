@@ -1875,6 +1875,13 @@ select {
   background: linear-gradient(135deg, #9a3412, #7c2d12);
 }
 
+.table-action-button {
+  padding: 7px 11px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
 .compact-log {
   max-height: 320px;
   min-height: 160px;
