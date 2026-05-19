@@ -46,10 +46,9 @@ function truncateText(value: unknown, maxLength = 28) {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
-function googleStockSearchUrl(symbol: unknown, exchange: unknown, englishName: unknown) {
-  const code = displaySymbol(symbol, exchange);
-  const name = truncateText(englishName, 48);
-  const query = [code, name, "stock"].filter(Boolean).join(" ");
+function googleStockSearchUrl(symbol: unknown) {
+  const code = normalizeSymbol(symbol);
+  const query = [code, "stock"].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
@@ -72,7 +71,7 @@ export default async function HoldingsPage() {
     return {
       code_name: code,
       code_name_detail: detail,
-      code_name_href: googleStockSearchUrl(symbol, row.exchange, englishName),
+      code_name_href: googleStockSearchUrl(symbol),
       market_value: row.market_value ?? null,
       quantity: row.quantity ?? row.qty ?? null,
       last_price: row.last_price ?? row.price ?? row.current_price ?? null,
@@ -114,7 +113,7 @@ export default async function HoldingsPage() {
         <MetricCard label="Total Assets" value={formatDisplayValue(summary.total_assets, { locale: user.locale, key: "total_assets" })} hint={formatDisplayValue(summary.currency, { locale: user.locale, key: "currency" })} />
         <MetricCard label="Cash" value={formatDisplayValue(summary.cash, { locale: user.locale, key: "cash" })} hint={formatDisplayValue(summary.buying_power ?? summary.power, { locale: user.locale, key: "buying_power" })} />
         <MetricCard label="Market Value" value={formatDisplayValue(marketValue, { locale: user.locale, key: "market_value" })} hint="Live holdings value" />
-        <MetricCard label="Unrealized PnL" value={formatDisplayValue(unrealizedPnl, { locale: user.locale, key: "unrealized_pnl" })} hint={formatDisplayValue(summary.total_pnl, { locale: user.locale, key: "total_pnl" })} />
+        <MetricCard label="Unrealized P/L" value={formatDisplayValue(unrealizedPnl, { locale: user.locale, key: "unrealized_pnl" })} hint="Sum of Futu position pl_val" />
       </section>
 
       <Panel title="Current Positions" aside={<span className="pill">{formatNumber(positionRows.length, user.locale)} rows</span>}>
