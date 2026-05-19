@@ -121,6 +121,10 @@ function orderIdFrom(row: DashboardRow): string {
   return String(row.broker_order_id ?? row.order_id ?? "").trim();
 }
 
+function symbolNameFrom(row: DashboardRow): string {
+  return String(row.name ?? row.stock_name ?? row.security_name ?? "").trim();
+}
+
 function PendingOrdersTable({
   rows,
   isAdmin,
@@ -146,33 +150,34 @@ function PendingOrdersTable({
             <th>Side</th>
             <th>Status</th>
             <th className="data-table-cell-numeric">Qty</th>
-            <th className="data-table-cell-numeric">Dealt</th>
             <th className="data-table-cell-numeric">Remaining</th>
             <th className="data-table-cell-numeric">Price</th>
             <th className="data-table-cell-numeric">Est. Notional</th>
             <th>Estimated Order Time</th>
-            <th>Updated At</th>
-            <th>Remark</th>
             {isAdmin ? <th>Action</th> : null}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const orderId = orderIdFrom(row);
+            const symbol = String(row.symbol ?? "").trim();
+            const symbolName = symbolNameFrom(row);
             return (
               <tr key={orderId || `${row.symbol}-${row.estimated_order_time}`}>
                 <td><span className="data-table-cell-content" title={orderId}>{orderId || "—"}</span></td>
-                <td><span className="data-table-cell-content">{formatDisplayValue(row.symbol, { locale, key: "symbol" })}</span></td>
+                <td>
+                  <span className={symbolName ? "data-table-cell-stack" : "data-table-cell-content"} title={[symbol, symbolName].filter(Boolean).join(" / ")}>
+                    {formatDisplayValue(symbol, { locale, key: "symbol" })}
+                    {symbolName ? <span className="data-table-cell-detail">{symbolName}</span> : null}
+                  </span>
+                </td>
                 <td><span className="data-table-cell-content">{formatDisplayValue(row.side, { locale, key: "side" })}</span></td>
                 <td><span className="data-table-cell-content">{formatDisplayValue(row.order_status, { locale, key: "order_status" })}</span></td>
                 <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.quantity, { locale, key: "quantity" })}</span></td>
-                <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.dealt_qty, { locale, key: "dealt_qty" })}</span></td>
                 <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.remaining_qty, { locale, key: "remaining_qty" })}</span></td>
                 <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.price, { locale, key: "price" })}</span></td>
                 <td className="data-table-cell-numeric"><span className="data-table-cell-content">{formatDisplayValue(row.estimated_notional, { locale, key: "estimated_order_notional" })}</span></td>
                 <td><span className="data-table-cell-content">{formatDateTime(row.estimated_order_time, locale)}</span></td>
-                <td><span className="data-table-cell-content">{formatDateTime(row.updated_at, locale)}</span></td>
-                <td><span className="data-table-cell-content" title={String(row.remark ?? "")}>{formatDisplayValue(row.remark, { locale, key: "remark" })}</span></td>
                 {isAdmin ? (
                   <td>
                     {orderId ? (
@@ -359,6 +364,7 @@ function flashMessage(_isZh: boolean, params: { notice?: string; error?: string;
   };
   const paperSuccess = {
     cancelled_order: "Pending order cancellation request sent.",
+    cancelled_orders: "Pending order cancellation requests sent.",
   } as const;
 
   if (params.notice && code in success) {
@@ -416,9 +422,18 @@ export default async function PaperPage({
   const portfolioMarketValue =
     asNumber(liveSummary.market_value) ??
     livePositions.reduce((total, row) => total + (asNumber(row.market_value) ?? 0), 0);
+  const symbolNames = new Map<string, string>();
+  for (const row of [...(targets.targets as DashboardRow[]), ...livePositions]) {
+    const symbol = normalizeSymbol(row.code ?? row.symbol);
+    const name = symbolNameFrom(row);
+    if (symbol && name && !symbolNames.has(symbol)) {
+      symbolNames.set(symbol, name);
+    }
+  }
   const pendingOrders = recentOrders
     .filter(isPendingOrder)
     .map((row) => {
+      const symbol = normalizeSymbol(row.symbol ?? row.code);
       const quantity = asNumber(row.quantity ?? row.qty) ?? 0;
       const dealtQty = asNumber(row.dealt_qty) ?? 0;
       const price = asNumber(row.price);
@@ -426,7 +441,8 @@ export default async function PaperPage({
       return {
         ...row,
         broker_order_id: orderIdFrom(row),
-        symbol: normalizeSymbol(row.symbol ?? row.code),
+        symbol,
+        name: symbolNames.get(symbol) ?? row.name ?? null,
         side: String(row.side ?? row.trd_side ?? "").toUpperCase(),
         order_status: normalizeOrderStatus(row.order_status ?? row.status),
         quantity,
@@ -438,6 +454,7 @@ export default async function PaperPage({
         updated_at: row.updated_at ?? row.create_time ?? row.created_at ?? null,
       };
     });
+  const pendingOrderIds = pendingOrders.map((row) => orderIdFrom(row)).filter((orderId) => orderId.length > 0);
 
   const ordersBySymbol = new Map<string, DashboardRow>();
   for (const order of recentOrders) {
@@ -752,6 +769,16 @@ export default async function PaperPage({
         <p className="table-note">
           Active broker orders that are still working, including submitted time, remaining quantity, estimated notional, and broker status.
         </p>
+        {isAdmin && pendingOrderIds.length ? (
+          <form className="action-row" action="/paper/orders/cancel" method="post">
+            {pendingOrderIds.map((orderId) => (
+              <input key={orderId} type="hidden" name="order_id" value={orderId} />
+            ))}
+            <button className="action-button danger-button table-action-button" type="submit">
+              Cancel All
+            </button>
+          </form>
+        ) : null}
         <PendingOrdersTable
           rows={pendingOrders}
           isAdmin={isAdmin}

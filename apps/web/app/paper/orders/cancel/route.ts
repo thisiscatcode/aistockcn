@@ -17,8 +17,11 @@ export async function POST(request: NextRequest) {
   }
 
   const formData = await request.formData();
-  const orderId = String(formData.get("order_id") ?? "").trim();
-  if (!orderId) {
+  const orderIds = formData
+    .getAll("order_id")
+    .map((value) => String(value ?? "").trim())
+    .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index);
+  if (!orderIds.length) {
     return paperRedirect(request, "?error=missing_order_id");
   }
 
@@ -28,19 +31,21 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/control/paper/orders/${encodeURIComponent(orderId)}/cancel`, {
-      method: "POST",
-      headers: {
-        "x-panel-admin-key": adminKey
-      },
-      cache: "no-store"
-    });
-    const payload = (await response.json()) as { code?: string; detail?: { code?: string } };
-    if (!response.ok) {
-      const code = payload.detail?.code ?? payload.code ?? "cancel_failed";
-      return paperRedirect(request, `?error=${encodeURIComponent(code)}`);
+    for (const orderId of orderIds) {
+      const response = await fetch(`${API_BASE_URL}/api/control/paper/orders/${encodeURIComponent(orderId)}/cancel`, {
+        method: "POST",
+        headers: {
+          "x-panel-admin-key": adminKey
+        },
+        cache: "no-store"
+      });
+      const payload = (await response.json()) as { code?: string; detail?: { code?: string } };
+      if (!response.ok) {
+        const code = payload.detail?.code ?? payload.code ?? "cancel_failed";
+        return paperRedirect(request, `?error=${encodeURIComponent(code)}`);
+      }
     }
-    return paperRedirect(request, `?notice=${encodeURIComponent(payload.code ?? "cancelled_order")}`);
+    return paperRedirect(request, `?notice=${encodeURIComponent(orderIds.length > 1 ? "cancelled_orders" : "cancelled_order")}`);
   } catch {
     return paperRedirect(request, "?error=cancel_failed");
   }
