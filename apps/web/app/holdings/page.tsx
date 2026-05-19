@@ -32,9 +32,24 @@ function normalizeSymbol(value: unknown): string {
   return /^\d+$/.test(text) ? text.padStart(6, "0") : text;
 }
 
-function googleStockSearchUrl(symbol: unknown) {
+function displaySymbol(symbol: unknown, exchange: unknown) {
   const normalized = normalizeSymbol(symbol);
-  const query = normalized ? `${normalized} 股票` : "股票";
+  const exchangeText = String(exchange ?? "").trim().toUpperCase();
+  return normalized && exchangeText ? `${normalized}.${exchangeText}` : normalized;
+}
+
+function truncateText(value: unknown, maxLength = 28) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function googleStockSearchUrl(symbol: unknown, exchange: unknown, englishName: unknown) {
+  const code = displaySymbol(symbol, exchange);
+  const name = truncateText(englishName, 48);
+  const query = [code, name, "stock"].filter(Boolean).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
@@ -50,11 +65,14 @@ export default async function HoldingsPage() {
 
   const positionRows = positions.map((row) => {
     const symbol = row.symbol ?? row.code;
+    const englishName = row.english_name ?? row.stock_name ?? row.security_name ?? null;
+    const chineseName = row.name ?? null;
+    const code = row.display_symbol ?? displaySymbol(symbol, row.exchange);
+    const detail = [truncateText(englishName), truncateText(chineseName, 18)].filter(Boolean).join(" / ");
     return {
-      code_name: [row.display_symbol ?? normalizeSymbol(symbol), row.name ?? row.stock_name ?? row.security_name ?? null]
-        .filter(Boolean)
-        .join(" / "),
-      code_name_href: googleStockSearchUrl(symbol),
+      code_name: code,
+      code_name_detail: detail,
+      code_name_href: googleStockSearchUrl(symbol, row.exchange, englishName),
       market_value: row.market_value ?? null,
       quantity: row.quantity ?? row.qty ?? null,
       last_price: row.last_price ?? row.price ?? row.current_price ?? null,

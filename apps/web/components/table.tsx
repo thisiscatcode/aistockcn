@@ -63,6 +63,20 @@ function linkHref(row: TableRow, key: string): string | null {
   return href ? href : null;
 }
 
+function cellDetail(row: TableRow, key: string): string | null {
+  const value = row[`${key}_detail`];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const detail = value.trim();
+  return detail ? detail : null;
+}
+
+function cellTitle(row: TableRow, key: string, fallback: string) {
+  const detail = cellDetail(row, key);
+  return detail ? `${fallback} / ${detail}` : fallback;
+}
+
 export function DataTable({
   rows,
   columns,
@@ -125,9 +139,10 @@ export function DataTable({
                 {normalizedHeaders.map((header) => {
                   const value = formatDisplayValue(row[header.key], { locale, key: header.key });
                   const href = linkHref(row, header.key);
+                  const detail = cellDetail(row, header.key);
                   return (
                     <td key={header.key} className={numericColumns.has(header.key) ? "data-table-cell-numeric" : undefined}>
-                      <span className="data-table-cell-content" title={value}>
+                      <span className={detail ? "data-table-cell-stack" : "data-table-cell-content"} title={cellTitle(row, header.key, value)}>
                         {href ? (
                           <a className="data-table-link" href={href} target="_blank" rel="noopener noreferrer">
                             {value}
@@ -135,6 +150,7 @@ export function DataTable({
                         ) : (
                           value
                         )}
+                        {detail ? <span className="data-table-cell-detail">{detail}</span> : null}
                       </span>
                     </td>
                   );

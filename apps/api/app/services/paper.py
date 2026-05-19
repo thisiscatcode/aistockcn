@@ -158,6 +158,7 @@ def _normalize_futu_position_row(row: dict[str, Any]) -> dict[str, Any]:
         "market_value": market_value,
         "avg_cost": avg_cost,
         "unrealized_pnl": unrealized_pnl,
+        "english_name": row.get("english_name") or row.get("stock_name") or row.get("security_name"),
     }
 
 

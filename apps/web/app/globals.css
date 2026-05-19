@@ -1777,9 +1777,29 @@ select {
   white-space: nowrap;
 }
 
+.data-table-cell-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: clamp(20ch, 32vw, 42ch);
+  overflow: hidden;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.data-table-cell-detail {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
 .data-table-link {
   color: #0b5cad;
-  font-weight: 650;
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -2546,6 +2566,10 @@ select {
 
 .shell-dark .data-table-link {
   color: #8fc7ff;
+}
+
+.shell-dark .data-table-cell-detail {
+  color: #9aa7c0;
 }
 
 .shell-dark .log-console {
