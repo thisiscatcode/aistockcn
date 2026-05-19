@@ -224,7 +224,7 @@ const messages: Messages = {
       data: "Explorer",
       models: "Models",
       picks: "Picks",
-      holdings: "持倉",
+      holdings: "Holdings",
       paper: "Paper",
       admin: "Admin"
     }

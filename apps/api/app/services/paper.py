@@ -64,6 +64,13 @@ def _sort_by_numeric_desc(rows: list[dict[str, Any]], key: str) -> list[dict[str
     return sorted(rows, key=lambda row: float(row.get(key) or 0.0), reverse=True)
 
 
+def _position_quantity(row: dict[str, Any]) -> float:
+    try:
+        return float(row.get("quantity") or row.get("qty") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
     balance_metrics = row.get("balance_metrics") or {}
     live_summary = row.get("live_summary") or {}
@@ -295,7 +302,8 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
     try:
         summary = client.get_summary()
         balance = client.get_balance()
-        positions = _sort_by_numeric_desc(client.get_positions(), "market_value")
+        raw_positions = client.get_positions()
+        positions = _sort_by_numeric_desc([row for row in raw_positions if _position_quantity(row) > 0], "market_value")
         orders = sorted(
             client.get_orders(),
             key=lambda row: str(row.get("updated_at") or row.get("create_time") or row.get("created_at") or ""),
@@ -307,6 +315,7 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
             "summary": records_to_json([summary])[0] if summary else {},
             "balance": records_to_json(balance),
             "positions_rows": len(positions),
+            "raw_positions_rows": len(raw_positions),
             "positions": records_to_json(positions[:position_limit]),
             "orders_rows": len(orders),
             "orders": records_to_json(orders[:order_limit]),
@@ -319,6 +328,7 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
             "summary": {},
             "balance": [],
             "positions_rows": 0,
+            "raw_positions_rows": 0,
             "positions": [],
             "orders_rows": 0,
             "orders": [],

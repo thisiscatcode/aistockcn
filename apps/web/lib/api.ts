@@ -398,6 +398,7 @@ export type PaperHoldings = {
   summary: Record<string, unknown>;
   balance: Array<Record<string, unknown>>;
   positions_rows: number;
+  raw_positions_rows?: number;
   positions: Array<Record<string, unknown>>;
   orders_rows: number;
   orders: Array<Record<string, unknown>>;
