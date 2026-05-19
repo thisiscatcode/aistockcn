@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
@@ -12,6 +13,7 @@ import {
   getStockDetail,
   getStocks
 } from "@/lib/api";
+import { getCurrentUser } from "@/lib/auth";
 import { formatBytes, formatDate, formatDateRange, formatDateTime, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
 
@@ -23,6 +25,11 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
+  const user = await getCurrentUser();
+  if (user) {
+    redirect("/system-monitor");
+  }
+
   const copy = getMessages("en");
 
   const [status, logs, data, model, picks, stocks] = await Promise.all([

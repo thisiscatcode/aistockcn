@@ -1,154 +1,286 @@
-import { MetricCard, Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
-import { getBatchLogs, getBatchStatus, getDataSummary, getModelOverview, getPicks, getPipelineRunStatus, getPipelineSummary, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
+import { getPortfolioOverview, type OverviewPerformancePoint, type OverviewTopPick } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
-import { formatBytes, formatDate, formatDateTime, formatMetric, formatNumber } from "@/lib/format";
-import { getMessages } from "@/lib/i18n";
-import type { ReactNode } from "react";
+import { formatDate, formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
+import type { PanelLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
-function SnapshotRow({
-  label,
-  value,
-  hint
+function displayName(username: string) {
+  return username
+    .split(/[._\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "Portfolio Manager";
+}
+
+function chartPath(points: Array<{ x: number; y: number }>) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+}
+
+function toneFromNumber(value: unknown) {
+  if (typeof value !== "number" || Number.isNaN(value) || value === 0) {
+    return "neutral";
+  }
+  return value > 0 ? "positive" : "negative";
+}
+
+function formatPercent(value: unknown, locale: PanelLocale) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "—";
+  }
+  return `${formatNumber(value * 100, locale, { maximumFractionDigits: 2 })}%`;
+}
+
+function scoreWidth(value: unknown) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 0;
+  }
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, percent));
+}
+
+function formatScore(value: unknown, locale: PanelLocale) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "—";
+  }
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${formatNumber(percent, locale, { maximumFractionDigits: 1 })}%`;
+}
+
+function formatWeight(value: unknown, locale: PanelLocale) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "—";
+  }
+  return `${formatNumber(value * 100, locale, { maximumFractionDigits: 2 })}%`;
+}
+
+function PortfolioPerformanceChart({
+  points,
+  benchmarkName,
+  locale
 }: {
-  label: string;
-  value: ReactNode;
-  hint?: ReactNode;
+  points: OverviewPerformancePoint[];
+  benchmarkName: string;
+  locale: PanelLocale;
 }) {
+  const chartRows = points.filter((point) => typeof point.portfolio_value === "number" && !Number.isNaN(point.portfolio_value));
+
+  if (chartRows.length < 2) {
+    return (
+      <div className="portfolio-chart-card">
+        <div className="portfolio-card-header">
+          <div>
+            <p className="portfolio-section-kicker">Live Account Data</p>
+            <h2>Portfolio Performance vs {benchmarkName}</h2>
+          </div>
+        </div>
+        <p className="empty-state">No real performance history is available yet.</p>
+      </div>
+    );
+  }
+
+  const values = chartRows.flatMap((row) => {
+    const rowValues = [row.portfolio_value as number];
+    if (typeof row.benchmark_value === "number" && !Number.isNaN(row.benchmark_value)) {
+      rowValues.push(row.benchmark_value);
+    }
+    return rowValues;
+  });
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const width = 960;
+  const height = 330;
+  const padding = { top: 28, right: 28, bottom: 42, left: 64 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const scaleX = (index: number) => padding.left + (chartWidth / (chartRows.length - 1)) * index;
+  const scaleY = (value: number) => padding.top + (1 - (value - min) / range) * chartHeight;
+  const portfolioPoints = chartRows.map((row, index) => ({ x: scaleX(index), y: scaleY(row.portfolio_value as number) }));
+  const benchmarkPoints = chartRows
+    .map((row, index) => (
+      typeof row.benchmark_value === "number" && !Number.isNaN(row.benchmark_value)
+        ? { x: scaleX(index), y: scaleY(row.benchmark_value) }
+        : null
+    ))
+    .filter((point): point is { x: number; y: number } => point !== null);
+  const first = chartRows[0];
+  const last = chartRows[chartRows.length - 1];
+
   return (
-    <div className="snapshot-row">
-      <span className="snapshot-label">{label}</span>
-      <strong className="snapshot-value">{value}</strong>
-      {hint ? <span className="snapshot-hint">{hint}</span> : null}
+    <div className="portfolio-chart-card">
+      <div className="portfolio-card-header">
+        <div>
+          <p className="portfolio-section-kicker">Live Account Data</p>
+          <h2>Portfolio Performance vs {benchmarkName}</h2>
+        </div>
+        <div className="portfolio-chart-legend" aria-label="Chart legend">
+          <span><i className="portfolio-legend-line portfolio-legend-ai" /> Account Equity</span>
+          <span><i className="portfolio-legend-line portfolio-legend-benchmark" /> {benchmarkName}</span>
+        </div>
+      </div>
+
+      <svg className="portfolio-performance-svg" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Line chart comparing account equity and ${benchmarkName}`}>
+        {[0, 1, 2, 3].map((line) => {
+          const y = padding.top + (chartHeight / 3) * line;
+          return <path key={line} className="portfolio-grid-line" d={`M ${padding.left} ${y} L ${width - padding.right} ${y}`} />;
+        })}
+        {benchmarkPoints.length > 1 ? <path className="portfolio-benchmark-line" d={chartPath(benchmarkPoints)} /> : null}
+        <path className="portfolio-ai-line" d={chartPath(portfolioPoints)} />
+        {portfolioPoints.map((point, index) => (
+          <circle key={`${chartRows[index].date ?? index}-${index}`} className="portfolio-ai-point" cx={point.x} cy={point.y} r="4.5" />
+        ))}
+        <text className="portfolio-axis-label" x={padding.left} y={height - 14} textAnchor="start">
+          {formatDate(first.date, locale)}
+        </text>
+        <text className="portfolio-axis-label" x={width - padding.right} y={height - 14} textAnchor="end">
+          {formatDate(last.date, locale)}
+        </text>
+        {[min, min + range / 2, max].map((tick) => (
+          <text key={tick} className="portfolio-axis-label" x={14} y={scaleY(tick) + 4}>
+            {formatNumber(tick, locale, { maximumFractionDigits: 1 })}
+          </text>
+        ))}
+      </svg>
     </div>
   );
 }
 
-function datasetValue(snapshot: { rows: number; code_count?: number | null } | null | undefined, locale: "en" | "zh-Hant") {
-  if (!snapshot) {
-    return "Missing";
-  }
-  return `${formatNumber(snapshot.rows, locale)} rows / ${formatNumber(snapshot.code_count, locale)} codes`;
+function KpiCard({
+  label,
+  value,
+  detail,
+  tone = "neutral"
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: "positive" | "negative" | "neutral";
+}) {
+  return (
+    <article className={`overview-kpi-card overview-kpi-${tone}`}>
+      <p className="overview-kpi-label">{label}</p>
+      <strong>{value}</strong>
+      {detail ? <span>{detail}</span> : null}
+    </article>
+  );
 }
 
-function datasetDate(snapshot: { date_min?: string | null; date_max?: string | null } | null | undefined, locale: "en" | "zh-Hant") {
-  if (!snapshot?.date_min && !snapshot?.date_max) {
-    return "No date range";
+function signalTone(signalType?: string | null) {
+  const normalized = String(signalType ?? "").toUpperCase();
+  if (normalized === "BUY") {
+    return "signal-buy";
   }
-  if (snapshot.date_min && snapshot.date_max) {
-    return `${formatDate(snapshot.date_min, locale)} to ${formatDate(snapshot.date_max, locale)}`;
+  if (normalized === "SELL") {
+    return "signal-short";
   }
-  return formatDate(snapshot.date_max ?? snapshot.date_min, locale);
+  return "";
 }
 
 export default async function OverviewPage() {
   const user = await requireAuth();
-  const copy = getMessages(user.locale);
-
-  const [status, logs, data, model, picks, workflow, pipelineRun, referenceStatus, pipelineSummary] = await Promise.all([
-    getBatchStatus(),
-    getBatchLogs(24),
-    getDataSummary(),
-    getModelOverview(),
-    getPicks(10),
-    getWorkflowStatus(),
-    getPipelineRunStatus(),
-    getReferenceBatchStatus(),
-    getPipelineSummary()
-  ]);
-
-  const trainingMetrics = (model.training_metadata?.metrics ?? {}) as Record<string, number>;
-  const latestLines = logs.lines.slice(-12);
-  const runtimeByStep = new Map(workflow.steps.map((step) => [step.step, step]));
-  const runningSteps = workflow.steps.filter((step) => step.is_running).length;
-  const referenceSnapshot = data.reference_snapshot;
-  const referenceWarningCount =
-    referenceStatus.valuation_reference_missing_count +
-    referenceStatus.valuation_reference_stale_count +
-    referenceStatus.industry_missing_count;
+  const name = displayName(user.username);
+  const overview = await getPortfolioOverview();
+  const benchmarkName = overview.performance.benchmark.name;
+  const hasBlockingWarnings = overview.warnings.length > 0;
 
   return (
     <Shell
-      title={copy.overview.title}
-      subtitle={copy.overview.subtitle}
+      title={`Good Morning, ${name} - Here is your portfolio summary.`}
+      subtitle=""
       locale={user.locale}
       username={user.username}
       role={user.role}
     >
-      <section className="metrics-grid">
-        <MetricCard label="Daily Pipeline" value={pipelineRun.status_label} hint={pipelineRun.current_step_label ?? "Idle"} />
-        <MetricCard label="Current Step" value={pipelineRun.current_step_label ?? "—"} hint={formatDateTime(pipelineRun.updated_at, user.locale)} />
-        <MetricCard label="Step 1 Progress" value={`${formatNumber(status.done_count, user.locale)}/${formatNumber(status.total_codes, user.locale)}`} hint={typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"} />
-        <MetricCard label="Last Code" value={status.last_code ?? "—"} hint={formatDateTime(status.updated_at, user.locale)} />
-        <MetricCard label="Running Steps" value={formatNumber(runningSteps, user.locale)} hint={formatDateTime(workflow.generated_at, user.locale)} />
-        <MetricCard label={copy.overview.batchStatus} value={status.is_running ? copy.common.live : copy.common.idle} hint={status.container_name ?? copy.overview.stateFileOnly} />
-        <MetricCard label={copy.overview.progress} value={typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"} hint={`${formatNumber(status.done_count, user.locale)}/${formatNumber(status.total_codes, user.locale)} ${copy.overview.doneHint}`} />
-        <MetricCard label="Reference Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
-        <MetricCard label={copy.overview.dataFiles} value={formatNumber(data.paired_file_count, user.locale)} hint={`${formatNumber(data.total_size_mb, user.locale, { maximumFractionDigits: 1 })} MB ${copy.common.localStore}`} />
-        <MetricCard label={copy.overview.topPicks} value={formatNumber(picks.rows, user.locale)} hint={picks.latest_date ? `${copy.overview.latestDateHint} ${formatDate(picks.latest_date, user.locale)}` : copy.overview.noInference} />
-        <MetricCard label={copy.overview.validationAuc} value={formatMetric(trainingMetrics.auc, user.locale)} hint={copy.overview.latestTraining} />
-        <MetricCard label="Backtest Artifact" value={formatBytes(runtimeByStep.get(5)?.artifact_size_bytes, user.locale)} hint={formatDateTime(runtimeByStep.get(5)?.artifact_updated_at, user.locale)} />
+      <section className="overview-command-bar" aria-label="Overview status">
+        <span className={`ai-health-badge ${hasBlockingWarnings ? "ai-health-badge-warn" : ""}`}>
+          {hasBlockingWarnings ? "Overview Data: Check Needed" : "Overview Data: Live & Synced"}
+        </span>
+        <span className="overview-market-note">
+          Data source: /api/overview/portfolio from paper account state, performance history, strategy targets, and model picks.
+        </span>
       </section>
 
-      <section className="two-col-grid">
-        <Panel title={copy.overview.pulse} aside={<span className={`pill ${status.is_running ? "live" : ""}`}>{status.is_running ? copy.common.live : copy.common.idle}</span>}>
-          <div className="status-meta">
-            <span>{copy.common.lastStateUpdate}: {formatDateTime(status.updated_at, user.locale)}</span>
-            <span>{copy.common.lastCode}: {status.last_code ?? "—"}</span>
-            <span>{copy.common.remaining}: {formatNumber(status.remaining_count, user.locale)}</span>
-            <span>{copy.common.logSource}: {logs.source}</span>
+      {overview.warnings.length ? (
+        <section className="portfolio-warning-list" aria-label="Overview data warnings">
+          {overview.warnings.map((warning) => (
+            <p key={warning}>{warning}</p>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="overview-kpi-grid" aria-label="Portfolio key performance indicators">
+        <KpiCard
+          label="Account Equity"
+          value={formatDisplayValue(overview.account.total_assets, { locale: user.locale, key: "total_assets" })}
+          detail={`Updated ${formatDateTime(overview.account.updated_at ?? overview.generated_at, user.locale)}`}
+        />
+        <KpiCard
+          label="Today P&L"
+          value={formatDisplayValue(overview.account.today_pnl, { locale: user.locale, key: "today_pnl" })}
+          detail={formatPercent(overview.account.today_pnl_pct, user.locale)}
+          tone={toneFromNumber(overview.account.today_pnl)}
+        />
+        <KpiCard
+          label="Holdings / Pending Buy / Pending Sell"
+          value={`${formatNumber(overview.positions.holding_count, user.locale)} / ${formatNumber(overview.positions.pending_buy_count, user.locale)} / ${formatNumber(overview.positions.pending_sell_count, user.locale)}`}
+          detail={`${formatNumber(overview.positions.open_order_count, user.locale)} open orders`}
+        />
+        <KpiCard
+          label="Pending Actions"
+          value={formatNumber(overview.signals.pending_actions, user.locale)}
+          detail={`Signal date ${formatDate(overview.signals.latest_signal_date, user.locale)}`}
+        />
+      </section>
+
+      <PortfolioPerformanceChart points={overview.performance.points} benchmarkName={benchmarkName} locale={user.locale} />
+
+      <section className="portfolio-table-card">
+        <div className="portfolio-card-header">
+          <div>
+            <p className="portfolio-section-kicker">Actionable Insights</p>
+            <h2>Top AI Picks</h2>
           </div>
-          <pre className="log-console">{latestLines.join("\n") || copy.common.noLogs}</pre>
-        </Panel>
+          <span className="portfolio-table-aside">Source: {overview.top_picks[0]?.source ?? "—"}</span>
+        </div>
 
-        <Panel
-          title={copy.overview.snapshot}
-          aside={<span className={`pill ${referenceWarningCount ? "warn" : "live"}`}>{referenceWarningCount ? `${formatNumber(referenceWarningCount, user.locale)} reference checks` : "Reference clean"}</span>}
-        >
-          <div className="snapshot-health-grid">
-            <section className="snapshot-health-section">
-              <h3>Universe</h3>
-              <div className="snapshot-row-grid">
-                <SnapshotRow label="Active universe" value={formatNumber(data.active_stock_count, user.locale)} hint="tradable stock_list.parquet rows" />
-                <SnapshotRow label="Registry history" value={formatNumber(data.registry_stock_count, user.locale)} hint="stock_registry.parquet rows" />
-                <SnapshotRow label="Listed universe" value={formatNumber(data.stock_count, user.locale)} hint="all listed records in current snapshot" />
-                <SnapshotRow label="Sample codes" value={data.sample_codes.slice(0, 5).join(", ") || "—"} hint="quick coverage spot-check" />
-              </div>
-            </section>
-
-            <section className="snapshot-health-section">
-              <h3>Raw Coverage</h3>
-              <div className="snapshot-row-grid">
-                <SnapshotRow label="Paired file sets" value={formatNumber(data.paired_file_count, user.locale)} hint="K-line plus valuation pairs" />
-                <SnapshotRow label="K-line files" value={formatNumber(data.kline_file_count, user.locale)} hint="daily adjusted OHLCV history" />
-                <SnapshotRow label="Valuation files" value={formatNumber(data.valuation_file_count, user.locale)} hint="daily valuation panels" />
-                <SnapshotRow label="Local footprint" value={formatBytes(data.total_size_mb * 1024 * 1024, user.locale)} hint="research data store" />
-              </div>
-            </section>
-
-            <section className="snapshot-health-section">
-              <h3>Research Artifacts</h3>
-              <div className="snapshot-row-grid">
-                <SnapshotRow label="Training features" value={datasetValue(pipelineSummary.training_features, user.locale)} hint={datasetDate(pipelineSummary.training_features, user.locale)} />
-                <SnapshotRow label="Inference features" value={datasetValue(pipelineSummary.inference_features, user.locale)} hint={datasetDate(pipelineSummary.inference_features, user.locale)} />
-                <SnapshotRow label="Inference scores" value={datasetValue(pipelineSummary.inference_scores, user.locale)} hint={datasetDate(pipelineSummary.inference_scores, user.locale)} />
-                <SnapshotRow label="Top saved features" value={formatNumber(model.top_features.length, user.locale)} hint="latest model metadata" />
-              </div>
-            </section>
-
-            <section className="snapshot-health-section">
-              <h3>Reference Coverage</h3>
-              <div className="snapshot-row-grid">
-                <SnapshotRow label="Target trade date" value={referenceStatus.target_trade_date ?? referenceSnapshot?.target_trade_date ?? "—"} hint="slow-reference freshness target" />
-                <SnapshotRow label="Ready / missing / stale" value={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} / ${formatNumber(referenceStatus.valuation_reference_missing_count, user.locale)} / ${formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)}`} hint="valuation reference cache" />
-                <SnapshotRow label="Industry known / missing" value={`${formatNumber(referenceSnapshot?.industry_known_count, user.locale)} / ${formatNumber(referenceStatus.industry_missing_count, user.locale)}`} hint="industry metadata coverage" />
-                <SnapshotRow label="Reference batch" value={referenceStatus.status_label} hint={formatDateTime(referenceStatus.updated_at ?? referenceStatus.reference_status_updated_at, user.locale)} />
-              </div>
-            </section>
-          </div>
-        </Panel>
+        <div className="portfolio-table-wrap">
+          <table className="portfolio-picks-table">
+            <thead>
+              <tr>
+                <th>Ticker/Symbol</th>
+                <th>Company Name</th>
+                <th>Signal Type</th>
+                <th>AI Confidence Score</th>
+                <th>Recommended Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.top_picks.map((pick: OverviewTopPick, index) => (
+                <tr key={`${pick.code ?? "row"}-${index}`}>
+                  <td><strong>{pick.code ?? "—"}</strong></td>
+                  <td>{pick.name ?? "—"}</td>
+                  <td>
+                    <span className={`signal-badge ${signalTone(pick.signal_type)}`}>
+                      {pick.signal_type ?? "—"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="confidence-cell">
+                      <div className="confidence-track" aria-hidden="true">
+                        <span style={{ width: `${scoreWidth(pick.confidence)}%` }} />
+                      </div>
+                      <strong>{formatScore(pick.confidence, user.locale)}</strong>
+                    </div>
+                  </td>
+                  <td>{formatWeight(pick.recommended_weight, user.locale)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {overview.top_picks.length ? null : <p className="empty-state portfolio-empty-state">No real AI picks or target rows are available yet.</p>}
+        </div>
       </section>
     </Shell>
   );

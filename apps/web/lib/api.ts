@@ -426,6 +426,61 @@ export type PaperPerformance = {
   snapshots: PaperPerformanceRow[];
 };
 
+export type OverviewPerformancePoint = {
+  date?: string | null;
+  portfolio_value?: number | null;
+  benchmark_value?: number | null;
+  account_equity?: number | null;
+};
+
+export type OverviewTopPick = {
+  rank?: number | null;
+  code?: string | null;
+  name?: string | null;
+  industry?: string | null;
+  signal_type?: string | null;
+  confidence?: number | null;
+  recommended_weight?: number | null;
+  target_qty?: number | null;
+  estimated_order_notional?: number | null;
+  reason?: string | null;
+  source?: string | null;
+};
+
+export type OverviewPortfolio = {
+  generated_at?: string | null;
+  account: {
+    currency?: string | null;
+    total_assets?: number | null;
+    cash?: number | null;
+    market_value?: number | null;
+    total_pnl?: number | null;
+    today_pnl?: number | null;
+    today_pnl_pct?: number | null;
+    updated_at?: string | null;
+  };
+  positions: {
+    holding_count?: number | null;
+    pending_buy_count?: number | null;
+    pending_sell_count?: number | null;
+    open_order_count?: number | null;
+  };
+  signals: {
+    latest_signal_date?: string | null;
+    new_signals_today?: number | null;
+    pending_actions?: number | null;
+  };
+  performance: {
+    benchmark: {
+      code: string;
+      name: string;
+    };
+    points: OverviewPerformancePoint[];
+  };
+  top_picks: OverviewTopPick[];
+  warnings: string[];
+};
+
 export function getBatchStatus() {
   return fetchJson<BatchStatus>("/api/status/batch");
 }
@@ -515,6 +570,10 @@ export function getModelOverview(profile?: string) {
 
 export function getPicks(limit = 25) {
   return fetchJson<PicksOverview>(`/api/model/picks?limit=${limit}`);
+}
+
+export function getPortfolioOverview() {
+  return fetchJson<OverviewPortfolio>("/api/overview/portfolio");
 }
 
 export function getPaperStatus() {

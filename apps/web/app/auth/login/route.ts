@@ -11,10 +11,13 @@ export async function POST(request: NextRequest) {
   const user = authenticateUser(username, password);
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login?error=invalid", origin), { status: 303 });
+    const response = NextResponse.redirect(new URL("/login?error=invalid", origin), { status: 303 });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
   }
 
-  const response = NextResponse.redirect(new URL("/overview", origin), { status: 303 });
+  const response = NextResponse.redirect(new URL("/system-monitor", origin), { status: 303 });
+  response.headers.set("Cache-Control", "no-store");
   response.cookies.set(SESSION_COOKIE, createSessionToken(user.username, sessionSecret()), {
     httpOnly: true,
     sameSite: "lax",

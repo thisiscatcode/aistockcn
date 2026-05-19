@@ -77,10 +77,9 @@ docker compose build
 
 ### Start the panel
 
-For local development, the default `docker-compose.override.yml` bind-mounts
-`apps/api` and `apps/web`, runs FastAPI with `--reload`, and runs Next.js with
-`next dev`. In that mode, normal source edits usually only need a browser
-refresh instead of a rebuild.
+The default `docker-compose.override.yml` bind-mounts `apps/api` and runs
+FastAPI with `--reload`. The web panel runs with the production Next.js server
+by default, so the public panel does not show the Next.js development overlay.
 
 ```bash
 cp run/panel.env.example run/panel.env
@@ -95,21 +94,18 @@ docker compose build panel-api
 docker compose up -d panel-api
 ```
 
-If you change `apps/web/package.json` or `apps/web/package-lock.json`, rebuild the
-web image and refresh the mounted `node_modules` volume once:
+If you change the web app, rebuild and restart the web image:
 
 ```bash
 docker compose build panel-web
-docker compose rm -sf panel-web
-docker volume rm aistockcn_panel-web-node-modules
 docker compose up -d panel-web
 ```
 
-If you want the original production-like panel containers without source mounts,
-run Compose without the override file:
+If you want local Next.js development with source mounts and `next dev`, include
+the web development override explicitly:
 
 ```bash
-docker compose -f docker-compose.yml up -d panel-api panel-web
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.web-dev.yml up -d panel-web
 ```
 
 Before first start, replace the example auth secrets and password hashes in those local copies.

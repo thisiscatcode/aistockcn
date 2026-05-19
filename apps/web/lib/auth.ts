@@ -26,7 +26,7 @@ type LoadedPanelUser = {
   role?: string;
 };
 
-export type PanelRole = "admin" | "viewer";
+export type PanelRole = "admin" | "investor";
 
 export type PanelUser = {
   username: string;
@@ -61,7 +61,7 @@ function signedValue(value: string, secret: string) {
 }
 
 function normalizeRole(value?: string): PanelRole {
-  return value === "admin" ? "admin" : "viewer";
+  return value === "admin" ? "admin" : "investor";
 }
 
 function sanitizeUser(user: LoadedPanelUser): PanelUser {
@@ -243,6 +243,25 @@ function isLocalHostname(value: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+function publicHostnames() {
+  const hosts = new Set<string>();
+  const configuredUrl = process.env.PANEL_PUBLIC_URL?.trim();
+  if (configuredUrl) {
+    try {
+      hosts.add(normalizeHostname(new URL(configuredUrl).hostname));
+    } catch {
+      // Ignore malformed optional config and fall back to request origin.
+    }
+  }
+
+  process.env.PANEL_PUBLIC_HOSTS?.split(",")
+    .map((host) => normalizeHostname(host))
+    .filter(Boolean)
+    .forEach((host) => hosts.add(host));
+
+  return hosts;
+}
+
 function requestOrigin(request: NextRequest) {
   const forwardedHost = firstHeaderValue(request.headers.get("x-forwarded-host"));
   const host = forwardedHost ?? request.headers.get("host") ?? "localhost:3030";
@@ -261,8 +280,12 @@ export function appOrigin(request: NextRequest) {
   const configuredOrigin = normalizeOrigin(configuredUrl);
   try {
     const requestHostname = new URL(origin).hostname;
-    const configuredHostname = new URL(configuredOrigin).hostname;
-    if (isLocalHostname(requestHostname) && !isLocalHostname(configuredHostname)) {
+    const configuredHostname = normalizeHostname(new URL(configuredOrigin).hostname);
+    if (
+      requestHostname === configuredHostname ||
+      publicHostnames().has(normalizeHostname(requestHostname)) ||
+      (isLocalHostname(requestHostname) && !isLocalHostname(configuredHostname))
+    ) {
       return origin;
     }
   } catch {

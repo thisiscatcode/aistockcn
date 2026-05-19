@@ -19,6 +19,7 @@ from backtest_walk_forward import annualized_return, max_drawdown
 from build_inference_features import build_inference_frame
 from download_data import build_valuation_df
 from app.services import batch as batch_service
+from app.services import benchmark as benchmark_service
 from app.services import model as model_service
 from app.services import model_profiles as model_profiles_service
 from app.services import source_readiness
@@ -158,6 +159,60 @@ class PipelineRepairTests(unittest.TestCase):
 
         self.assertEqual(result["reason"], "baostock_probe_timeout")
         self.assertIn("timed out", result["baostock"]["error"])
+
+    def test_benchmark_history_normalizes_akshare_index_schema(self) -> None:
+        raw = pd.DataFrame(
+            [
+                {"日期": "2026-05-18", "开盘": "3900.1", "收盘": "3910.2", "成交量": "100"},
+                {"日期": "2026-05-19", "开盘": "3910.2", "收盘": "3920.3", "成交量": "110"},
+            ]
+        )
+
+        normalized = benchmark_service.normalize_akshare_index_history(raw)
+
+        self.assertEqual(normalized["code"].tolist(), ["000300.SH", "000300.SH"])
+        self.assertEqual(normalized["source"].tolist(), ["akshare.index_zh_a_hist", "akshare.index_zh_a_hist"])
+        self.assertEqual(normalized["close"].tolist(), [3910.2, 3920.3])
+
+    def test_benchmark_refresh_merges_into_canonical_index_parquet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            index_dir = quant_dir / "index"
+            index_dir.mkdir(parents=True)
+            path = index_dir / "000300.SH.parquet"
+            pd.DataFrame(
+                [
+                    {
+                        "date": pd.Timestamp("2026-05-18"),
+                        "code": "000300.SH",
+                        "name": "沪深300",
+                        "close": 3910.2,
+                        "source": "akshare.index_zh_a_hist",
+                        "updated_at": "2026-05-18T00:00:00+00:00",
+                    }
+                ]
+            ).to_parquet(path, index=False)
+
+            fake_ak = SimpleNamespace(
+                index_zh_a_hist=mock.Mock(
+                    return_value=pd.DataFrame(
+                        [
+                            {"日期": "2026-05-18", "收盘": 3911.0},
+                            {"日期": "2026-05-19", "收盘": 3920.3},
+                        ]
+                    )
+                )
+            )
+            settings = SimpleNamespace(quant_dir=quant_dir)
+
+            with mock.patch.object(benchmark_service, "get_settings", return_value=settings):
+                with mock.patch.object(benchmark_service, "_load_akshare", return_value=fake_ak):
+                    result = benchmark_service.refresh_benchmark_history(end_date="20260519")
+
+            stored = pd.read_parquet(path).sort_values("date").reset_index(drop=True)
+            self.assertEqual(result["rows"], 2)
+            self.assertEqual(result["latest_date"], "2026-05-19")
+            self.assertEqual(stored["close"].tolist(), [3911.0, 3920.3])
 
     def test_recent_state_file_mtime_prevents_false_stall_on_json_race(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

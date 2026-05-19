@@ -17,9 +17,10 @@ type Messages = {
     shanghaiTime: string;
     logout: string;
     admin: string;
-    viewer: string;
+    investor: string;
     nav: {
       overview: string;
+      systemMonitor: string;
       batch: string;
       data: string;
       models: string;
@@ -66,6 +67,10 @@ type Messages = {
     valuationFiles: string;
     latestInference: string;
     topSavedFeatures: string;
+  };
+  systemMonitor: {
+    title: string;
+    subtitle: string;
   };
   batch: {
     title: string;
@@ -210,9 +215,10 @@ const messages: Messages = {
     shanghaiTime: "China Time",
     logout: "Logout",
     admin: "Admin",
-    viewer: "Viewer",
+    investor: "Investor",
     nav: {
       overview: "Overview",
+      systemMonitor: "System Monitor",
       batch: "Pipeline",
       data: "Explorer",
       models: "Models",
@@ -259,6 +265,10 @@ const messages: Messages = {
     valuationFiles: "Valuation files",
     latestInference: "Latest inference date",
     topSavedFeatures: "Top saved features"
+  },
+  systemMonitor: {
+    title: "System Monitor",
+    subtitle: "Operational health, data coverage, and pipeline telemetry."
   },
   batch: {
     title: "Pipeline",

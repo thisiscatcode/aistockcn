@@ -3,7 +3,7 @@ import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { Shell } from "@/components/shell";
 import { getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { getAdminCatalog } from "@/lib/admin";
 import { formatBytes, formatDate, formatDateRange, formatDateTime, formatDisplayValue, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
@@ -62,7 +62,8 @@ function workflowArtifact(step: number, context: {
 }
 
 export default async function AdminPage() {
-  const user = await requireAdmin();
+  const user = await requireAuth();
+  const isAdmin = user.role === "admin";
   const copy = getMessages(user.locale);
   const admin = getAdminCatalog(user.locale);
 
@@ -181,7 +182,7 @@ export default async function AdminPage() {
               <span>Updated: {formatDateTime(referenceStatus.updated_at ?? referenceStatus.reference_status_updated_at, user.locale)}</span>
               <span>Container: {referenceStatus.container_name ?? "—"}</span>
             </div>
-            <div className="action-row">
+            {isAdmin ? <div className="action-row">
               {referenceStatus.can_start ? (
                 <form action="/batch/control" method="post">
                   <input type="hidden" name="target" value="reference" />
@@ -196,7 +197,7 @@ export default async function AdminPage() {
                   <button className="action-button danger-button" type="submit">Stop Reference Batch</button>
                 </form>
               ) : null}
-            </div>
+            </div> : null}
             {referenceStatus.last_error ? <p className="panel-copy status-warn">Last error: {referenceStatus.last_error}</p> : null}
             <pre className="log-console compact-log">{referenceStatus.log_lines.join("\n") || copy.common.noLogs}</pre>
           </div>

@@ -25,14 +25,12 @@ function formatShanghaiTime(value: Date, locale: PanelLocale) {
 
 export function ShanghaiTime({
   locale,
-  label,
-  initialValue
+  label
 }: {
   locale: PanelLocale;
   label: string;
-  initialValue: string;
 }) {
-  const [value, setValue] = useState(initialValue);
+  const [value, setValue] = useState("—");
 
   useEffect(() => {
     const updateValue = () => setValue(formatShanghaiTime(new Date(), locale));
@@ -44,9 +42,7 @@ export function ShanghaiTime({
   return (
     <span className="shell-time">
       <span className="shell-time-label">{label}:</span>{" "}
-      <time className="shell-time-value" suppressHydrationWarning>
-        {value}
-      </time>
+      <time className="shell-time-value">{value}</time>
     </span>
   );
 }

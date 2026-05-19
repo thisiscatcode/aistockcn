@@ -14,6 +14,7 @@ from app.routers.control import router as control_router
 from app.routers.data import router as data_router
 from app.routers.logs import router as logs_router
 from app.routers.model import router as model_router
+from app.routers.overview import router as overview_router
 from app.routers.paper import router as paper_router
 from app.routers.status import router as status_router
 from app.services.auto_pipeline import start_auto_pipeline_scheduler, stop_auto_pipeline_scheduler
@@ -94,6 +95,7 @@ app.include_router(status_router)
 app.include_router(logs_router)
 app.include_router(data_router)
 app.include_router(model_router)
+app.include_router(overview_router)
 app.include_router(paper_router)
 app.include_router(control_router)
 
@@ -118,6 +120,9 @@ def root() -> dict[str, object]:
             "/api/data/stock/{code}",
             "/api/model/latest",
             "/api/model/picks",
+            "/api/overview/portfolio",
+            "/api/overview/benchmark",
+            "/api/overview/benchmark/refresh",
             "/api/paper/status",
             "/api/paper/overview",
             "/api/paper/targets",

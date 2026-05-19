@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { isAuthenticated } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { getMessages } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +10,9 @@ export default async function LoginPage({
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
-  if (await isAuthenticated()) {
-    redirect("/overview");
+  const user = await getCurrentUser();
+  if (user) {
+    redirect("/system-monitor");
   }
 
   const params = (await searchParams) ?? {};
