@@ -1777,6 +1777,17 @@ select {
   white-space: nowrap;
 }
 
+.data-table-link {
+  color: #0b5cad;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.data-table-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .table-pagination {
   display: flex;
   align-items: center;
@@ -2531,6 +2542,10 @@ select {
 
 .shell-dark .data-table td {
   color: #e0e6f5;
+}
+
+.shell-dark .data-table-link {
+  color: #8fc7ff;
 }
 
 .shell-dark .log-console {

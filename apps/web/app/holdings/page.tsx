@@ -32,6 +32,12 @@ function normalizeSymbol(value: unknown): string {
   return /^\d+$/.test(text) ? text.padStart(6, "0") : text;
 }
 
+function googleStockSearchUrl(symbol: unknown) {
+  const normalized = normalizeSymbol(symbol);
+  const query = normalized ? `${normalized} 股票` : "股票";
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
 export default async function HoldingsPage() {
   const user = await requireAuth();
   const snapshot = await getPaperHoldings(1000, 300, 5000);
@@ -42,15 +48,19 @@ export default async function HoldingsPage() {
   const marketValue = asNumber(summary.market_value) ?? computedMarketValue;
   const unrealizedPnl = asNumber(summary.unrealized_pnl) ?? computedUnrealizedPnl;
 
-  const positionRows = positions.map((row) => ({
-    code_name: [row.display_symbol ?? normalizeSymbol(row.symbol ?? row.code), row.name ?? row.stock_name ?? row.security_name ?? null]
-      .filter(Boolean)
-      .join(" / "),
-    market_value: row.market_value ?? null,
-    quantity: row.quantity ?? row.qty ?? null,
-    last_price: row.last_price ?? row.price ?? row.current_price ?? null,
-    cost: row.avg_cost ?? row.cost_price ?? row.average_cost ?? null,
-  }));
+  const positionRows = positions.map((row) => {
+    const symbol = row.symbol ?? row.code;
+    return {
+      code_name: [row.display_symbol ?? normalizeSymbol(symbol), row.name ?? row.stock_name ?? row.security_name ?? null]
+        .filter(Boolean)
+        .join(" / "),
+      code_name_href: googleStockSearchUrl(symbol),
+      market_value: row.market_value ?? null,
+      quantity: row.quantity ?? row.qty ?? null,
+      last_price: row.last_price ?? row.price ?? row.current_price ?? null,
+      cost: row.avg_cost ?? row.cost_price ?? row.average_cost ?? null,
+    };
+  });
 
   const positionColumns = [
     { key: "code_name", label: "Code / Name" },

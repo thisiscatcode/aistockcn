@@ -54,6 +54,15 @@ function isNumericCell(value: unknown, key: string) {
   return value.includes(".") || NUMERIC_KEYWORDS.some((keyword) => normalizedKey.includes(keyword));
 }
 
+function linkHref(row: TableRow, key: string): string | null {
+  const value = row[`${key}_href`];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const href = value.trim();
+  return href ? href : null;
+}
+
 export function DataTable({
   rows,
   columns,
@@ -115,10 +124,17 @@ export function DataTable({
               <tr key={`${(safeCurrentPage - 1) * currentPageSize + index}-${normalizedHeaders[0]?.key ?? "row"}`}>
                 {normalizedHeaders.map((header) => {
                   const value = formatDisplayValue(row[header.key], { locale, key: header.key });
+                  const href = linkHref(row, header.key);
                   return (
                     <td key={header.key} className={numericColumns.has(header.key) ? "data-table-cell-numeric" : undefined}>
                       <span className="data-table-cell-content" title={value}>
-                        {value}
+                        {href ? (
+                          <a className="data-table-link" href={href} target="_blank" rel="noopener noreferrer">
+                            {value}
+                          </a>
+                        ) : (
+                          value
+                        )}
                       </span>
                     </td>
                   );
