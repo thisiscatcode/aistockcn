@@ -392,6 +392,18 @@ export type PaperOrders = {
   error?: string | null;
 };
 
+export type PaperHoldings = {
+  generated_at?: string | null;
+  gateway: PaperGatewayStatus;
+  summary: Record<string, unknown>;
+  balance: Array<Record<string, unknown>>;
+  positions_rows: number;
+  positions: Array<Record<string, unknown>>;
+  orders_rows: number;
+  orders: Array<Record<string, unknown>>;
+  error?: string | null;
+};
+
 export type PaperHistory = {
   rows: number;
   history: Array<Record<string, unknown>>;
@@ -594,6 +606,10 @@ export function getPaperPositions(limit = 50, timeoutMs?: number) {
 
 export function getPaperOrders(limit = 50, timeoutMs?: number) {
   return fetchJson<PaperOrders>(`/api/paper/orders?limit=${limit}`, { timeoutMs });
+}
+
+export function getPaperHoldings(positionLimit = 500, orderLimit = 200, timeoutMs?: number) {
+  return fetchJson<PaperHoldings>(`/api/paper/holdings?position_limit=${positionLimit}&order_limit=${orderLimit}`, { timeoutMs });
 }
 
 export function getPaperHistory(limit = 50) {

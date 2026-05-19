@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from app.services.paper import (
+    get_paper_trading_holdings,
     get_paper_trading_history,
     get_paper_trading_orders,
     get_paper_trading_overview,
@@ -23,6 +24,14 @@ def paper_status() -> dict[str, object]:
 @router.get("/overview")
 def paper_overview() -> dict[str, object]:
     return get_paper_trading_overview()
+
+
+@router.get("/holdings")
+def paper_holdings(
+    position_limit: int = Query(default=500, ge=1, le=1000),
+    order_limit: int = Query(default=200, ge=1, le=500),
+) -> dict[str, object]:
+    return get_paper_trading_holdings(position_limit=position_limit, order_limit=order_limit)
 
 
 @router.get("/targets")

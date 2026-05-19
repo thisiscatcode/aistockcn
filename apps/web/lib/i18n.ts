@@ -25,6 +25,7 @@ type Messages = {
       data: string;
       models: string;
       picks: string;
+      holdings: string;
       paper: string;
       admin: string;
     };
@@ -223,6 +224,7 @@ const messages: Messages = {
       data: "Explorer",
       models: "Models",
       picks: "Picks",
+      holdings: "持倉",
       paper: "Paper",
       admin: "Admin"
     }

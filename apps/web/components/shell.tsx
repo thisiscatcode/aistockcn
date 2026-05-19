@@ -29,6 +29,7 @@ export function Shell({
     navItem("/data", copy.shell.nav.data),
     navItem("/models", copy.shell.nav.models),
     navItem("/picks", copy.shell.nav.picks),
+    navItem("/holdings" as Route, copy.shell.nav.holdings),
     navItem("/paper", copy.shell.nav.paper),
     navItem("/admin", copy.shell.nav.admin)
   ];

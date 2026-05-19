@@ -280,6 +280,52 @@ def get_paper_trading_overview() -> dict[str, Any]:
     }
 
 
+def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 200) -> dict[str, Any]:
+    settings = get_settings()
+    status = get_paper_trading_status()
+    client = PaperGatewayClient(settings)
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    if status["gateway"]["healthy"]:
+        try:
+            client.sync()
+        except PaperGatewayError:
+            pass
+
+    try:
+        summary = client.get_summary()
+        balance = client.get_balance()
+        positions = _sort_by_numeric_desc(client.get_positions(), "market_value")
+        orders = sorted(
+            client.get_orders(),
+            key=lambda row: str(row.get("updated_at") or row.get("create_time") or row.get("created_at") or ""),
+            reverse=True,
+        )
+        return {
+            "generated_at": generated_at,
+            "gateway": status["gateway"],
+            "summary": records_to_json([summary])[0] if summary else {},
+            "balance": records_to_json(balance),
+            "positions_rows": len(positions),
+            "positions": records_to_json(positions[:position_limit]),
+            "orders_rows": len(orders),
+            "orders": records_to_json(orders[:order_limit]),
+            "error": None,
+        }
+    except PaperGatewayError as exc:
+        return {
+            "generated_at": generated_at,
+            "gateway": status["gateway"],
+            "summary": {},
+            "balance": [],
+            "positions_rows": 0,
+            "positions": [],
+            "orders_rows": 0,
+            "orders": [],
+            "error": str(exc),
+        }
+
+
 def get_paper_trading_targets(*, limit: int = 25) -> dict[str, Any]:
     settings = get_settings()
     targets_df = _safe_read_parquet(settings.paper_trading_targets_path)
