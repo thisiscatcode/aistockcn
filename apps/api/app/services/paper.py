@@ -71,6 +71,57 @@ def _position_quantity(row: dict[str, Any]) -> float:
         return 0.0
 
 
+def _normalize_symbol(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    if "." in text:
+        return text.split(".", 1)[-1]
+    return text.zfill(6) if text.isdigit() else text
+
+
+def _stock_name_lookup(settings: Settings) -> dict[str, dict[str, str]]:
+    lookup: dict[str, dict[str, str]] = {}
+    for path in [settings.stock_list_path, settings.stock_registry_path]:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_parquet(path, columns=["code", "exchange", "name"])
+        except (pa.ArrowException, OSError, ValueError):
+            continue
+        for row in df.to_dict(orient="records"):
+            code = _normalize_symbol(row.get("code"))
+            if not code or code in lookup:
+                continue
+            exchange = str(row.get("exchange") or "").strip().upper()
+            lookup[code] = {
+                "name": str(row.get("name") or "").strip(),
+                "exchange": exchange,
+                "display_symbol": f"{code}.{exchange}" if exchange else code,
+            }
+        if lookup:
+            break
+    return lookup
+
+
+def _enrich_position_metadata(rows: list[dict[str, Any]], settings: Settings) -> list[dict[str, Any]]:
+    lookup = _stock_name_lookup(settings)
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        symbol = _normalize_symbol(row.get("symbol") or row.get("code"))
+        meta = lookup.get(symbol, {})
+        enriched.append(
+            {
+                **row,
+                "symbol": symbol or row.get("symbol"),
+                "display_symbol": meta.get("display_symbol") or symbol or row.get("symbol"),
+                "name": row.get("name") or meta.get("name") or None,
+                "exchange": row.get("exchange") or meta.get("exchange") or row.get("market"),
+            }
+        )
+    return enriched
+
+
 def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
     balance_metrics = row.get("balance_metrics") or {}
     live_summary = row.get("live_summary") or {}
@@ -303,7 +354,10 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
         summary = client.get_summary()
         balance = client.get_balance()
         raw_positions = client.get_positions()
-        positions = _sort_by_numeric_desc([row for row in raw_positions if _position_quantity(row) > 0], "market_value")
+        positions = _enrich_position_metadata(
+            _sort_by_numeric_desc([row for row in raw_positions if _position_quantity(row) > 0], "market_value"),
+            settings,
+        )
         orders = sorted(
             client.get_orders(),
             key=lambda row: str(row.get("updated_at") or row.get("create_time") or row.get("created_at") or ""),

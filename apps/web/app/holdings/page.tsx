@@ -43,7 +43,7 @@ export default async function HoldingsPage() {
   const unrealizedPnl = asNumber(summary.unrealized_pnl) ?? computedUnrealizedPnl;
 
   const positionRows = positions.map((row) => ({
-    code_name: [normalizeSymbol(row.symbol ?? row.code), row.name ?? row.stock_name ?? row.security_name ?? null]
+    code_name: [row.display_symbol ?? normalizeSymbol(row.symbol ?? row.code), row.name ?? row.stock_name ?? row.security_name ?? null]
       .filter(Boolean)
       .join(" / "),
     market_value: row.market_value ?? null,
