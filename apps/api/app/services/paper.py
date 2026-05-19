@@ -71,13 +71,32 @@ def _position_quantity(row: dict[str, Any]) -> float:
         return 0.0
 
 
+def _numeric_value(value: Any) -> float | None:
+    if value in (None, "", "N/A"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _normalize_symbol(value: Any) -> str:
     text = str(value or "").strip().upper()
     if not text:
         return ""
     if "." in text:
-        return text.split(".", 1)[-1]
+        first, second = text.split(".", 1)
+        if first in {"SH", "SZ"}:
+            return second
+        if second in {"SH", "SZ"}:
+            return first
+        return second
     return text.zfill(6) if text.isdigit() else text
+
+
+def _display_symbol_from_meta(symbol: str, exchange: str | None) -> str:
+    exchange_text = str(exchange or "").strip().upper()
+    return f"{symbol}.{exchange_text}" if symbol and exchange_text else symbol
 
 
 def _stock_name_lookup(settings: Settings) -> dict[str, dict[str, str]]:
@@ -97,7 +116,7 @@ def _stock_name_lookup(settings: Settings) -> dict[str, dict[str, str]]:
             lookup[code] = {
                 "name": str(row.get("name") or "").strip(),
                 "exchange": exchange,
-                "display_symbol": f"{code}.{exchange}" if exchange else code,
+                "display_symbol": _display_symbol_from_meta(code, exchange),
             }
         if lookup:
             break
@@ -120,6 +139,44 @@ def _enrich_position_metadata(rows: list[dict[str, Any]], settings: Settings) ->
             }
         )
     return enriched
+
+
+def _normalize_futu_position_row(row: dict[str, Any]) -> dict[str, Any]:
+    symbol = _normalize_symbol(row.get("symbol") or row.get("code"))
+    quantity = _numeric_value(row.get("quantity") or row.get("qty")) or 0.0
+    last_price = _numeric_value(row.get("last_price") or row.get("nominal_price") or row.get("price"))
+    market_value = _numeric_value(row.get("market_value") or row.get("market_val"))
+    if market_value is None and last_price is not None:
+        market_value = quantity * last_price
+    avg_cost = _numeric_value(row.get("avg_cost") or row.get("cost_price") or row.get("diluted_cost") or row.get("average_cost"))
+    unrealized_pnl = _numeric_value(row.get("unrealized_pnl") or row.get("pl_val") or row.get("unrealized_pl"))
+    return {
+        **row,
+        "symbol": symbol or row.get("symbol"),
+        "quantity": quantity,
+        "last_price": last_price,
+        "market_value": market_value,
+        "avg_cost": avg_cost,
+        "unrealized_pnl": unrealized_pnl,
+    }
+
+
+def _direct_futu_summary(balance: list[dict[str, Any]], positions: list[dict[str, Any]]) -> dict[str, Any]:
+    record = balance[0] if balance else {}
+    market_value = _numeric_value(record.get("market_val")) or sum(_numeric_value(row.get("market_value")) or 0.0 for row in positions)
+    unrealized_pnl = sum(_numeric_value(row.get("unrealized_pnl")) or 0.0 for row in positions)
+    buying_power = _numeric_value(record.get("power"))
+    if buying_power is None:
+        buying_power = _numeric_value(record.get("available_funds"))
+    return {
+        "total_assets": _numeric_value(record.get("total_assets")),
+        "cash": _numeric_value(record.get("cash")),
+        "buying_power": buying_power,
+        "market_value": market_value,
+        "unrealized_pnl": unrealized_pnl,
+        "total_pnl": unrealized_pnl,
+        "currency": record.get("currency"),
+    }
 
 
 def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -211,6 +268,15 @@ class PaperGatewayClient:
 
     def get_positions(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/v1/agents/me/positions", params={"market": self.market}).get("positions", []))
+
+    def get_broker_positions(self) -> list[dict[str, Any]]:
+        return list(
+            self._request(
+                "GET",
+                "/v1/positions",
+                params={"market": self.market, "account_id": self.account_id},
+            ).get("positions", [])
+        )
 
     def get_orders(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/v1/agents/me/orders", params={"market": self.market}).get("orders", []))
@@ -351,13 +417,14 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
             pass
 
     try:
-        summary = client.get_summary()
         balance = client.get_balance()
-        raw_positions = client.get_positions()
+        raw_positions = client.get_broker_positions()
+        normalized_positions = [_normalize_futu_position_row(row) for row in raw_positions]
         positions = _enrich_position_metadata(
-            _sort_by_numeric_desc([row for row in raw_positions if _position_quantity(row) > 0], "market_value"),
+            _sort_by_numeric_desc([row for row in normalized_positions if _position_quantity(row) > 0], "market_value"),
             settings,
         )
+        summary = _direct_futu_summary(balance, positions)
         orders = sorted(
             client.get_orders(),
             key=lambda row: str(row.get("updated_at") or row.get("create_time") or row.get("created_at") or ""),
