@@ -77,6 +77,14 @@ function cellTitle(row: TableRow, key: string, fallback: string) {
   return detail ? `${fallback} / ${detail}` : fallback;
 }
 
+function cellTone(row: TableRow, key: string): string | null {
+  const value = row[`${key}_tone`];
+  if (value === "positive" || value === "negative" || value === "neutral") {
+    return value;
+  }
+  return null;
+}
+
 export function DataTable({
   rows,
   columns,
@@ -140,9 +148,14 @@ export function DataTable({
                   const value = formatDisplayValue(row[header.key], { locale, key: header.key });
                   const href = linkHref(row, header.key);
                   const detail = cellDetail(row, header.key);
+                  const tone = cellTone(row, header.key);
+                  const contentClassName = [
+                    detail ? "data-table-cell-stack" : "data-table-cell-content",
+                    tone ? `data-table-cell-tone-${tone}` : null
+                  ].filter(Boolean).join(" ");
                   return (
                     <td key={header.key} className={numericColumns.has(header.key) ? "data-table-cell-numeric" : undefined}>
-                      <span className={detail ? "data-table-cell-stack" : "data-table-cell-content"} title={cellTitle(row, header.key, value)}>
+                      <span className={contentClassName} title={cellTitle(row, header.key, value)}>
                         {href ? (
                           <a className="data-table-link" href={href} target="_blank" rel="noopener noreferrer">
                             {value}

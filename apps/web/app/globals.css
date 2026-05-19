@@ -1808,6 +1808,21 @@ select {
   text-underline-offset: 3px;
 }
 
+.data-table-cell-tone-positive,
+.data-table-cell-tone-positive .data-table-cell-detail {
+  color: #b42318;
+}
+
+.data-table-cell-tone-negative,
+.data-table-cell-tone-negative .data-table-cell-detail {
+  color: #15803d;
+}
+
+.data-table-cell-tone-neutral,
+.data-table-cell-tone-neutral .data-table-cell-detail {
+  color: var(--muted);
+}
+
 .table-pagination {
   display: flex;
   align-items: center;
@@ -2570,6 +2585,16 @@ select {
 
 .shell-dark .data-table-cell-detail {
   color: #9aa7c0;
+}
+
+.shell-dark .data-table-cell-tone-positive,
+.shell-dark .data-table-cell-tone-positive .data-table-cell-detail {
+  color: #ff8a80;
+}
+
+.shell-dark .data-table-cell-tone-negative,
+.shell-dark .data-table-cell-tone-negative .data-table-cell-detail {
+  color: #7ddc9b;
 }
 
 .shell-dark .log-console {

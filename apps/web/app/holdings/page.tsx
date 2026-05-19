@@ -52,6 +52,48 @@ function googleStockSearchUrl(symbol: unknown) {
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
 
+function formatSignedNumber(value: number | null) {
+  if (value === null) {
+    return "—";
+  }
+  const formatted = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2
+  }).format(Math.abs(value));
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatted}`;
+}
+
+function formatSignedPercent(value: number | null) {
+  if (value === null) {
+    return "—";
+  }
+  const formatted = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2
+  }).format(Math.abs(value));
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatted}%`;
+}
+
+function pnlPercent(row: DashboardRow, pnl: number | null) {
+  const futuRatio = asNumber(row.pl_ratio);
+  if (futuRatio !== null) {
+    return futuRatio;
+  }
+  const cost = asNumber(row.avg_cost ?? row.cost_price ?? row.average_cost);
+  const quantity = asNumber(row.quantity ?? row.qty);
+  if (pnl === null || cost === null || quantity === null || cost * quantity === 0) {
+    return null;
+  }
+  return (pnl / Math.abs(cost * quantity)) * 100;
+}
+
+function pnlTone(value: number | null) {
+  if (value === null || value === 0) {
+    return "neutral";
+  }
+  return value > 0 ? "positive" : "negative";
+}
+
 export default async function HoldingsPage() {
   const user = await requireAuth();
   const snapshot = await getPaperHoldings(1000, 300, 5000);
@@ -68,6 +110,8 @@ export default async function HoldingsPage() {
     const chineseName = row.name ?? null;
     const code = row.display_symbol ?? displaySymbol(symbol, row.exchange);
     const detail = [truncateText(englishName), truncateText(chineseName, 18)].filter(Boolean).join(" / ");
+    const currentPnl = asNumber(row.unrealized_pnl ?? row.pl_val);
+    const currentPnlPercent = pnlPercent(row, currentPnl);
     return {
       code_name: code,
       code_name_detail: detail,
@@ -76,6 +120,9 @@ export default async function HoldingsPage() {
       quantity: row.quantity ?? row.qty ?? null,
       last_price: row.last_price ?? row.price ?? row.current_price ?? null,
       cost: row.avg_cost ?? row.cost_price ?? row.average_cost ?? null,
+      current_pnl: formatSignedNumber(currentPnl),
+      current_pnl_detail: formatSignedPercent(currentPnlPercent),
+      current_pnl_tone: pnlTone(currentPnl),
     };
   });
 
@@ -85,6 +132,7 @@ export default async function HoldingsPage() {
     { key: "quantity", label: "Quantity" },
     { key: "last_price", label: "Last Price" },
     { key: "cost", label: "Cost" },
+    { key: "current_pnl", label: "Current P/L" },
   ];
 
   return (
