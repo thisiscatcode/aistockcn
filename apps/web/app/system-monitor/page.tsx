@@ -62,7 +62,6 @@ export default async function OverviewPage() {
   const trainingMetrics = (model.training_metadata?.metrics ?? {}) as Record<string, number>;
   const latestLines = logs.lines.slice(-12);
   const runtimeByStep = new Map(workflow.steps.map((step) => [step.step, step]));
-  const runningSteps = workflow.steps.filter((step) => step.is_running).length;
   const referenceSnapshot = data.reference_snapshot;
   const referenceWarningCount =
     referenceStatus.valuation_reference_missing_count +
@@ -80,10 +79,6 @@ export default async function OverviewPage() {
       <section className="metrics-grid">
         <MetricCard label="Daily Pipeline" value={pipelineRun.status_label} hint={pipelineRun.current_step_label ?? "Idle"} />
         <MetricCard label="Current Step" value={pipelineRun.current_step_label ?? "—"} hint={formatDateTime(pipelineRun.updated_at, user.locale)} />
-        <MetricCard label="Step 1 Progress" value={`${formatNumber(status.done_count, user.locale)}/${formatNumber(status.total_codes, user.locale)}`} hint={typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"} />
-        <MetricCard label="Last Code" value={status.last_code ?? "—"} hint={formatDateTime(status.updated_at, user.locale)} />
-        <MetricCard label="Running Steps" value={formatNumber(runningSteps, user.locale)} hint={formatDateTime(workflow.generated_at, user.locale)} />
-        <MetricCard label={copy.overview.batchStatus} value={status.is_running ? copy.common.live : copy.common.idle} hint={status.container_name ?? copy.overview.stateFileOnly} />
         <MetricCard label={copy.overview.progress} value={typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"} hint={`${formatNumber(status.done_count, user.locale)}/${formatNumber(status.total_codes, user.locale)} ${copy.overview.doneHint}`} />
         <MetricCard label="Reference Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
         <MetricCard label={copy.overview.dataFiles} value={formatNumber(data.paired_file_count, user.locale)} hint={`${formatNumber(data.total_size_mb, user.locale, { maximumFractionDigits: 1 })} MB ${copy.common.localStore}`} />
