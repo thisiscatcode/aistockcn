@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
@@ -10,24 +11,28 @@ type ModelProfile = {
 
 export function ProfileSelector({
   profiles,
-  selectedProfile
+  selectedProfile,
+  basePath = "/models",
+  label = "Active model"
 }: {
   profiles: ModelProfile[];
   selectedProfile: string;
+  basePath?: string;
+  label?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   return (
     <label className="model-profile-selector">
-      <span>Active model</span>
+      <span>{label}</span>
       <select
         aria-label="Select active model"
         value={selectedProfile}
         onChange={(event) => {
           const profile = event.target.value;
           startTransition(() => {
-            router.push(`/models?profile=${encodeURIComponent(profile)}`);
+            router.push(`${basePath}?profile=${encodeURIComponent(profile)}` as Route);
           });
         }}
       >

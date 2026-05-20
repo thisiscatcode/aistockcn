@@ -147,7 +147,6 @@ export default async function HoldingsPage() {
       {snapshot.error ? <p className="banner banner-error">Futu data unavailable: {snapshot.error}</p> : null}
 
       <section className="metrics-grid">
-        <MetricCard label="Gateway" value={snapshot.gateway.healthy ? "Live" : "Check Needed"} hint={snapshot.gateway.base_url} />
         <MetricCard
           label="Updated"
           value={formatDateTime(snapshot.generated_at, user.locale)}

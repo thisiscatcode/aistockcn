@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -15,13 +16,24 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from batch_download_all_a import merge_existing_output
-from backtest_walk_forward import annualized_return, max_drawdown
+from backtest_walk_forward import annualized_return, estimate_rebalance_fees, max_drawdown, training_end_for_rebalance
 from build_inference_features import build_inference_frame
 from download_data import build_valuation_df
+from paper_trade_futu import (
+    SyncConfig,
+    build_plan,
+    compute_affordable_buy_quantity,
+    execute_plan,
+    parse_sina_quote_price,
+    persist_targets,
+    sina_quote_code,
+)
+from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 from app.services import batch as batch_service
 from app.services import benchmark as benchmark_service
 from app.services import model as model_service
 from app.services import model_profiles as model_profiles_service
+from app.services import paper as paper_service
 from app.services import source_readiness
 from app.services.log_translation import translate_log_line
 
@@ -260,12 +272,314 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertFalse(status["is_stalled"])
         self.assertEqual(status["state_file_updated_at"], status["last_activity_at"])
 
+    def test_paper_targets_hide_noop_zero_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            targets_path = Path(tmp) / "targets_latest.parquet"
+            pd.DataFrame(
+                [
+                    {
+                        "signal_date": "2026-05-19",
+                        "rank": None,
+                        "code": "000010",
+                        "name": None,
+                        "score": None,
+                        "close": 2.73,
+                        "target_qty": 0,
+                        "current_qty": 0,
+                        "delta_qty": None,
+                        "buy_order_qty": 0,
+                        "sell_order_qty": 0,
+                        "action": None,
+                        "current_market_value": 0,
+                    },
+                    {
+                        "signal_date": "2026-05-19",
+                        "rank": 1,
+                        "code": "688496",
+                        "name": "*ST清越",
+                        "score": 0.89,
+                        "close": 1.51,
+                        "target_qty": 100,
+                        "current_qty": 0,
+                        "delta_qty": 100,
+                        "buy_order_qty": 100,
+                        "sell_order_qty": 0,
+                        "action": "BUY",
+                        "current_market_value": 0,
+                    },
+                    {
+                        "signal_date": "2026-05-19",
+                        "rank": None,
+                        "code": "002294",
+                        "name": "002294",
+                        "score": None,
+                        "close": 38.96,
+                        "target_qty": 0,
+                        "current_qty": 100,
+                        "delta_qty": -100,
+                        "buy_order_qty": 0,
+                        "sell_order_qty": 100,
+                        "action": "SELL",
+                        "current_market_value": 3896,
+                    },
+                ]
+            ).to_parquet(targets_path, index=False)
+            settings = SimpleNamespace(paper_trading_targets_path=targets_path)
+
+            with mock.patch.object(paper_service, "get_settings", return_value=settings):
+                result = paper_service.get_paper_trading_targets(limit=10)
+
+        self.assertEqual(result["rows"], 2)
+        self.assertEqual([row["code"] for row in result["targets"]], ["688496", "002294"])
+
+    def test_paper_target_persistence_drops_noop_zero_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            targets_path = Path(tmp) / "targets_latest.parquet"
+            plan = pd.DataFrame(
+                [
+                    {
+                        "signal_date": "2026-05-19",
+                        "rank": None,
+                        "code": "000010",
+                        "score": None,
+                        "close": 2.73,
+                        "target_qty": 0,
+                        "current_qty": 0,
+                        "delta_qty": None,
+                        "sell_order_qty": 0,
+                        "buy_order_qty": 0,
+                        "action": "HOLD",
+                        "current_market_value": 0,
+                    },
+                    {
+                        "signal_date": "2026-05-19",
+                        "rank": 1,
+                        "code": "688496",
+                        "score": 0.89,
+                        "close": 1.51,
+                        "target_qty": 100,
+                        "current_qty": 0,
+                        "delta_qty": 100,
+                        "sell_order_qty": 0,
+                        "buy_order_qty": 100,
+                        "action": "BUY",
+                        "current_market_value": 0,
+                    },
+                ]
+            )
+
+            persist_targets({"targets": targets_path}, plan)
+            stored = pd.read_parquet(targets_path)
+
+        self.assertEqual(stored["code"].tolist(), ["688496"])
+
+    def test_transaction_fee_model_matches_a_share_rules(self) -> None:
+        self.assertAlmostEqual(transaction_fee("BUY", 10_000.0), 20.4, places=6)
+        self.assertAlmostEqual(transaction_fee("SELL", 10_000.0), 25.4, places=6)
+        self.assertEqual(transaction_fee("BUY", 0.0), 0.0)
+
+    def test_paper_plan_reserves_buy_fees_before_sizing_order(self) -> None:
+        affordable = compute_affordable_buy_quantity(cash_available=1020.0, price=10.0, lot_size=100)
+        self.assertEqual(affordable, 0)
+        affordable = compute_affordable_buy_quantity(cash_available=1021.0, price=10.0, lot_size=100)
+        self.assertEqual(affordable, 100)
+
+    def test_paper_plan_records_estimated_order_fees(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = SyncConfig(
+                scores_path=Path(tmp) / "scores.parquet",
+                state_dir=Path(tmp),
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=None,
+                max_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+            latest_scores = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-19",
+                        "rank": 1,
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "Ping An Bank",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            )
+
+            plan, summary = build_plan(
+                config,
+                latest_scores=latest_scores,
+                positions={},
+                balance_metrics={"power": 1021.0, "cash": 1021.0, "total_assets": 1021.0},
+            )
+
+        self.assertEqual(int(plan.loc[0, "buy_order_qty"]), 100)
+        self.assertAlmostEqual(float(plan.loc[0, "estimated_order_fee"]), 20.04, places=6)
+        self.assertAlmostEqual(float(summary["estimated_order_fee"]), 20.04, places=6)
+
+    def test_sina_quote_parser_uses_latest_price_field(self) -> None:
+        payload = 'var hq_str_sz000001="平安银行,10.860,10.860,10.770,10.880,10.760,10.770,10.780,74763214";'
+
+        self.assertEqual(sina_quote_code("000001", "SZ"), "sz000001")
+        self.assertEqual(sina_quote_code("600519", "SH"), "sh600519")
+        self.assertAlmostEqual(parse_sina_quote_price(payload, "sz000001"), 10.77, places=6)
+
+    def test_paper_execution_uses_sina_realtime_price_for_order_price(self) -> None:
+        class OrderClient:
+            def __init__(self) -> None:
+                self.orders: list[dict[str, object]] = []
+
+            def place_order(self, **kwargs: object) -> dict[str, object]:
+                self.orders.append(dict(kwargs))
+                return {"order_id": "order-1", "order_status": "SUBMITTED"}
+
+        client = OrderClient()
+        config = SimpleNamespace(cancel_open_orders=False, max_order_qty=1000)
+        plan = pd.DataFrame(
+            [
+                {
+                    "rank": 1,
+                    "score": 0.9,
+                    "code": "000001",
+                    "close": 10.0,
+                    "buy_limit_price": 10.0,
+                    "sell_limit_price": 10.0,
+                    "buy_order_qty": 100,
+                    "sell_order_qty": 0,
+                }
+            ]
+        )
+
+        with mock.patch("paper_trade_futu.is_active_trading_hours", return_value=True):
+            with mock.patch("paper_trade_futu.get_sina_latest_price", return_value=10.77) as get_price:
+                result = execute_plan(client, config, plan=plan, signal_date="2026-05-20", active_orders=[])
+
+        self.assertEqual(len(result["placed_orders"]), 1)
+        self.assertEqual(result["skipped_orders"], [])
+        get_price.assert_called_once_with("000001", None)
+        self.assertEqual(client.orders[0]["symbol"], "000001")
+        self.assertEqual(client.orders[0]["price"], 10.88)
+
+    def test_backtest_rebalance_fees_count_buy_and_sell_orders(self) -> None:
+        fees = estimate_rebalance_fees(
+            previous_symbols={"000001", "000002"},
+            next_symbols={"000002", "000003"},
+            portfolio_value=10_000.0,
+            fee_model=DEFAULT_FEE_MODEL,
+        )
+
+        self.assertEqual(fees["buy_count"], 1)
+        self.assertEqual(fees["sell_count"], 1)
+        self.assertAlmostEqual(float(fees["buy_fee"]), transaction_fee("BUY", 5_000.0), places=6)
+        self.assertAlmostEqual(float(fees["sell_fee"]), transaction_fee("SELL", 5_000.0), places=6)
+
+    def test_model_overview_returns_real_profile_equity_curve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "quant_data" / "models"
+            backtests_dir = root / "quant_data" / "backtests"
+            run_dir = root / "run"
+            short_3d_run = backtests_dir / "runs" / "20260518T090118Z__short_3d"
+            models_dir.mkdir(parents=True)
+            short_3d_run.mkdir(parents=True)
+            run_dir.mkdir()
+            (models_dir / "training_metadata.json").write_text(
+                json.dumps({"profile_name": "short_5d"}),
+                encoding="utf-8",
+            )
+            (short_3d_run / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260518T090118Z__short_3d",
+                        "profile_name": "short_3d",
+                        "profile_label": "3D Short",
+                        "portfolio_total_return": 0.2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pd.DataFrame(
+                [
+                    {"rebalance_date": "2026-05-18", "portfolio_return": 0.1, "equity": 1.1, "num_picks": 5},
+                    {"rebalance_date": "2026-05-19", "portfolio_return": 0.2, "equity": 1.32, "num_picks": 5},
+                ]
+            ).to_parquet(short_3d_run / "equity_curve.parquet", index=False)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
+                    overview = model_service.get_model_overview(profile_name="short_3d")
+
+        self.assertEqual(overview["backtest_summary"]["profile_name"], "short_3d")
+        self.assertEqual([row["equity"] for row in overview["backtest_equity_curve"]], [1.1, 1.32])
+
+    def test_model_overview_trusts_cost_adjusted_backtest_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "quant_data" / "models"
+            backtests_dir = root / "quant_data" / "backtests"
+            run_dir = root / "run"
+            short_3d_run = backtests_dir / "runs" / "20260520T095341Z__short_3d"
+            models_dir.mkdir(parents=True)
+            short_3d_run.mkdir(parents=True)
+            run_dir.mkdir()
+            (models_dir / "training_metadata.json").write_text(
+                json.dumps({"profile_name": "short_3d"}),
+                encoding="utf-8",
+            )
+            (short_3d_run / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260520T095341Z__short_3d",
+                        "profile_name": "short_3d",
+                        "profile_label": "3D Short",
+                        "method_version": "purged_label_horizon_costs_v2",
+                        "portfolio_total_return": 59.5,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pd.DataFrame(
+                [{"rebalance_date": "2026-05-20", "portfolio_return": 0.1, "equity": 1.1, "num_picks": 5}]
+            ).to_parquet(short_3d_run / "equity_curve.parquet", index=False)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
+                    overview = model_service.get_model_overview(profile_name="short_3d")
+
+        self.assertTrue(overview["backtest_summary"]["is_trustworthy"])
+        self.assertNotIn("trust_warning", overview["backtest_summary"])
+
     def test_backtest_metric_helpers_report_drawdown_and_annualized_return(self) -> None:
         equity = pd.Series([1.0, 1.2, 0.9, 1.5])
         dates = pd.Series(pd.to_datetime(["2025-01-01", "2025-04-01", "2025-07-01", "2026-01-01"]))
 
         self.assertAlmostEqual(max_drawdown(equity), -0.25)
         self.assertGreater(annualized_return(equity, dates), 0.45)
+
+    def test_backtest_training_split_purges_label_horizon(self) -> None:
+        dates = pd.Index(pd.to_datetime(["2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15"]))
+
+        cutoff = training_end_for_rebalance(dates, dates[4], label_horizon=2)
+
+        self.assertEqual(pd.Timestamp(cutoff).date().isoformat(), "2026-05-13")
 
     def test_model_overview_does_not_mix_training_and_backtest_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -286,7 +600,7 @@ class PipelineRepairTests(unittest.TestCase):
             )
             (backtests_dir / "summary.json").write_text(short_3d_summary, encoding="utf-8")
             (backtests_dir / "runs" / "latest_short_3d" / "summary.json").write_text(short_3d_summary, encoding="utf-8")
-            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
@@ -301,15 +615,21 @@ class PipelineRepairTests(unittest.TestCase):
             root = Path(tmp)
             models_dir = root / "quant_data" / "models"
             backtests_dir = root / "quant_data" / "backtests"
+            profile_model_dir = root / "quant_data" / "model_profiles" / "short_3d" / "models"
             run_dir = root / "run"
             models_dir.mkdir(parents=True)
+            profile_model_dir.mkdir(parents=True)
             (backtests_dir / "runs" / "latest_short_3d").mkdir(parents=True)
             run_dir.mkdir()
             (models_dir / "training_metadata.json").write_text(
                 '{"profile_name":"short_5d","metrics":{"auc":0.59}}\n',
                 encoding="utf-8",
             )
-            (models_dir / "feature_importance.csv").write_text(
+            (profile_model_dir / "training_metadata.json").write_text(
+                '{"profile_name":"short_3d","metrics":{"auc":0.61},"train_rows":123}\n',
+                encoding="utf-8",
+            )
+            (profile_model_dir / "feature_importance.csv").write_text(
                 "feature,importance_gain,importance_split\npct_chg,10,2\n",
                 encoding="utf-8",
             )
@@ -318,16 +638,86 @@ class PipelineRepairTests(unittest.TestCase):
                 '"portfolio_total_return":82.21915197894047}\n'
             )
             (backtests_dir / "runs" / "latest_short_3d" / "summary.json").write_text(short_3d_summary, encoding="utf-8")
-            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
                     overview = model_service.get_model_overview(profile_name="short_3d")
 
         self.assertEqual(overview["current_profile"], "short_3d")
-        self.assertEqual(overview["training_metadata"], {})
-        self.assertEqual(overview["top_features"], [])
+        self.assertEqual(overview["training_metadata"]["profile_name"], "short_3d")
+        self.assertEqual(overview["top_features"][0]["feature"], "pct_chg")
         self.assertEqual(overview["backtest_summary"]["profile_name"], "short_3d")
+
+    def test_latest_picks_can_read_profile_specific_scores(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "quant_data" / "models"
+            profile_model_dir = root / "quant_data" / "model_profiles" / "short_3d" / "models"
+            backtests_dir = root / "quant_data" / "backtests"
+            run_dir = root / "run"
+            profile_model_dir.mkdir(parents=True)
+            models_dir.mkdir(parents=True)
+            backtests_dir.mkdir(parents=True)
+            run_dir.mkdir()
+            pd.DataFrame(
+                [
+                    {"date": "2026-05-20", "code": "000001", "name": "A", "industry": "Bank", "score": 0.8, "close": 10.0},
+                    {"date": "2026-05-20", "code": "000002", "name": "B", "industry": "Tech", "score": 0.9, "close": 20.0},
+                ]
+            ).to_parquet(profile_model_dir / "inference_scores_latest.parquet", index=False)
+            settings = SimpleNamespace(
+                models_dir=models_dir,
+                backtests_dir=backtests_dir,
+                run_dir=run_dir,
+                quant_dir=root / "quant_data",
+                stock_list_path=root / "missing_stock_list.parquet",
+                stock_registry_path=root / "missing_stock_registry.parquet",
+            )
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
+                    picks = model_service.get_latest_picks(limit=1, profile_name="short_3d")
+
+        self.assertEqual(picks["profile_name"], "short_3d")
+        self.assertEqual(picks["picks"][0]["code"], "000002")
+
+    def test_activate_model_for_paper_syncs_profile_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "quant_data" / "models"
+            profile_model_dir = root / "quant_data" / "model_profiles" / "short_3d" / "models"
+            backtests_dir = root / "quant_data" / "backtests"
+            run_dir = root / "run"
+            profile_model_dir.mkdir(parents=True)
+            models_dir.mkdir(parents=True)
+            backtests_dir.mkdir(parents=True)
+            run_dir.mkdir()
+            (run_dir / "model_profiles.json").write_text(
+                json.dumps(
+                    {
+                        "default_profile": "short_5d",
+                        "profiles": [
+                            {"name": "short_5d", "label": "5D Short"},
+                            {"name": "short_3d", "label": "3D Short"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (profile_model_dir / "training_metadata.json").write_text('{"profile_name":"short_3d"}\n', encoding="utf-8")
+            (profile_model_dir / "inference_scores_latest.parquet").write_bytes(b"score-bytes")
+            (profile_model_dir / "feature_importance.csv").write_text("feature,importance_gain\nx,1\n", encoding="utf-8")
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
+                    result = model_service.activate_model_for_paper("short_3d")
+
+            self.assertEqual(result["profile_name"], "short_3d")
+            self.assertEqual((models_dir / "training_metadata.json").read_text(encoding="utf-8").strip(), '{"profile_name":"short_3d"}')
+            self.assertEqual((models_dir / "inference_scores_latest.parquet").read_bytes(), b"score-bytes")
+            self.assertEqual(json.loads((run_dir / "model_profiles.json").read_text(encoding="utf-8"))["active_profile"], "short_3d")
 
     def test_model_overview_does_not_default_unprofiled_backtest_to_current_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -346,7 +736,7 @@ class PipelineRepairTests(unittest.TestCase):
                 '{"portfolio_total_return":82.21915197894047}\n',
                 encoding="utf-8",
             )
-            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):

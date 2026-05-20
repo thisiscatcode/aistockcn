@@ -299,12 +299,17 @@ export type StockDetail = {
 export type ModelOverview = {
   current_profile?: string | null;
   current_profile_label?: string | null;
+  active_profile?: string | null;
+  active_profile_label?: string | null;
   training_profile?: string | null;
   training_metadata?: Record<string, unknown>;
   backtest_summary?: Record<string, unknown>;
+  backtest_equity_curve?: Array<Record<string, unknown>>;
+  artifact_status?: Record<string, Record<string, unknown>>;
   backtest_runs?: Array<Record<string, unknown>>;
   model_profiles?: Array<Record<string, unknown>>;
   default_profile?: string;
+  active_profile_artifact_status?: Record<string, unknown>;
   top_features: Array<Record<string, unknown>>;
 };
 
@@ -316,6 +321,7 @@ export type PicksOverview = {
   feature_time?: string | null;
   data_src_time?: string | null;
   model_time?: string | null;
+  profile_name?: string | null;
   picks: Array<Record<string, unknown>>;
 };
 
@@ -429,6 +435,7 @@ export type PaperPerformanceRow = {
   sell_order_count?: number | null;
   skip_count?: number | null;
   execution_skip_count?: number | null;
+  estimated_order_fee?: number | null;
   placed_order_ids?: string[];
   cancelled_order_ids?: string[];
   skipped_symbols?: string[];
@@ -581,8 +588,13 @@ export function getModelOverview(profile?: string) {
   return fetchJson<ModelOverview>(`/api/model/latest${query}`);
 }
 
-export function getPicks(limit = 25) {
-  return fetchJson<PicksOverview>(`/api/model/picks?limit=${limit}`);
+export function getPicks(limit = 25, profile?: string) {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (profile) {
+    query.set("profile", profile);
+  }
+  return fetchJson<PicksOverview>(`/api/model/picks?${query.toString()}`);
 }
 
 export function getPortfolioOverview() {

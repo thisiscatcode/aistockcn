@@ -10,10 +10,6 @@ import { ProfileSelector } from "./profile-selector";
 
 export const dynamic = "force-dynamic";
 
-const BENCHMARK_LABEL = "S&P 500";
-const BENCHMARK_CAGR = 0.11;
-const BENCHMARK_TOTAL_RETURN = 0.24;
-
 type TableRow = Record<string, unknown>;
 
 function numberValue(value: unknown) {
@@ -30,14 +26,6 @@ function formatPercent(value: unknown, locale: PanelLocale, options: Intl.Number
     maximumFractionDigits: 1,
     ...options
   }).format(numeric);
-}
-
-function formatPercentagePointDelta(value: number | null, locale: PanelLocale) {
-  if (value === null) {
-    return "—";
-  }
-  const formatted = formatNumber(value * 100, locale, { maximumFractionDigits: 1 });
-  return `${value >= 0 ? "+" : ""}${formatted} pp`;
 }
 
 function financeTone(value: unknown, invert = false) {
@@ -87,9 +75,9 @@ function FinanceStat({
   );
 }
 
-function FeatureImportanceChart({ rows, locale }: { rows: TableRow[]; locale: PanelLocale }) {
+function FeatureImportanceChart({ rows, locale, emptyLabel }: { rows: TableRow[]; locale: PanelLocale; emptyLabel: string }) {
   if (!rows.length) {
-    return <p className="empty-state">No feature importance file is available for the selected model.</p>;
+    return <p className="empty-state">{emptyLabel}</p>;
   }
   const chartRows = rows
     .map((row) => ({
@@ -115,50 +103,42 @@ function FeatureImportanceChart({ rows, locale }: { rows: TableRow[]; locale: Pa
   );
 }
 
-function buildCurvePoints(totalReturn: number | null, benchmarkTotalReturn: number) {
-  const portfolioEnd = Math.max(0.08, 1 + (totalReturn ?? 0.18));
-  const benchmarkEnd = Math.max(0.08, 1 + benchmarkTotalReturn);
-  return Array.from({ length: 9 }, (_, index) => {
-    const progress = index / 8;
-    const wave = Math.sin(progress * Math.PI * 2) * 0.035;
-    return {
-      label: `${Math.round(progress * 100)}%`,
-      portfolio: 1 + (portfolioEnd - 1) * progress + wave,
-      benchmark: 1 + (benchmarkEnd - 1) * progress - wave * 0.4
-    };
-  });
-}
-
 function svgPath(points: Array<{ x: number; y: number }>) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
 }
 
-function EquityCurveChart({ totalReturn, locale }: { totalReturn: number | null; locale: PanelLocale }) {
-  const rows = buildCurvePoints(totalReturn, BENCHMARK_TOTAL_RETURN);
-  const values = rows.flatMap((row) => [row.portfolio, row.benchmark]);
+function EquityCurveChart({ rows, totalReturn, locale }: { rows: TableRow[]; totalReturn: number | null; locale: PanelLocale }) {
+  const chartRows = rows
+    .map((row) => ({
+      date: String(row.rebalance_date ?? ""),
+      equity: numberValue(row.equity),
+    }))
+    .filter((row): row is { date: string; equity: number } => row.date.length > 0 && row.equity !== null);
+  if (!chartRows.length) {
+    return <p className="empty-state">No saved equity curve is available for this selected backtest.</p>;
+  }
+  const values = chartRows.map((row) => row.equity);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const scaleY = (value: number) => 150 - ((value - min) / Math.max(max - min, 0.01)) * 116;
-  const points = rows.map((row, index) => ({
-    x: 24 + index * 48,
-    portfolioY: scaleY(row.portfolio),
-    benchmarkY: scaleY(row.benchmark)
+  const step = chartRows.length > 1 ? 384 / (chartRows.length - 1) : 0;
+  const points = chartRows.map((row, index) => ({
+    x: 24 + index * step,
+    portfolioY: scaleY(row.equity),
   }));
+  const firstDate = chartRows[0]?.date ?? "";
+  const lastDate = chartRows[chartRows.length - 1]?.date ?? "";
 
   return (
-    <div className="equity-chart" aria-label="Equity curve placeholder comparing portfolio value to benchmark">
+    <div className="equity-chart" aria-label="Portfolio equity curve from saved backtest">
       <div className="equity-chart-header">
         <span>Equity Curve</span>
-        <span className="equity-chart-note">Portfolio vs. Benchmark ({BENCHMARK_LABEL})</span>
+        <span className="equity-chart-note">Portfolio equity from saved backtest</span>
       </div>
-      <svg viewBox="0 0 432 176" role="img" aria-label="Portfolio and benchmark equity curve">
+      <svg viewBox="0 0 432 176" role="img" aria-label="Portfolio equity curve">
         <path className="equity-grid-line" d="M 24 34 L 408 34" />
         <path className="equity-grid-line" d="M 24 92 L 408 92" />
         <path className="equity-grid-line" d="M 24 150 L 408 150" />
-        <path
-          className="equity-line equity-line-benchmark"
-          d={svgPath(points.map((point) => ({ x: point.x, y: point.benchmarkY })))}
-        />
         <path
           className="equity-line equity-line-portfolio"
           d={svgPath(points.map((point) => ({ x: point.x, y: point.portfolioY })))}
@@ -166,10 +146,25 @@ function EquityCurveChart({ totalReturn, locale }: { totalReturn: number | null;
       </svg>
       <div className="equity-chart-legend">
         <span><i className="legend-dot legend-portfolio" /> Portfolio {formatPercent(totalReturn, locale)}</span>
-        <span><i className="legend-dot legend-benchmark" /> {BENCHMARK_LABEL} {formatPercent(BENCHMARK_TOTAL_RETURN, locale)}</span>
+        <span>{firstDate} to {lastDate}</span>
       </div>
     </div>
   );
+}
+
+function artifactLabel(value: unknown) {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as TableRow : {};
+  return record.exists ? "Available" : "Missing";
+}
+
+function artifactHint(value: unknown) {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as TableRow : {};
+  const path = String(record.path ?? "");
+  if (!path) {
+    return "No artifact for selected profile";
+  }
+  const updatedAt = String(record.updated_at ?? "");
+  return updatedAt ? `${path} (${updatedAt})` : path;
 }
 
 export default async function ModelsPage({
@@ -195,6 +190,8 @@ export default async function ModelsPage({
     : [];
   const currentProfile = String(overview.current_profile ?? training.profile_name ?? overview.default_profile ?? "short_5d");
   const currentProfileLabel = String(overview.current_profile_label ?? currentProfile);
+  const activeProfile = String(overview.active_profile ?? overview.default_profile ?? "short_5d");
+  const activeProfileLabel = String(overview.active_profile_label ?? activeProfile);
   const latestBacktestProfile = String(backtestRuns[0]?.profile_name ?? "");
   const latestBacktestLabel = String(backtestRuns[0]?.profile_label ?? latestBacktestProfile);
   const backtestMismatchLabel = latestBacktestProfile && latestBacktestProfile !== currentProfile
@@ -204,13 +201,20 @@ export default async function ModelsPage({
   const cagr = numberValue(backtest.portfolio_cagr);
   const maxDrawdown = numberValue(backtest.portfolio_max_drawdown);
   const winRate = numberValue(backtest.portfolio_win_rate);
-  const cagrDelta = cagr === null ? null : cagr - BENCHMARK_CAGR;
+  const isTrustedBacktest = backtest.is_trustworthy === true;
+  const backtestTrustWarning = String(backtest.trust_warning ?? "");
+  const equityCurve = Array.isArray(overview.backtest_equity_curve)
+    ? overview.backtest_equity_curve as TableRow[]
+    : [];
+  const artifactStatus = (overview.artifact_status ?? {}) as TableRow;
+  const featureImportanceEmptyLabel = `No saved feature importance artifact exists for ${currentProfile}.`;
   const formattedBacktestRuns = backtestRuns.map((run) => ({
     ...run,
-    portfolio_total_return: formatPercent(run.portfolio_total_return, user.locale),
-    portfolio_cagr: formatPercent(run.portfolio_cagr, user.locale),
-    portfolio_max_drawdown: formatPercent(run.portfolio_max_drawdown, user.locale),
-    portfolio_win_rate: formatPercent(run.portfolio_win_rate, user.locale)
+    portfolio_total_return: run.is_trustworthy ? formatPercent(run.portfolio_total_return, user.locale) : "Untrusted",
+    portfolio_cagr: run.is_trustworthy ? formatPercent(run.portfolio_cagr, user.locale) : "Untrusted",
+    portfolio_max_drawdown: run.is_trustworthy ? formatPercent(run.portfolio_max_drawdown, user.locale) : "Untrusted",
+    portfolio_win_rate: run.is_trustworthy ? formatPercent(run.portfolio_win_rate, user.locale) : "Untrusted",
+    is_trustworthy: run.is_trustworthy ? "Trusted" : "Legacy"
   }));
 
   return (
@@ -225,6 +229,7 @@ export default async function ModelsPage({
         <div>
           <p className="model-view-kicker">Currently viewing model</p>
           <h2>{currentProfile} <span>{currentProfileLabel}</span></h2>
+          <p className="panel-copy">Paper trading active model: {activeProfileLabel} ({activeProfile})</p>
         </div>
         <ProfileSelector profiles={profiles} selectedProfile={currentProfile} />
       </section>
@@ -259,25 +264,34 @@ export default async function ModelsPage({
         <Panel title={copy.models.backtestSnapshot} aside={<span className={`pill ${hasBacktestSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
           {hasBacktestSnapshot ? (
             <div className="model-backtest-stack">
+              {!isTrustedBacktest ? (
+                <p className="banner banner-error">
+                  {backtestTrustWarning || "Legacy backtest artifact. Rerun this profile before using these performance numbers."}
+                </p>
+              ) : null}
               <div className="finance-stat-grid">
-                <FinanceStat label={copy.models.totalReturn} value={formatPercent(totalReturn, user.locale)} tone={financeTone(totalReturn)} detail="Portfolio total return" />
+                <FinanceStat label={copy.models.totalReturn} value={isTrustedBacktest ? formatPercent(totalReturn, user.locale) : "Rerun required"} tone={isTrustedBacktest ? financeTone(totalReturn) : "finance-neutral"} detail="Portfolio total return" />
                 <FinanceStat
                   label="CAGR"
                   tooltip="Compound annual growth rate. It turns the full backtest return into an annualized rate."
-                  value={formatPercent(cagr, user.locale)}
-                  tone={financeTone(cagr)}
-                  detail={<span className={financeTone(cagrDelta)}>{formatPercentagePointDelta(cagrDelta, user.locale)} vs. Benchmark ({BENCHMARK_LABEL})</span>}
+                  value={isTrustedBacktest ? formatPercent(cagr, user.locale) : "Rerun required"}
+                  tone={isTrustedBacktest ? financeTone(cagr) : "finance-neutral"}
+                  detail="Annualized portfolio return"
                 />
                 <FinanceStat
                   label={copy.models.maxDrawdown}
                   tooltip="The worst peak-to-trough portfolio decline during the backtest. Closer to zero is better."
-                  value={formatPercent(maxDrawdown, user.locale)}
-                  tone={financeTone(maxDrawdown)}
+                  value={isTrustedBacktest ? formatPercent(maxDrawdown, user.locale) : "Rerun required"}
+                  tone={isTrustedBacktest ? financeTone(maxDrawdown) : "finance-neutral"}
                   detail="Largest historical pullback"
                 />
-                <FinanceStat label="Win Rate" value={formatPercent(winRate, user.locale)} tone={financeTone(winRate)} detail={`${formatNumber(backtest.num_rebalances as number | undefined, user.locale)} rebalances`} />
+                <FinanceStat label="Win Rate" value={isTrustedBacktest ? formatPercent(winRate, user.locale) : "Rerun required"} tone={isTrustedBacktest ? financeTone(winRate) : "finance-neutral"} detail={`${formatNumber(backtest.num_rebalances as number | undefined, user.locale)} rebalances`} />
               </div>
-              <EquityCurveChart totalReturn={totalReturn} locale={user.locale} />
+              {isTrustedBacktest ? (
+                <EquityCurveChart rows={equityCurve} totalReturn={totalReturn} locale={user.locale} />
+              ) : (
+                <p className="empty-state">Legacy equity curve hidden until this profile is rerun with the corrected backtest.</p>
+              )}
             </div>
           ) : (
             <>
@@ -291,7 +305,16 @@ export default async function ModelsPage({
       </section>
 
       <Panel title={copy.models.topFeatureImportance} aside={<span className="pill">{currentProfile}</span>}>
-        <FeatureImportanceChart rows={overview.top_features} locale={user.locale} />
+        <FeatureImportanceChart rows={overview.top_features} locale={user.locale} emptyLabel={featureImportanceEmptyLabel} />
+      </Panel>
+
+      <Panel title="Artifact Coverage" aside={<span className="pill">{currentProfile}</span>}>
+        <div className="status-meta">
+          <span>Training metadata: {artifactLabel(artifactStatus.training_metadata)} - {artifactHint(artifactStatus.training_metadata)}</span>
+          <span>Feature importance: {artifactLabel(artifactStatus.feature_importance)} - {artifactHint(artifactStatus.feature_importance)}</span>
+          <span>Backtest summary: {artifactLabel(artifactStatus.backtest_summary)} - {artifactHint(artifactStatus.backtest_summary)}</span>
+          <span>Equity curve: {artifactLabel(artifactStatus.backtest_equity_curve)} - {artifactHint(artifactStatus.backtest_equity_curve)}</span>
+        </div>
       </Panel>
 
       <Panel title="Backtest Comparison">
@@ -305,6 +328,7 @@ export default async function ModelsPage({
             { key: "portfolio_cagr", label: "CAGR" },
             { key: "portfolio_max_drawdown", label: "Max Drawdown" },
             { key: "portfolio_win_rate", label: "Win Rate" },
+            { key: "is_trustworthy", label: "Trust" },
             { key: "num_rebalances", label: "Rebalances" },
             { key: "backtest_end", label: "Backtest End" }
           ]}
@@ -314,19 +338,54 @@ export default async function ModelsPage({
       </Panel>
 
       <Panel title="Model Profiles">
-        <DataTable
-          rows={profiles}
-          columns={[
-            { key: "name", label: "Name" },
-            { key: "label", label: "Label" },
-            { key: "label_horizon", label: "Label Horizon" },
-            { key: "label_threshold", label: "Label Threshold" },
-            { key: "backtest_rebalance_every", label: "Rebalance Every" },
-            { key: "backtest_top_k", label: "Backtest Top K" }
-          ]}
-          emptyLabel={copy.common.noRows}
-          locale={user.locale}
-        />
+        {profiles.length ? (
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Label</th>
+                  <th>Label Horizon</th>
+                  <th>Label Threshold</th>
+                  <th>Rebalance Every</th>
+                  <th>Backtest Top K</th>
+                  <th>Paper</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((profile) => {
+                  const name = String(profile.name ?? "");
+                  const label = String(profile.label ?? name);
+                  const isActive = name === activeProfile;
+                  return (
+                    <tr key={name}>
+                      <td>{name}</td>
+                      <td>{label}</td>
+                      <td>{formatNumber(profile.label_horizon as number | undefined, user.locale)}</td>
+                      <td>{formatMetric(profile.label_threshold, user.locale)}</td>
+                      <td>{formatNumber(profile.backtest_rebalance_every as number | undefined, user.locale)}</td>
+                      <td>{formatNumber(profile.backtest_top_k as number | undefined, user.locale)}</td>
+                      <td>
+                        {isActive ? (
+                          <span className="pill live">Active</span>
+                        ) : user.role === "admin" ? (
+                          <form action="/models/activate" method="post">
+                            <input type="hidden" name="profile" value={name} />
+                            <button className="action-button secondary-button table-action-button" type="submit">Use For Paper Trading</button>
+                          </form>
+                        ) : (
+                          <span className="pill">Available</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-state">{copy.common.noRows}</p>
+        )}
       </Panel>
     </Shell>
   );

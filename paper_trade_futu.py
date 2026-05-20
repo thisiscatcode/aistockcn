@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
+
 
 DEFAULT_SCORES_PATH = "quant_data/models/inference_scores_latest.parquet"
 DEFAULT_STATE_DIR = "quant_data/paper_trading"
@@ -35,6 +37,8 @@ DEFAULT_LOT_SIZE = 100
 DEFAULT_CASH_BUFFER_PCT = 0.02
 DEFAULT_MAX_ORDER_QTY = 1000
 ORDER_ATTEMPT_INTERVAL_SECONDS = 2.2
+SINA_QUOTE_URL = "https://hq.sinajs.cn/list={code}"
+SINA_QUOTE_REFERER = "https://finance.sina.com.cn"
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 ACTIVE_TRADING_WINDOWS = (
     (dt_time(9, 35, 0), dt_time(11, 30, 0)),
@@ -66,7 +70,6 @@ ORDER_RATE_LIMIT_ERROR_TEXTS = (
     "high frequency",
     "maximum 15 times per 30 seconds",
 )
-
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -192,12 +195,58 @@ def is_order_rate_limit_error(message: str) -> bool:
     return any(text.lower() in normalized for text in ORDER_RATE_LIMIT_ERROR_TEXTS)
 
 
-def extract_latest_snapshot_price(snapshot: dict[str, Any]) -> float:
-    for key in ["last_price", "latest_price", "current_price", "price", "nominal_price", "close"]:
-        price = to_float(snapshot.get(key))
-        if price > 0:
-            return price
-    return 0.0
+def sina_exchange_prefix(symbol: str, exchange: Any = None) -> str:
+    exchange_text = str(exchange or "").strip().upper()
+    if exchange_text.startswith(("SH", "SSE")):
+        return "sh"
+    if exchange_text.startswith(("SZ", "SZE")):
+        return "sz"
+    normalized = normalize_symbol(symbol)
+    if normalized.startswith(("5", "6", "9")):
+        return "sh"
+    return "sz"
+
+
+def sina_quote_code(symbol: str, exchange: Any = None) -> str:
+    return f"{sina_exchange_prefix(symbol, exchange)}{normalize_symbol(symbol)}"
+
+
+def parse_sina_quote_price(payload: str, quote_code: str) -> float:
+    text = str(payload or "").strip()
+    prefix = f"var hq_str_{quote_code}="
+    if not text.startswith(prefix):
+        raise GatewayError(f"Sina quote response did not contain {quote_code}: {text[:120]}")
+    try:
+        quote_text = text.split('"', 2)[1]
+    except IndexError as exc:
+        raise GatewayError(f"Sina quote response was malformed for {quote_code}: {text[:120]}") from exc
+    fields = quote_text.split(",")
+    if len(fields) < 4 or not fields[0]:
+        raise GatewayError(f"Sina quote response was empty for {quote_code}: {text[:120]}")
+    latest_price = to_float(fields[3])
+    if latest_price <= 0:
+        raise GatewayError(f"Sina quote latest price unavailable for {quote_code}: {quote_text[:120]}")
+    return latest_price
+
+
+def get_sina_latest_price(symbol: str, exchange: Any = None) -> float:
+    quote_code = sina_quote_code(symbol, exchange)
+    request = Request(
+        SINA_QUOTE_URL.format(code=quote_code),
+        headers={
+            "Referer": SINA_QUOTE_REFERER,
+            "User-Agent": "Mozilla/5.0",
+        },
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            body = response.read().decode("gb18030", errors="replace")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise GatewayError(f"Sina quote request failed for {quote_code}: HTTP {exc.code} {detail}") from exc
+    except URLError as exc:
+        raise GatewayError(f"Sina quote request failed for {quote_code}: {exc.reason}") from exc
+    return parse_sina_quote_price(body, quote_code)
 
 
 def choose_balance_record(records: list[dict[str, Any]], account_id: int | None) -> dict[str, Any]:
@@ -338,30 +387,6 @@ class GatewayClient:
 
     def get_agent_orders(self) -> list[dict[str, Any]]:
         return list(self._request("GET", "/v1/agents/me/orders", params={"market": self.market}).get("orders", []))
-
-    def get_market_snapshot(self, symbol: str) -> dict[str, Any]:
-        response = self._request(
-            "GET",
-            "/v1/market/snapshot",
-            params={"market": self.market, "symbol": normalize_symbol(symbol)},
-        )
-        snapshot = response.get("snapshot")
-        if isinstance(snapshot, dict):
-            return dict(snapshot)
-        snapshots = response.get("snapshots")
-        if isinstance(snapshots, list) and snapshots:
-            return dict(snapshots[0])
-        quote = response.get("quote")
-        if isinstance(quote, dict):
-            return dict(quote)
-        return dict(response)
-
-    def get_latest_price(self, symbol: str) -> float:
-        snapshot = self.get_market_snapshot(symbol)
-        price = extract_latest_snapshot_price(snapshot)
-        if price <= 0:
-            raise GatewayError(f"no latest market price available for {symbol}: {snapshot}")
-        return price
 
     def place_order(
         self,
@@ -515,12 +540,14 @@ def buy_capacity(
     balance_metrics: dict[str, float | str | None],
     current_market_value: float,
     planned_sale_notional: float,
+    planned_sale_fee: float = 0.0,
 ) -> float:
+    sale_proceeds = clamp_non_negative(planned_sale_notional - planned_sale_fee)
     if config.budget_total is not None and config.budget_total > 0:
-        remaining = config.budget_total - current_market_value + planned_sale_notional
+        remaining = config.budget_total - current_market_value + sale_proceeds
         return clamp_non_negative(remaining)
     power = max(to_float(balance_metrics.get("power")), to_float(balance_metrics.get("cash")))
-    return clamp_non_negative(power + planned_sale_notional)
+    return clamp_non_negative(power + sale_proceeds)
 
 
 def compute_order_quantity(
@@ -537,6 +564,30 @@ def compute_order_quantity(
         return quantity
     lots = quantity // max(lot_size, 1)
     return lots * max(lot_size, 1)
+
+
+def estimate_order_fee(side: str, quantity: int, price: float) -> float:
+    return transaction_fee(side, max(int(quantity), 0) * max(float(price), 0.0), DEFAULT_FEE_MODEL)
+
+
+def compute_affordable_buy_quantity(*, cash_available: float, price: float, lot_size: int) -> int:
+    if cash_available <= 0 or price <= 0:
+        return 0
+    lot = max(int(lot_size), 1)
+    low = 0
+    high = int(cash_available / price) // lot
+    affordable_lots = 0
+    while low <= high:
+        mid = (low + high) // 2
+        quantity = mid * lot
+        notional = quantity * price
+        total_cost = notional + transaction_fee("BUY", notional, DEFAULT_FEE_MODEL)
+        if total_cost <= cash_available:
+            affordable_lots = mid
+            low = mid + 1
+        else:
+            high = mid - 1
+    return affordable_lots * lot
 
 
 def build_plan(
@@ -646,42 +697,67 @@ def build_plan(
         axis=1,
     )
 
-    planned_sale_notional = float((plan["sell_order_qty"] * plan["sell_limit_price"]).sum())
+    plan["estimated_order_notional"] = 0.0
+    sell_mask = plan["sell_order_qty"] > 0
+    buy_mask = plan["buy_order_qty"] > 0
+    plan.loc[sell_mask, "estimated_order_notional"] = plan.loc[sell_mask, "sell_order_qty"] * plan.loc[sell_mask, "sell_limit_price"]
+    plan.loc[buy_mask, "estimated_order_notional"] = plan.loc[buy_mask, "buy_order_qty"] * plan.loc[buy_mask, "buy_limit_price"]
+    plan["estimated_order_fee"] = 0.0
+    plan.loc[sell_mask, "estimated_order_fee"] = plan.loc[sell_mask].apply(
+        lambda row: estimate_order_fee("SELL", int(row["sell_order_qty"]), to_float(row["sell_limit_price"])),
+        axis=1,
+    )
+    plan.loc[buy_mask, "estimated_order_fee"] = plan.loc[buy_mask].apply(
+        lambda row: estimate_order_fee("BUY", int(row["buy_order_qty"]), to_float(row["buy_limit_price"])),
+        axis=1,
+    )
+
+    planned_sale_notional = float(plan.loc[sell_mask, "estimated_order_notional"].sum())
+    planned_sale_fee = float(plan.loc[sell_mask, "estimated_order_fee"].sum())
+    planned_sale_proceeds = clamp_non_negative(planned_sale_notional - planned_sale_fee)
     remaining_buy_capacity = buy_capacity(
         config,
         balance_metrics=balance_metrics,
         current_market_value=current_market_value,
         planned_sale_notional=planned_sale_notional,
+        planned_sale_fee=planned_sale_fee,
     )
 
     for index, row in plan.sort_values(["rank", "score"], ascending=[True, False], na_position="last").iterrows():
         buy_qty = int(row["buy_order_qty"])
         if buy_qty <= 0:
             continue
-        max_notional = remaining_buy_capacity
         price = to_float(row["buy_limit_price"])
         if price <= 0:
             plan.at[index, "buy_order_qty"] = 0
+            plan.at[index, "estimated_order_notional"] = 0.0
+            plan.at[index, "estimated_order_fee"] = 0.0
             plan.at[index, "action"] = "SKIP_INVALID_PRICE"
             continue
-        affordable_qty = compute_order_quantity(
-            side="BUY",
-            raw_quantity=int(max_notional / price),
+        affordable_qty = compute_affordable_buy_quantity(
+            cash_available=remaining_buy_capacity,
+            price=price,
             lot_size=config.lot_size,
         )
         actual_qty = min(buy_qty, affordable_qty, config.max_order_qty)
         if actual_qty <= 0:
             plan.at[index, "buy_order_qty"] = 0
+            plan.at[index, "estimated_order_notional"] = 0.0
+            plan.at[index, "estimated_order_fee"] = 0.0
             plan.at[index, "action"] = "SKIP_NO_CASH"
             continue
         plan.at[index, "buy_order_qty"] = actual_qty
-        remaining_buy_capacity -= actual_qty * price
+        order_notional = actual_qty * price
+        order_fee = transaction_fee("BUY", order_notional, DEFAULT_FEE_MODEL)
+        plan.at[index, "estimated_order_notional"] = order_notional
+        plan.at[index, "estimated_order_fee"] = order_fee
+        remaining_buy_capacity -= order_notional + order_fee
 
-    plan["estimated_order_notional"] = 0.0
     sell_mask = plan["sell_order_qty"] > 0
     buy_mask = plan["buy_order_qty"] > 0
-    plan.loc[sell_mask, "estimated_order_notional"] = plan.loc[sell_mask, "sell_order_qty"] * plan.loc[sell_mask, "sell_limit_price"]
-    plan.loc[buy_mask, "estimated_order_notional"] = plan.loc[buy_mask, "buy_order_qty"] * plan.loc[buy_mask, "buy_limit_price"]
+    estimated_buy_notional = float(plan.loc[buy_mask, "estimated_order_notional"].sum())
+    estimated_buy_fee = float(plan.loc[buy_mask, "estimated_order_fee"].sum())
+    estimated_order_fee = float(plan["estimated_order_fee"].sum())
 
     summary = {
         "target_symbols": target_symbols,
@@ -690,11 +766,24 @@ def build_plan(
         "total_capital": total_capital,
         "investable_capital": investable_capital,
         "planned_sale_notional": planned_sale_notional,
+        "planned_sale_fee": planned_sale_fee,
+        "planned_sale_proceeds": planned_sale_proceeds,
+        "planned_buy_notional": estimated_buy_notional,
+        "planned_buy_fee": estimated_buy_fee,
+        "estimated_order_fee": estimated_order_fee,
+        "fee_model": {
+            "commission_rate": DEFAULT_FEE_MODEL.commission_rate,
+            "min_commission": DEFAULT_FEE_MODEL.min_commission,
+            "platform_fee": DEFAULT_FEE_MODEL.platform_fee,
+            "tiny_fee_rate": DEFAULT_FEE_MODEL.tiny_fee_rate,
+            "sell_stamp_duty_rate": DEFAULT_FEE_MODEL.sell_stamp_duty_rate,
+        },
         "buy_capacity": buy_capacity(
             config,
             balance_metrics=balance_metrics,
             current_market_value=current_market_value,
             planned_sale_notional=planned_sale_notional,
+            planned_sale_fee=planned_sale_fee,
         ),
         "sell_order_count": int((plan["sell_order_qty"] > 0).sum()),
         "buy_order_count": int((plan["buy_order_qty"] > 0).sum()),
@@ -729,13 +818,36 @@ def persist_targets(paths: dict[str, Path], plan: pd.DataFrame) -> None:
         "sent_reference_price",
         "sent_error",
         "estimated_order_notional",
+        "estimated_order_fee",
         "reason",
         "current_market_value",
         "current_avg_cost",
         "current_last_price",
     ]
     available_cols = [column for column in ordered_cols if column in plan.columns]
-    plan.loc[:, available_cols].sort_values(["rank", "score"], ascending=[True, False], na_position="last").to_parquet(
+    actionable = pd.Series(False, index=plan.index)
+    for column in [
+        "target_qty",
+        "current_qty",
+        "delta_qty",
+        "sell_order_qty",
+        "buy_order_qty",
+        "estimated_order_notional",
+        "estimated_order_fee",
+        "current_market_value",
+    ]:
+        if column in plan.columns:
+            actionable |= pd.to_numeric(plan[column], errors="coerce").fillna(0).abs() > 0
+    if "action" in plan.columns:
+        action = plan["action"].astype("string").fillna("").str.strip().str.upper()
+        actionable |= action.ne("") & action.ne("HOLD")
+    for column in ["sent_order_id", "sent_status", "sent_error"]:
+        if column in plan.columns:
+            actionable |= plan[column].astype("string").fillna("").str.strip().ne("")
+    persisted = plan.loc[actionable, available_cols]
+    if not persisted.empty:
+        persisted = persisted.sort_values(["rank", "score"], ascending=[True, False], na_position="last")
+    persisted.to_parquet(
         paths["targets"],
         index=False,
     )
@@ -795,7 +907,7 @@ def execute_plan(
             quantity = min(quantity, config.max_order_qty)
             symbol = str(row["code"])
             try:
-                latest_price = client.get_latest_price(symbol)
+                latest_price = get_sina_latest_price(symbol, row.get("exchange"))
                 price = build_marketable_limit_price(latest_price, side)
             except GatewayError as exc:
                 last_error = str(exc)
@@ -814,6 +926,17 @@ def execute_plan(
                 print(f"skip {side} {symbol} qty={quantity}: {last_error}", file=sys.stderr, flush=True)
                 continue
             if price <= 0:
+                execution_rows.at[index, "sent_status"] = "SKIPPED_NO_REFERENCE_PRICE"
+                execution_rows.at[index, "action"] = "SKIP_NO_REFERENCE_PRICE"
+                skipped_orders.append(
+                    {
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": quantity,
+                        "attempted_prices": [],
+                        "error": "no live or planned reference price available",
+                    }
+                )
                 continue
             execution_rows.at[index, "sent_reference_price"] = round_price(latest_price)
             remark = f"aistock sig={signal_date} r={row['rank'] or '-'}"

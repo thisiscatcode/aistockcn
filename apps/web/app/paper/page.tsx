@@ -125,6 +125,27 @@ function symbolNameFrom(row: DashboardRow): string {
   return String(row.name ?? row.stock_name ?? row.security_name ?? "").trim();
 }
 
+function hasMeaningfulHolding(row: DashboardRow): boolean {
+  const numericKeys = [
+    "target_qty",
+    "current_qty",
+    "delta_qty",
+    "buy_order_qty",
+    "sell_order_qty",
+    "market_value",
+    "realized_pnl",
+    "unrealized_pnl",
+  ];
+  if (numericKeys.some((key) => Math.abs(asNumber(row[key]) ?? 0) > 0)) {
+    return true;
+  }
+  const action = String(row.action ?? "").trim().toUpperCase();
+  if (action && action !== "HOLD") {
+    return true;
+  }
+  return [row.sent_status, row.sent_order_id, row.sent_error].some((value) => String(value ?? "").trim().length > 0);
+}
+
 function PendingOrdersTable({
   rows,
   isAdmin,
@@ -521,6 +542,7 @@ export default async function PaperPage({
         delta_qty: target.delta_qty ?? null,
         buy_order_qty: target.buy_order_qty ?? null,
         sell_order_qty: target.sell_order_qty ?? null,
+        estimated_order_fee: target.estimated_order_fee ?? null,
         target_weight_pct: targetWeight !== null ? targetWeight * 100 : null,
         actual_weight_pct: actualWeight,
         avg_cost: position.avg_cost ?? target.current_avg_cost ?? null,
@@ -534,6 +556,7 @@ export default async function PaperPage({
         order_updated_at: target.order_updated_at ?? null,
       };
     })
+    .filter(hasMeaningfulHolding)
     .sort((left, right) => {
       const marketValueDelta = (asNumber(right.market_value) ?? 0) - (asNumber(left.market_value) ?? 0);
       if (marketValueDelta !== 0) {
@@ -558,6 +581,7 @@ export default async function PaperPage({
       position_count: row.position_count ?? null,
       buy_order_count: historyPlan.buy_order_count ?? null,
       sell_order_count: historyPlan.sell_order_count ?? null,
+      estimated_order_fee: historyPlan.estimated_order_fee ?? null,
       placed_order_ids: row.placed_order_ids ?? [],
       cancelled_order_ids: row.cancelled_order_ids ?? [],
       skipped_symbols: row.skipped_symbols ?? [],
@@ -595,6 +619,7 @@ export default async function PaperPage({
     { label: "Investable Capital", value: planSummary.investable_capital, valueKey: "investable_capital" },
     { label: "Buy Capacity", value: planSummary.buy_capacity, valueKey: "buy_capacity" },
     { label: "Planned Sale Notional", value: planSummary.planned_sale_notional, valueKey: "planned_sale_notional" },
+    { label: "Estimated Fees", value: planSummary.estimated_order_fee, valueKey: "estimated_order_fee" },
     { label: "Buy Orders", value: planSummary.buy_order_count, valueKey: "buy_order_count" },
     { label: "Sell Orders", value: planSummary.sell_order_count, valueKey: "sell_order_count" },
     { label: "Skipped Symbols", value: planSummary.skip_count, valueKey: "skip_count" },
@@ -611,6 +636,7 @@ export default async function PaperPage({
     { key: "delta_qty", label: "Remaining Delta" },
     { key: "buy_order_qty", label: "Next Buy Qty" },
     { key: "sell_order_qty", label: "Next Sell Qty" },
+    { key: "estimated_order_fee", label: "Est. Fees" },
     { key: "target_weight_pct", label: "Target Wt %" },
     { key: "actual_weight_pct", label: "Actual Wt %" },
     { key: "avg_cost", label: "Avg Cost" },
@@ -672,8 +698,6 @@ export default async function PaperPage({
       ) : null}
 
       <section className="metrics-grid">
-        <MetricCard label={copy.paper.daemon} value={daemon.status_label} hint={daemon.container_name ?? "—"} />
-        <MetricCard label={copy.paper.gateway} value={gateway.healthy ? copy.common.live : copy.common.checkNeeded} hint={gateway.base_url} />
         <MetricCard
           label="Account Equity"
           value={formatDisplayValue(balanceMetrics.total_assets, { locale: user.locale, key: "total_assets" })}
@@ -690,26 +714,6 @@ export default async function PaperPage({
           hint={formatDisplayValue(planSummary.current_market_value, { locale: user.locale, key: "current_market_value" })}
         />
         <MetricCard label={copy.paper.totalPnl} value={formatDisplayValue(liveSummary.total_pnl, { locale: user.locale, key: "total_pnl" })} hint={totalPnlHint} />
-        <MetricCard
-          label="Unrealized PnL"
-          value={formatDisplayValue(liveSummary.unrealized_pnl, { locale: user.locale, key: "unrealized_pnl" })}
-          hint={formatDisplayValue(liveSummary.realized_pnl, { locale: user.locale, key: "realized_pnl" })}
-        />
-        <MetricCard
-          label="Total Fills"
-          value={formatDisplayValue(liveSummary.total_fills, { locale: user.locale, key: "total_fills" })}
-          hint={formatDisplayValue(liveSummary.total_orders, { locale: user.locale, key: "total_orders" })}
-        />
-        <MetricCard
-          label={copy.paper.openPositions}
-          value={formatNumber(overview.live_positions_count, user.locale)}
-          hint={formatDisplayValue(liveSummary.open_positions, { locale: user.locale, key: "open_positions" })}
-        />
-        <MetricCard
-          label={copy.paper.openOrders}
-          value={formatNumber(overview.live_orders_count, user.locale)}
-          hint={formatDisplayValue(state.active_order_count, { locale: user.locale, key: "active_order_count" })}
-        />
         <MetricCard
           label={copy.paper.latestSignal}
           value={formatDate(state.score_signal_date, user.locale)}

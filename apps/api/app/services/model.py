@@ -10,7 +10,12 @@ import pyarrow as pa
 from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
-from app.services.model_profiles import get_model_profile_catalog
+from app.services.model_profiles import get_model_profile_catalog, set_active_model_profile
+
+TRUSTED_BACKTEST_METHOD_VERSIONS = {
+    "purged_label_horizon_v1",
+    "purged_label_horizon_costs_v2",
+}
 
 
 def _safe_read_csv(path: Path) -> pd.DataFrame:
@@ -38,6 +43,51 @@ def _file_updated_at(path: Path) -> str | None:
         return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
     except OSError:
         return None
+
+
+def _artifact_status(path: Path | None) -> dict[str, Any]:
+    if path is None:
+        return {"path": None, "exists": False, "updated_at": None}
+    return {
+        "path": str(path),
+        "exists": path.exists(),
+        "updated_at": _file_updated_at(path),
+    }
+
+
+def _profile_model_dir(profile_name: str | None) -> Path | None:
+    if not profile_name:
+        return None
+    return get_settings().quant_dir / "model_profiles" / profile_name / "models"
+
+
+def _production_model_dir() -> Path:
+    return get_settings().models_dir
+
+
+def _copy_file_if_exists(source: Path, destination: Path) -> bool:
+    if not source.exists():
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(source.read_bytes())
+    return True
+
+
+def _sync_profile_to_production(profile_name: str) -> dict[str, Any]:
+    profile_dir = _profile_model_dir(profile_name)
+    if profile_dir is None:
+        raise ValueError("profile name is required")
+    production_dir = _production_model_dir()
+    copied: list[str] = []
+    missing: list[str] = []
+    for name in ["lightgbm_model.txt", "feature_importance.csv", "training_metadata.json", "inference_scores_latest.parquet"]:
+        if _copy_file_if_exists(profile_dir / name, production_dir / name):
+            copied.append(name)
+        else:
+            missing.append(name)
+    if "inference_scores_latest.parquet" in missing or "training_metadata.json" in missing:
+        raise FileNotFoundError(f"profile {profile_name} is missing required model artifacts: {', '.join(missing)}")
+    return {"copied": copied, "missing": missing}
 
 
 def _parquet_date_max(path: Path, *, column: str) -> str | None:
@@ -82,6 +132,19 @@ def _enrich_backtest_profile(
     return enriched
 
 
+def _annotate_backtest_trust(summary: dict[str, Any]) -> dict[str, Any]:
+    if not summary:
+        return {}
+    annotated = dict(summary)
+    is_trustworthy = annotated.get("method_version") in TRUSTED_BACKTEST_METHOD_VERSIONS
+    annotated["is_trustworthy"] = is_trustworthy
+    if not is_trustworthy:
+        annotated["trust_warning"] = (
+            "Legacy backtest artifact. Rerun this profile with the purged walk-forward backtest before using these performance numbers."
+        )
+    return annotated
+
+
 def _profile_name(value: Any) -> str | None:
     profile_name = str(value or "").strip()
     return profile_name or None
@@ -96,9 +159,9 @@ def _profile_label(profile_name: str | None, profiles: list[dict[str, Any]]) -> 
     return profile_name
 
 
-def _backtest_summary_for_profile(profile_name: str | None, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+def _backtest_summary_entry_for_profile(profile_name: str | None, profiles: list[dict[str, Any]]) -> tuple[dict[str, Any], Path | None]:
     if not profile_name:
-        return {}
+        return {}, None
 
     settings = get_settings()
     runs_dir = settings.backtests_dir / "runs"
@@ -110,8 +173,33 @@ def _backtest_summary_for_profile(profile_name: str | None, profiles: list[dict[
     for summary_path in summary_files:
         summary = _enrich_backtest_profile(read_json(summary_path), profiles, fallback_to_first=False)
         if _profile_name(summary.get("profile_name")) == profile_name:
-            return summary
-    return {}
+            return _annotate_backtest_trust(summary), summary_path
+    return {}, None
+
+
+def _backtest_summary_for_profile(profile_name: str | None, profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    summary, _summary_path = _backtest_summary_entry_for_profile(profile_name, profiles)
+    return summary
+
+
+def _backtest_equity_curve(summary_path: Path | None) -> tuple[list[dict[str, Any]], Path | None]:
+    if summary_path is None:
+        return [], None
+    equity_path = summary_path.parent / "equity_curve.parquet"
+    equity_df = _safe_read_parquet(equity_path)
+    if equity_df.empty:
+        return [], equity_path
+    columns = [
+        column
+        for column in ["rebalance_date", "portfolio_return", "equity", "num_picks"]
+        if column in equity_df.columns
+    ]
+    if "rebalance_date" not in columns or "equity" not in columns:
+        return [], equity_path
+    equity_df = equity_df.loc[:, columns].copy()
+    equity_df["rebalance_date"] = pd.to_datetime(equity_df["rebalance_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    equity_df = equity_df.dropna(subset=["rebalance_date"])
+    return records_to_json(equity_df.to_dict(orient="records")), equity_path
 
 
 def _backtest_run_rows() -> list[dict[str, Any]]:
@@ -127,6 +215,7 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
         summary = read_json(summary_path)
         if not summary:
             continue
+        summary = _annotate_backtest_trust(summary)
         profile_name = str(summary.get("profile_name") or "").strip() or None
         rows.append(
             {
@@ -138,6 +227,8 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
                 "portfolio_cagr": summary.get("portfolio_cagr"),
                 "portfolio_max_drawdown": summary.get("portfolio_max_drawdown"),
                 "portfolio_win_rate": summary.get("portfolio_win_rate"),
+                "method_version": summary.get("method_version"),
+                "is_trustworthy": summary.get("is_trustworthy"),
                 "num_rebalances": summary.get("num_rebalances"),
                 "backtest_start": summary.get("backtest_start"),
                 "backtest_end": summary.get("backtest_end"),
@@ -151,6 +242,7 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
     latest_summary = read_json(settings.backtests_dir / "summary.json")
     if latest_summary:
         latest_summary = _enrich_backtest_profile(latest_summary, profiles)
+        latest_summary = _annotate_backtest_trust(latest_summary)
         profile_name = str(latest_summary.get("profile_name") or "").strip() or None
         return [
             {
@@ -162,6 +254,8 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
                 "portfolio_cagr": latest_summary.get("portfolio_cagr"),
                 "portfolio_max_drawdown": latest_summary.get("portfolio_max_drawdown"),
                 "portfolio_win_rate": latest_summary.get("portfolio_win_rate"),
+                "method_version": latest_summary.get("method_version"),
+                "is_trustworthy": latest_summary.get("is_trustworthy"),
                 "num_rebalances": latest_summary.get("num_rebalances"),
                 "backtest_start": latest_summary.get("backtest_start"),
                 "backtest_end": latest_summary.get("backtest_end"),
@@ -173,21 +267,32 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
 
 def get_model_overview(profile_name: str | None = None) -> dict[str, Any]:
     settings = get_settings()
-    metadata = read_json(settings.models_dir / "training_metadata.json")
+    production_metadata = read_json(settings.models_dir / "training_metadata.json")
     profile_catalog = get_model_profile_catalog()
-    training_profile = _profile_name(metadata.get("profile_name")) or profile_catalog["default_profile"]
+    active_profile = _profile_name(profile_catalog.get("active_profile")) or profile_catalog["default_profile"]
+    production_training_profile = _profile_name(production_metadata.get("profile_name")) or active_profile
     profile_names = {profile["name"] for profile in profile_catalog["profiles"]}
     selected_profile = _profile_name(profile_name)
     if selected_profile not in profile_names:
-        selected_profile = training_profile
+        selected_profile = active_profile
     selected_profile_label = _profile_label(selected_profile, profile_catalog["profiles"])
-    selected_training = metadata if selected_profile == training_profile else {}
-    backtest = _backtest_summary_for_profile(selected_profile, profile_catalog["profiles"])
-    importance_df = _safe_read_csv(settings.models_dir / "feature_importance.csv")
+    profile_model_dir = _profile_model_dir(selected_profile)
+    profile_training_metadata_path = profile_model_dir / "training_metadata.json" if profile_model_dir is not None else None
+    profile_feature_importance_path = profile_model_dir / "feature_importance.csv" if profile_model_dir is not None else None
+    profile_metadata = read_json(profile_training_metadata_path) if profile_training_metadata_path is not None else {}
+    if not profile_metadata and selected_profile == production_training_profile:
+        profile_metadata = production_metadata
+        profile_training_metadata_path = settings.models_dir / "training_metadata.json"
+        profile_feature_importance_path = settings.models_dir / "feature_importance.csv"
+    selected_training = profile_metadata
+    backtest, backtest_summary_path = _backtest_summary_entry_for_profile(selected_profile, profile_catalog["profiles"])
+    equity_curve, equity_curve_path = _backtest_equity_curve(backtest_summary_path)
+    selected_feature_importance_path = profile_feature_importance_path if profile_feature_importance_path and profile_feature_importance_path.exists() else None
+    importance_df = _safe_read_csv(selected_feature_importance_path) if selected_feature_importance_path is not None else pd.DataFrame()
     backtest_runs = _backtest_run_rows()
 
     top_features: list[dict[str, Any]] = []
-    if selected_profile == training_profile and not importance_df.empty:
+    if not importance_df.empty:
         columns = [col for col in ["feature", "importance_gain", "importance_split"] if col in importance_df.columns]
         top_features = records_to_json(
             importance_df[columns]
@@ -199,19 +304,47 @@ def get_model_overview(profile_name: str | None = None) -> dict[str, Any]:
     return {
         "current_profile": selected_profile,
         "current_profile_label": selected_profile_label,
-        "training_profile": training_profile,
+        "active_profile": active_profile,
+        "active_profile_label": _profile_label(active_profile, profile_catalog["profiles"]),
+        "training_profile": production_training_profile,
         "training_metadata": selected_training,
         "backtest_summary": backtest,
+        "backtest_equity_curve": equity_curve,
+        "artifact_status": {
+            "training_metadata": _artifact_status(profile_training_metadata_path if selected_training else None),
+            "feature_importance": _artifact_status(selected_feature_importance_path),
+            "backtest_summary": _artifact_status(backtest_summary_path),
+            "backtest_equity_curve": _artifact_status(equity_curve_path),
+        },
         "backtest_runs": backtest_runs,
         "model_profiles": profile_catalog["profiles"],
         "default_profile": profile_catalog["default_profile"],
+        "active_profile_artifact_status": _artifact_status(settings.models_dir / "inference_scores_latest.parquet"),
         "top_features": top_features,
     }
 
 
-def get_latest_picks(*, limit: int = 25) -> dict[str, Any]:
+def _scores_path_for_profile(profile_name: str | None) -> tuple[str | None, Path]:
     settings = get_settings()
-    scores_path = settings.models_dir / "inference_scores_latest.parquet"
+    catalog = get_model_profile_catalog()
+    profile_names = {profile["name"] for profile in catalog["profiles"]}
+    selected_profile = _profile_name(profile_name)
+    active_profile = _profile_name(catalog.get("active_profile")) or catalog["default_profile"]
+    if selected_profile in profile_names:
+        profile_dir = _profile_model_dir(selected_profile)
+        profile_scores_path = profile_dir / "inference_scores_latest.parquet" if profile_dir is not None else None
+        if profile_scores_path is not None and profile_scores_path.exists():
+            return selected_profile, profile_scores_path
+        if selected_profile == active_profile:
+            return selected_profile, settings.models_dir / "inference_scores_latest.parquet"
+        if profile_scores_path is not None:
+            return selected_profile, profile_scores_path
+    return active_profile, settings.models_dir / "inference_scores_latest.parquet"
+
+
+def get_latest_picks(*, limit: int = 25, profile_name: str | None = None) -> dict[str, Any]:
+    settings = get_settings()
+    selected_profile, scores_path = _scores_path_for_profile(profile_name)
     features_path = settings.quant_dir / "inference_features_latest.parquet"
     scores_df = _safe_read_parquet(scores_path)
     feature_time = _file_updated_at(features_path)
@@ -230,6 +363,7 @@ def get_latest_picks(*, limit: int = 25) -> dict[str, Any]:
             "feature_time": feature_time,
             "data_src_time": feature_time,
             "model_time": model_time,
+            "profile_name": selected_profile,
             "picks": [],
         }
 
@@ -275,5 +409,18 @@ def get_latest_picks(*, limit: int = 25) -> dict[str, Any]:
         "feature_time": feature_time,
         "data_src_time": feature_time,
         "model_time": model_time,
+        "profile_name": selected_profile,
         "picks": records_to_json(top_df[ordered_columns].to_dict(orient="records")),
+    }
+
+
+def activate_model_for_paper(profile_name: str) -> dict[str, Any]:
+    profile = set_active_model_profile(profile_name)
+    sync_result = _sync_profile_to_production(str(profile["name"]))
+    return {
+        "ok": True,
+        "profile_name": profile["name"],
+        "profile_label": profile["label"],
+        "synced_to": str(_production_model_dir()),
+        **sync_result,
     }

@@ -203,6 +203,7 @@ def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
         "sell_order_count": plan_summary.get("sell_order_count"),
         "skip_count": plan_summary.get("skip_count"),
         "execution_skip_count": plan_summary.get("execution_skip_count"),
+        "estimated_order_fee": plan_summary.get("estimated_order_fee"),
         "placed_order_ids": row.get("placed_order_ids") or [],
         "cancelled_order_ids": row.get("cancelled_order_ids") or [],
         "skipped_symbols": row.get("skipped_symbols") or [],
@@ -458,9 +459,37 @@ def get_paper_trading_holdings(*, position_limit: int = 500, order_limit: int = 
         }
 
 
+def _filter_actionable_target_rows(targets_df: pd.DataFrame) -> pd.DataFrame:
+    if targets_df.empty:
+        return targets_df
+    actionable = pd.Series(False, index=targets_df.index)
+    for column in [
+        "target_qty",
+        "current_qty",
+        "delta_qty",
+        "buy_order_qty",
+        "sell_order_qty",
+        "current_market_value",
+        "estimated_order_notional",
+        "estimated_order_fee",
+    ]:
+        if column in targets_df.columns:
+            actionable |= pd.to_numeric(targets_df[column], errors="coerce").fillna(0).abs() > 0
+    if "action" in targets_df.columns:
+        action = targets_df["action"].astype("string").fillna("").str.strip().str.upper()
+        actionable |= action.ne("") & action.ne("HOLD")
+    for column in ["sent_status", "sent_order_id", "sent_error"]:
+        if column in targets_df.columns:
+            actionable |= targets_df[column].astype("string").fillna("").str.strip().ne("")
+    return targets_df[actionable].copy()
+
+
 def get_paper_trading_targets(*, limit: int = 25) -> dict[str, Any]:
     settings = get_settings()
     targets_df = _safe_read_parquet(settings.paper_trading_targets_path)
+    if targets_df.empty:
+        return {"rows": 0, "targets": []}
+    targets_df = _filter_actionable_target_rows(targets_df)
     if targets_df.empty:
         return {"rows": 0, "targets": []}
     ordered_columns = [
@@ -486,6 +515,7 @@ def get_paper_trading_targets(*, limit: int = 25) -> dict[str, Any]:
             "sent_order_id",
             "sent_error",
             "estimated_order_notional",
+            "estimated_order_fee",
             "reason",
         ]
         if column in targets_df.columns
