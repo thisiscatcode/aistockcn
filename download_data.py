@@ -42,6 +42,7 @@ VALUATION_DIRNAME = "daily_valuation"
 REFERENCE_DIRNAME = "reference"
 REFERENCE_VALUATION_DIRNAME = "valuation_reference"
 REFERENCE_STATUS_FILENAME = "reference_status.json"
+REFERENCE_VALUATION_STALE_AFTER_DAYS = 45
 
 REQUEST_RETRY_TIMES = 3
 REQUEST_RETRY_SLEEP = 2.0
@@ -767,6 +768,10 @@ def write_reference_status(
         active_df.loc[~industry_known_mask, "code"].astype(str).str.zfill(6).drop_duplicates().sort_values().tolist()
     )
 
+    stale_cutoff_ts = None
+    if not pd.isna(target_trade_ts):
+        stale_cutoff_ts = target_trade_ts - pd.Timedelta(days=REFERENCE_VALUATION_STALE_AFTER_DAYS)
+
     reference_ready_codes: list[str] = []
     missing_reference_codes: list[str] = []
     stale_reference_codes: list[str] = []
@@ -776,7 +781,7 @@ def write_reference_status(
         if latest_reference_date is None:
             missing_reference_codes.append(code)
             continue
-        if not pd.isna(target_trade_ts) and latest_reference_date < target_trade_ts:
+        if stale_cutoff_ts is not None and latest_reference_date < stale_cutoff_ts:
             stale_reference_codes.append(code)
             continue
         reference_ready_codes.append(code)
@@ -784,6 +789,7 @@ def write_reference_status(
     payload = {
         "generated_at": _utc_now_iso(),
         "target_trade_date": None if pd.isna(target_trade_ts) else target_trade_ts.strftime("%Y-%m-%d"),
+        "valuation_reference_stale_after_days": REFERENCE_VALUATION_STALE_AFTER_DAYS,
         "active_stock_count": int(len(active_df)),
         "industry_known_count": int(industry_known_mask.sum()),
         "industry_missing_count": int(len(missing_industry_codes)),

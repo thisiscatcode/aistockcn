@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from batch_download_all_a import merge_existing_output
 from backtest_walk_forward import annualized_return, estimate_rebalance_fees, max_drawdown, training_end_for_rebalance
 from build_inference_features import build_inference_frame
-from download_data import build_valuation_df
+from download_data import build_valuation_df, reference_status_path, write_reference_status
 from paper_trade_futu import (
     SyncConfig,
     build_plan,
@@ -77,6 +77,58 @@ class PipelineRepairTests(unittest.TestCase):
             self.assertEqual(valuation_df["float_shares"].tolist(), [8.0, 8.0])
             self.assertEqual(valuation_df["total_market_cap"].tolist(), [210.0, 220.0])
             self.assertEqual(valuation_df["float_market_cap"].tolist(), [168.0, 176.0])
+
+    def test_reference_status_allows_recent_slow_reference_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            reference_dir = data_dir / "reference" / "valuation_reference"
+            reference_dir.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-13",
+                        "code": "000001",
+                        "total_market_cap": 200.0,
+                        "float_market_cap": 150.0,
+                        "total_shares": 10.0,
+                        "float_shares": 8.0,
+                    }
+                ]
+            ).to_parquet(reference_dir / "000001.parquet", index=False)
+            stock_df = pd.DataFrame([{"code": "000001", "exchange": "sz", "industry": "Bank"}])
+
+            write_reference_status(data_dir, stock_df=stock_df, target_trade_date="2026-05-20")
+            payload = json.loads(reference_status_path(data_dir).read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["industry_missing_count"], 0)
+            self.assertEqual(payload["valuation_reference_ready_count"], 1)
+            self.assertEqual(payload["valuation_reference_stale_count"], 0)
+            self.assertEqual(payload["valuation_reference_stale_after_days"], 45)
+
+    def test_reference_status_marks_old_slow_reference_cache_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            reference_dir = data_dir / "reference" / "valuation_reference"
+            reference_dir.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-03-01",
+                        "code": "000001",
+                        "total_market_cap": 200.0,
+                        "float_market_cap": 150.0,
+                        "total_shares": 10.0,
+                        "float_shares": 8.0,
+                    }
+                ]
+            ).to_parquet(reference_dir / "000001.parquet", index=False)
+            stock_df = pd.DataFrame([{"code": "000001", "exchange": "sz", "industry": "Bank"}])
+
+            write_reference_status(data_dir, stock_df=stock_df, target_trade_date="2026-05-20")
+            payload = json.loads(reference_status_path(data_dir).read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["valuation_reference_ready_count"], 0)
+            self.assertEqual(payload["valuation_reference_stale_count"], 1)
 
     def test_incremental_merge_preserves_existing_non_null_reference_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

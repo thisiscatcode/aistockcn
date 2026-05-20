@@ -477,9 +477,9 @@ export default async function BatchPage({
           <div className="stack">
             <div className="pipeline-info-list">
               <InfoRow label="Progress" value={`${formatNumber(referenceStatus.done_count, user.locale)}/${formatNumber(referenceStatus.total_codes, user.locale)}`} />
-              <InfoRow label="Ready" value={formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} />
-              <InfoRow label="Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} />
-              <InfoRow label="Missing" value={formatNumber(referenceStatus.valuation_reference_missing_count, user.locale)} />
+              <InfoRow label="Valuation ref ready" value={formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} />
+              <InfoRow label="Valuation ref stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} />
+              <InfoRow label="Valuation ref missing" value={formatNumber(referenceStatus.valuation_reference_missing_count, user.locale)} />
               <InfoRow label="Target trade date" value={referenceStatus.target_trade_date ?? "—"} />
               <InfoRow label="Last code" value={referenceStatus.last_code ?? "—"} />
               <InfoRow label="Updated" value={formatDateTime(referenceStatus.updated_at ?? referenceStatus.reference_status_updated_at, user.locale)} />

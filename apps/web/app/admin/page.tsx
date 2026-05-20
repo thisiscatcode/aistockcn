@@ -118,7 +118,7 @@ export default async function AdminPage() {
         <MetricCard label="Step 2 Codes" value={formatNumber(trainingArtifactCodes, user.locale)} hint={pipeline.training_features?.path ?? "ml_features_ready.parquet"} />
         <MetricCard label="Step 3 Codes" value={formatNumber(inferenceArtifactCodes, user.locale)} hint={formatDate(pipeline.inference_features?.date_max, user.locale)} />
         <MetricCard label="Step 4 Codes" value={formatNumber(scoreArtifactCodes ?? picks.rows, user.locale)} hint={formatDate(pipeline.inference_scores?.date_max ?? picks.latest_date, user.locale)} />
-        <MetricCard label="Reference Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
+        <MetricCard label="Valuation Ref Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
         <MetricCard label={copy.overview.validationAuc} value={formatMetric(trainingMetrics.auc, user.locale)} hint={`valid rows ${formatNumber(training.valid_rows as number | undefined, user.locale)}`} />
         <MetricCard label="Backtest OOS AUC" value={formatMetric(backtestMetrics.auc, user.locale)} hint={`${formatNumber(backtestCodes, user.locale)} codes`} />
       </section>
