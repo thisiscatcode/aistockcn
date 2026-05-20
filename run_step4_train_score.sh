@@ -17,6 +17,8 @@ PID_FILE="$PID_DIR/step4_train_score.pid"
 LOGGER_PID_FILE="$PID_DIR/step4_train_score_logger.pid"
 CONTAINER_NAME="aistockcn-step4-train-score-${TIMESTAMP}"
 
+rm -f "$PID_FILE" "$LOGGER_PID_FILE"
+
 ARGS=(
   "run" "-d" "--name" "$CONTAINER_NAME" "--entrypoint" "python" "data-prep" "train_profile_runner.py"
   "--profiles" "$PROFILES"
