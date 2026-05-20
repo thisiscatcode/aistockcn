@@ -80,8 +80,6 @@ export default async function OverviewPage() {
         <MetricCard label="Daily Pipeline" value={pipelineRun.status_label} hint={pipelineRun.current_step_label ?? "Idle"} />
         <MetricCard label="Current Step" value={pipelineRun.current_step_label ?? "—"} hint={formatDateTime(pipelineRun.updated_at, user.locale)} />
         <MetricCard label={copy.overview.progress} value={typeof status.progress_pct === "number" ? `${formatNumber(status.progress_pct, user.locale, { maximumFractionDigits: 1 })}%` : "—"} hint={`${formatNumber(status.done_count, user.locale)}/${formatNumber(status.total_codes, user.locale)} ${copy.overview.doneHint}`} />
-        <MetricCard label="Valuation Ref Stale" value={formatNumber(referenceStatus.valuation_reference_stale_count, user.locale)} hint={`${formatNumber(referenceStatus.valuation_reference_ready_count, user.locale)} ready`} />
-        <MetricCard label="Data Files" value={formatNumber(data.paired_file_count, user.locale)} hint={`${formatNumber(data.total_size_mb, user.locale, { maximumFractionDigits: 1 })} MB ${copy.common.localStore}`} />
         <MetricCard label="Top Picks" value={formatNumber(picks.rows, user.locale)} hint={picks.latest_date ? `${copy.overview.latestDateHint} ${formatDate(picks.latest_date, user.locale)}` : copy.overview.noInference} />
         <MetricCard label="Validation AUC" value={formatMetric(trainingMetrics.auc, user.locale)} hint={copy.overview.latestTraining} />
         <MetricCard label="Backtest Artifact" value={formatBytes(runtimeByStep.get(5)?.artifact_size_bytes, user.locale)} hint={formatDateTime(runtimeByStep.get(5)?.artifact_updated_at, user.locale)} />
