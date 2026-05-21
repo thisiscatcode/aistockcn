@@ -556,7 +556,9 @@ def get_paper_trading_positions(*, limit: int = 50) -> dict[str, Any]:
     settings = get_settings()
     client = PaperGatewayClient(settings)
     try:
-        positions = client.get_positions()
+        positions = [_normalize_futu_position_row(row) for row in client.get_positions()]
+        positions = [row for row in positions if _position_quantity(row) > 0]
+        positions = _enrich_position_metadata(positions, settings)
         positions = _sort_by_numeric_desc(positions, "market_value")
         return {"rows": len(positions), "positions": records_to_json(positions[:limit]), "error": None}
     except PaperGatewayError as exc:

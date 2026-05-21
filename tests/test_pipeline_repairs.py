@@ -448,6 +448,31 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(performance["rows"], 2)
         self.assertEqual([row["status"] for row in performance["snapshots"]], ["success", "error"])
 
+    def test_paper_positions_filter_closed_zero_quantity_rows(self) -> None:
+        class PositionClient:
+            def __init__(self, settings: object) -> None:
+                self.settings = settings
+
+            def get_positions(self) -> list[dict[str, object]]:
+                return [
+                    {"symbol": "000010", "quantity": 0, "last_price": 2.73, "market_value": 0},
+                    {"symbol": "000001", "quantity": 200, "last_price": 10.0, "market_value": 2000.0},
+                    {"symbol": "000002", "qty": "0", "last_price": 9.0, "market_val": 0},
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = SimpleNamespace(
+                stock_list_path=Path(tmp) / "missing_stock_list.parquet",
+                stock_registry_path=Path(tmp) / "missing_stock_registry.parquet",
+            )
+            with mock.patch.object(paper_service, "get_settings", return_value=settings):
+                with mock.patch.object(paper_service, "PaperGatewayClient", PositionClient):
+                    result = paper_service.get_paper_trading_positions(limit=20)
+
+        self.assertEqual(result["rows"], 1)
+        self.assertEqual(result["positions"][0]["symbol"], "000001")
+        self.assertEqual(result["positions"][0]["quantity"], 200.0)
+
     def test_paper_sync_noop_updates_state_without_ledger_entry(self) -> None:
         class NoopGateway:
             def __init__(self, config: SyncConfig) -> None:

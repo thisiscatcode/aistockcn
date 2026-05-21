@@ -133,8 +133,6 @@ function hasMeaningfulHolding(row: DashboardRow): boolean {
     "buy_order_qty",
     "sell_order_qty",
     "market_value",
-    "realized_pnl",
-    "unrealized_pnl",
   ];
   if (numericKeys.some((key) => Math.abs(asNumber(row[key]) ?? 0) > 0)) {
     return true;
@@ -144,6 +142,10 @@ function hasMeaningfulHolding(row: DashboardRow): boolean {
     return true;
   }
   return [row.sent_status, row.sent_order_id, row.sent_error].some((value) => String(value ?? "").trim().length > 0);
+}
+
+function hasOpenPosition(row: DashboardRow): boolean {
+  return Math.abs(asNumber(row.quantity ?? row.qty) ?? 0) > 0 || Math.abs(asNumber(row.market_value ?? row.market_val) ?? 0) > 0;
 }
 
 function PendingOrdersTable({
@@ -437,7 +439,7 @@ export default async function PaperPage({
   const planSummary = asRecord(state.plan_summary);
   const priceLimitErrorLabel = "price outside CN daily limit band";
   const recentOrders = orders.orders as DashboardRow[];
-  const livePositions = positions.positions as DashboardRow[];
+  const livePositions = (positions.positions as DashboardRow[]).filter(hasOpenPosition);
   const rawHistory = history.history as DashboardRow[];
   const performanceRows = performance.snapshots;
   const portfolioMarketValue =
