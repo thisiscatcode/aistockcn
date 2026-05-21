@@ -25,6 +25,7 @@ from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 
 DEFAULT_SCORES_PATH = "quant_data/models/inference_scores_latest.parquet"
 DEFAULT_STATE_DIR = "quant_data/paper_trading"
+DAILY_SNAPSHOTS_FILENAME = "daily_snapshots.json"
 DEFAULT_MARKET = "CN"
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8080"
 DEFAULT_AGENT_ID = "aistockcn-paper-cn"
@@ -77,6 +78,33 @@ def now_iso() -> str:
 
 def now_beijing() -> datetime:
     return datetime.now(BEIJING_TZ)
+
+
+def parse_trade_datetime(value: Any) -> datetime | None:
+    if value in (None, "", "NaT"):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        timestamp = pd.to_datetime(text, errors="coerce")
+        if pd.isna(timestamp):
+            return None
+        parsed = timestamp.to_pydatetime()
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(BEIJING_TZ)
+    if "T" in text:
+        return parsed.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
+    return parsed.replace(tzinfo=BEIJING_TZ)
+
+
+def trade_date_text(value: Any = None) -> str:
+    parsed = parse_trade_datetime(value)
+    if parsed is None:
+        parsed = now_beijing()
+    return str(parsed.date())
 
 
 def is_active_trading_hours(moment: datetime | None = None) -> bool:
@@ -444,6 +472,7 @@ def ensure_dirs(state_dir: Path) -> dict[str, Path]:
         "state": state_dir / "state.json",
         "targets": state_dir / "targets_latest.parquet",
         "history": state_dir / "sync_history.jsonl",
+        "daily_snapshots": state_dir / DAILY_SNAPSHOTS_FILENAME,
     }
 
 
@@ -491,6 +520,107 @@ def normalize_orders(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def open_position_snapshot_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    for row in rows:
+        symbol = normalize_symbol(row.get("symbol") or row.get("code"))
+        quantity = int(round(to_float(row.get("quantity") or row.get("qty"))))
+        market_value = to_float(row.get("market_value") or row.get("market_val"))
+        if quantity <= 0 and market_value <= 0:
+            continue
+        snapshots.append(
+            {
+                "symbol": symbol,
+                "code": symbol,
+                "name": row.get("name") or row.get("stock_name") or row.get("security_name") or row.get("english_name"),
+                "exchange": row.get("exchange") or row.get("market"),
+                "quantity": quantity,
+                "last_price": to_float(row.get("last_price") or row.get("price") or row.get("current_price")),
+                "avg_cost": to_float(row.get("avg_cost") or row.get("cost_price") or row.get("average_cost")),
+                "market_value": market_value,
+                "realized_pnl": to_float(row.get("realized_pnl")),
+                "unrealized_pnl": to_float(row.get("unrealized_pnl") or row.get("pl_val")),
+            }
+        )
+    return sorted(snapshots, key=lambda row: to_float(row.get("market_value")), reverse=True)
+
+
+def order_snapshot_rows_for_trade_date(rows: list[dict[str, Any]], trade_date: str) -> list[dict[str, Any]]:
+    snapshots: list[dict[str, Any]] = []
+    for row in rows:
+        created_at = row.get("created_at") or row.get("create_time") or row.get("updated_at")
+        updated_at = row.get("updated_at") or row.get("create_time") or row.get("created_at")
+        if trade_date_text(created_at or updated_at) != trade_date:
+            continue
+        snapshots.append(snapshot_order_event(row))
+    return sorted(snapshots, key=lambda row: str(row.get("created_at") or row.get("updated_at") or ""), reverse=True)
+
+
+def daily_snapshot_summary(
+    *,
+    balance_metrics: dict[str, Any],
+    live_summary: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "total_assets": live_summary.get("total_assets") or balance_metrics.get("total_assets"),
+        "cash": balance_metrics.get("cash"),
+        "buying_power": balance_metrics.get("power"),
+        "market_value": live_summary.get("market_value"),
+        "realized_pnl": live_summary.get("realized_pnl"),
+        "unrealized_pnl": live_summary.get("unrealized_pnl"),
+        "total_pnl": live_summary.get("total_pnl"),
+        "currency": balance_metrics.get("currency"),
+    }
+
+
+def write_daily_snapshot(
+    path: Path,
+    *,
+    trade_date: str,
+    balance_metrics: dict[str, Any],
+    live_summary: dict[str, Any],
+    positions: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+) -> None:
+    snapshots = read_json(path)
+    if not isinstance(snapshots, dict):
+        snapshots = {}
+    position_rows = open_position_snapshot_rows(positions)
+    order_rows = order_snapshot_rows_for_trade_date(orders, trade_date)
+    snapshots[trade_date] = {
+        "trade_date": trade_date,
+        "generated_at": now_iso(),
+        "summary": daily_snapshot_summary(balance_metrics=balance_metrics, live_summary=live_summary),
+        "positions_rows": len(position_rows),
+        "positions": position_rows,
+        "orders_rows": len(order_rows),
+        "orders": order_rows,
+        "positions_snapshot_available": True,
+    }
+    write_json(path, snapshots)
+
+
+def safe_write_daily_snapshot(
+    paths: dict[str, Path],
+    *,
+    balance_metrics: dict[str, Any],
+    live_summary: dict[str, Any],
+    positions: list[dict[str, Any]],
+    orders: list[dict[str, Any]],
+) -> None:
+    try:
+        write_daily_snapshot(
+            paths["daily_snapshots"],
+            trade_date=trade_date_text(),
+            balance_metrics=balance_metrics,
+            live_summary=live_summary,
+            positions=positions,
+            orders=orders,
+        )
+    except Exception as exc:  # pragma: no cover - snapshot failures must not block order safety
+        print(f"failed to write daily paper snapshot: {exc}", file=sys.stderr, flush=True)
 
 
 def snapshot_order_event(row: dict[str, Any]) -> dict[str, Any]:
@@ -1050,6 +1180,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 noop_message = None
 
             if noop_message is not None:
+                safe_write_daily_snapshot(
+                    paths,
+                    balance_metrics=balance_metrics,
+                    live_summary=live_summary,
+                    positions=list(positions.values()),
+                    orders=orders,
+                )
                 summary = {
                     "status": "noop",
                     "message": noop_message,
@@ -1102,6 +1239,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
 
         if config.dry_run:
             persist_targets(paths, plan)
+            safe_write_daily_snapshot(
+                paths,
+                balance_metrics=balance_metrics,
+                live_summary=live_summary,
+                positions=list(positions.values()),
+                orders=orders,
+            )
             result = {
                 "status": "dry_run",
                 "message": f"dry run built a rebalance plan for {signal_date}",
@@ -1161,6 +1305,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         persist_targets(paths, execution_rows)
 
         if execution.get("execution_skipped"):
+            safe_write_daily_snapshot(
+                paths,
+                balance_metrics=balance_metrics,
+                live_summary=live_summary,
+                positions=list(positions.values()),
+                orders=orders,
+            )
             result = {
                 "status": "noop",
                 "message": str(execution.get("message") or "order execution skipped"),
@@ -1217,7 +1368,17 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             pass
 
         live_summary = gateway.get_agent_summary()
+        balance_rows = gateway.get_balance()
+        balance_metrics = extract_balance_metrics(balance_rows, config.account_id)
+        refreshed_positions = normalize_positions(gateway.get_agent_positions())
         refreshed_orders = normalize_orders(gateway.get_agent_orders())
+        safe_write_daily_snapshot(
+            paths,
+            balance_metrics=balance_metrics,
+            live_summary=live_summary,
+            positions=list(refreshed_positions.values()),
+            orders=refreshed_orders,
+        )
         execution_skip_count = len(execution.get("skipped_orders", []))
         plan_summary = {**plan_summary, "execution_skip_count": execution_skip_count}
         skipped_symbols = [str(item.get("symbol") or "") for item in execution.get("skipped_orders", []) if item]

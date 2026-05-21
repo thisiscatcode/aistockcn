@@ -126,6 +126,7 @@ def root() -> dict[str, object]:
             "/api/paper/status",
             "/api/paper/overview",
             "/api/paper/holdings",
+            "/api/paper/daily-history",
             "/api/paper/targets",
             "/api/paper/positions",
             "/api/paper/orders",

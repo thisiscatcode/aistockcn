@@ -27,6 +27,7 @@ class Settings:
     paper_trading_state_path: Path
     paper_trading_targets_path: Path
     paper_trading_history_path: Path
+    paper_trading_daily_snapshots_path: Path
     panel_admin_key: str | None
     panel_api_allowed_cidrs: tuple[str, ...]
     panel_api_allowed_service_names: tuple[str, ...]
@@ -140,6 +141,7 @@ def get_settings() -> Settings:
         paper_trading_state_path=paper_trading_dir / "state.json",
         paper_trading_targets_path=paper_trading_dir / "targets_latest.parquet",
         paper_trading_history_path=paper_trading_dir / "sync_history.jsonl",
+        paper_trading_daily_snapshots_path=paper_trading_dir / "daily_snapshots.json",
         panel_admin_key=os.getenv("PANEL_ADMIN_KEY"),
         panel_api_allowed_cidrs=_csv_env(
             "PANEL_API_ALLOWED_CIDRS",

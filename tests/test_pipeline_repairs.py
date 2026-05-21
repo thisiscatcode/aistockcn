@@ -29,6 +29,7 @@ from paper_trade_futu import (
     sina_quote_code,
     score_file_signature,
     sync_once,
+    write_daily_snapshot,
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 from app.services import batch as batch_service
@@ -472,6 +473,110 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(result["rows"], 1)
         self.assertEqual(result["positions"][0]["symbol"], "000001")
         self.assertEqual(result["positions"][0]["quantity"], 200.0)
+
+    def test_daily_snapshot_replaces_same_trade_date_and_filters_closed_positions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "daily_snapshots.json"
+            write_daily_snapshot(
+                path,
+                trade_date="2026-05-21",
+                balance_metrics={"cash": 1000.0, "total_assets": 1500.0, "currency": "CN"},
+                live_summary={"market_value": 500.0, "total_pnl": 10.0},
+                positions=[
+                    {"symbol": "000010", "quantity": 0, "market_value": 0, "last_price": 2.73},
+                    {"symbol": "000001", "quantity": 100, "market_value": 1000.0, "last_price": 10.0},
+                ],
+                orders=[{"broker_order_id": "old", "symbol": "000001", "created_at": "2026-05-21 09:40:00"}],
+            )
+            write_daily_snapshot(
+                path,
+                trade_date="2026-05-21",
+                balance_metrics={"cash": 900.0, "total_assets": 1600.0, "currency": "CN"},
+                live_summary={"market_value": 700.0, "total_pnl": 12.0},
+                positions=[
+                    {"symbol": "000010", "quantity": 0, "market_value": 0, "last_price": 2.73},
+                    {"symbol": "000002", "quantity": 200, "market_value": 1200.0, "last_price": 6.0},
+                ],
+                orders=[
+                    {"broker_order_id": "new", "symbol": "000002", "created_at": "2026-05-21T02:07:31"},
+                    {"broker_order_id": "next-day", "symbol": "000003", "created_at": "2026-05-22 09:40:00"},
+                ],
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(list(payload.keys()), ["2026-05-21"])
+        snapshot = payload["2026-05-21"]
+        self.assertEqual(snapshot["summary"]["cash"], 900.0)
+        self.assertEqual(snapshot["positions_rows"], 1)
+        self.assertEqual(snapshot["positions"][0]["symbol"], "000002")
+        self.assertEqual(snapshot["orders_rows"], 1)
+        self.assertEqual(snapshot["orders"][0]["broker_order_id"], "new")
+
+    def test_daily_history_api_merges_snapshots_and_history_by_trade_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshots_path = root / "daily_snapshots.json"
+            history_path = root / "sync_history.jsonl"
+            snapshots_path.write_text(
+                json.dumps(
+                    {
+                        "2026-05-21": {
+                            "trade_date": "2026-05-21",
+                            "generated_at": "2026-05-21T03:00:00+00:00",
+                            "summary": {"total_assets": 1000.0},
+                            "positions": [{"symbol": "000001", "quantity": 100, "market_value": 1000.0}],
+                            "positions_rows": 1,
+                            "orders": [],
+                            "orders_rows": 0,
+                            "positions_snapshot_available": True,
+                        },
+                        "2026-05-19": {
+                            "trade_date": "2026-05-19",
+                            "generated_at": "2026-05-19T03:00:00+00:00",
+                            "summary": {"total_assets": 700.0},
+                            "positions": [],
+                            "positions_rows": 0,
+                            "orders": [],
+                            "orders_rows": 0,
+                            "positions_snapshot_available": False,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            history_path.write_text(
+                json.dumps(
+                    {
+                        "status": "success",
+                        "recorded_at": "2026-05-20T18:40:00+00:00",
+                        "balance_metrics": {"cash": 800.0, "total_assets": 900.0},
+                        "live_summary": {"market_value": 100.0, "total_pnl": 5.0},
+                        "placed_orders": [
+                            {
+                                "broker_order_id": "order-1",
+                                "symbol": "600000",
+                                "side": "BUY",
+                                "created_at": "2026-05-20T18:30:00+00:00",
+                            }
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = SimpleNamespace(
+                paper_trading_daily_snapshots_path=snapshots_path,
+                paper_trading_history_path=history_path,
+            )
+            with mock.patch.object(paper_service, "get_settings", return_value=settings):
+                result = paper_service.get_paper_trading_daily_history(limit=20)
+
+        self.assertEqual([row["trade_date"] for row in result["daily"]], ["2026-05-21", "2026-05-19"])
+        row = result["daily"][0]
+        self.assertTrue(row["positions_snapshot_available"])
+        self.assertEqual(row["positions_rows"], 1)
+        self.assertEqual(row["orders_rows"], 1)
+        self.assertEqual(row["orders"][0]["broker_order_id"], "order-1")
 
     def test_paper_sync_noop_updates_state_without_ledger_entry(self) -> None:
         class NoopGateway:

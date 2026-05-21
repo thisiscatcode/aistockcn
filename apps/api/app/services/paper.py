@@ -8,6 +8,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pyarrow as pa
@@ -21,6 +22,9 @@ from app.services.paper_control import get_paper_trading_daemon_status
 
 class PaperGatewayError(RuntimeError):
     pass
+
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _safe_read_parquet(path: Path, columns: list[str] | None = None) -> pd.DataFrame:
@@ -102,6 +106,33 @@ def _numeric_value(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_trade_datetime(value: Any) -> datetime | None:
+    if value in (None, "", "NaT"):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        timestamp = pd.to_datetime(text, errors="coerce")
+        if pd.isna(timestamp):
+            return None
+        parsed = timestamp.to_pydatetime()
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(BEIJING_TZ)
+    if "T" in text:
+        return parsed.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
+    return parsed.replace(tzinfo=BEIJING_TZ)
+
+
+def _trade_date_text(value: Any = None) -> str:
+    parsed = _parse_trade_datetime(value)
+    if parsed is None:
+        parsed = datetime.now(BEIJING_TZ)
+    return str(parsed.date())
 
 
 def _normalize_symbol(value: Any) -> str:
@@ -232,6 +263,134 @@ def _history_performance_row(row: dict[str, Any]) -> dict[str, Any]:
         "cancelled_order_ids": row.get("cancelled_order_ids") or [],
         "skipped_symbols": row.get("skipped_symbols") or [],
     }
+
+
+def _snapshot_order_key(row: dict[str, Any]) -> str:
+    order_id = str(row.get("broker_order_id") or row.get("order_id") or "").strip()
+    if order_id:
+        return f"order:{order_id}"
+    return "|".join(
+        [
+            _normalize_symbol(row.get("symbol") or row.get("code")),
+            str(row.get("side") or row.get("trd_side") or ""),
+            str(row.get("created_at") or row.get("updated_at") or ""),
+        ]
+    )
+
+
+def _daily_summary_from_history(row: dict[str, Any]) -> dict[str, Any]:
+    balance_metrics = row.get("balance_metrics") or {}
+    live_summary = row.get("live_summary") or {}
+    plan_summary = row.get("plan_summary") or {}
+    return {
+        "total_assets": live_summary.get("total_assets") or balance_metrics.get("total_assets"),
+        "cash": balance_metrics.get("cash"),
+        "buying_power": balance_metrics.get("power"),
+        "market_value": live_summary.get("market_value") or plan_summary.get("current_market_value"),
+        "realized_pnl": live_summary.get("realized_pnl"),
+        "unrealized_pnl": live_summary.get("unrealized_pnl"),
+        "total_pnl": live_summary.get("total_pnl"),
+        "currency": balance_metrics.get("currency"),
+    }
+
+
+def _daily_order_rows_from_history(row: dict[str, Any]) -> list[dict[str, Any]]:
+    orders: list[dict[str, Any]] = []
+    for key, fallback_status in [
+        ("placed_orders", None),
+        ("cancelled_orders", "CANCELLED"),
+        ("skipped_orders", "SKIPPED"),
+    ]:
+        for item in row.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            order = dict(item)
+            if fallback_status and not order.get("order_status"):
+                order["order_status"] = fallback_status
+            if key == "skipped_orders" and not order.get("created_at"):
+                order["created_at"] = row.get("recorded_at")
+            orders.append(order)
+    return orders
+
+
+def _read_daily_snapshot_file(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    snapshots: dict[str, dict[str, Any]] = {}
+    for trade_date, row in payload.items():
+        if isinstance(row, dict):
+            snapshots[str(trade_date)] = {**row, "trade_date": str(row.get("trade_date") or trade_date)}
+    return snapshots
+
+
+def _deep_jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _deep_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_deep_jsonable(item) for item in value]
+    return to_jsonable(value)
+
+
+def _merge_daily_snapshots_with_history(
+    snapshots: dict[str, dict[str, Any]],
+    history_rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    daily: dict[str, dict[str, Any]] = {trade_date: dict(snapshot) for trade_date, snapshot in snapshots.items()}
+    order_keys_by_date: dict[str, set[str]] = {
+        trade_date: {_snapshot_order_key(order) for order in snapshot.get("orders") or [] if isinstance(order, dict)}
+        for trade_date, snapshot in daily.items()
+    }
+    for row in history_rows:
+        if not _is_ledger_history_row(row):
+            continue
+        orders = _daily_order_rows_from_history(row)
+        order_dates = [
+            _trade_date_text(order.get("created_at") or order.get("updated_at") or row.get("recorded_at"))
+            for order in orders
+            if isinstance(order, dict)
+        ]
+        trade_date = order_dates[0] if order_dates else _trade_date_text(row.get("recorded_at"))
+        entry = daily.setdefault(
+            trade_date,
+            {
+                "trade_date": trade_date,
+                "generated_at": row.get("recorded_at"),
+                "summary": {},
+                "positions": [],
+                "positions_rows": 0,
+                "orders": [],
+                "orders_rows": 0,
+                "positions_snapshot_available": False,
+            },
+        )
+        if not entry.get("summary") or str(row.get("recorded_at") or "") >= str(entry.get("generated_at") or ""):
+            entry["generated_at"] = row.get("recorded_at")
+            entry["summary"] = _daily_summary_from_history(row)
+        seen = order_keys_by_date.setdefault(
+            trade_date,
+            {_snapshot_order_key(order) for order in entry.get("orders") or [] if isinstance(order, dict)},
+        )
+        for order in orders:
+            key = _snapshot_order_key(order)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry.setdefault("orders", []).append(order)
+    for entry in daily.values():
+        orders = [order for order in entry.get("orders") or [] if isinstance(order, dict)]
+        entry["orders"] = sorted(orders, key=lambda row: str(row.get("created_at") or row.get("updated_at") or ""), reverse=True)
+        entry["orders_rows"] = len(entry["orders"])
+        positions = [position for position in entry.get("positions") or [] if isinstance(position, dict)]
+        entry["positions"] = _sort_by_numeric_desc(positions, "market_value")
+        entry["positions_rows"] = len(entry["positions"])
+        entry.setdefault("positions_snapshot_available", bool(positions))
+    return daily
 
 
 class PaperGatewayClient:
@@ -609,3 +768,12 @@ def get_paper_trading_performance(*, limit: int = 240) -> dict[str, Any]:
     rows = _jsonl_tail_filtered(settings.paper_trading_history_path, limit=limit)
     snapshots = [_history_performance_row(row) for row in rows]
     return {"rows": len(snapshots), "snapshots": snapshots}
+
+
+def get_paper_trading_daily_history(*, limit: int = 20) -> dict[str, Any]:
+    settings = get_settings()
+    snapshot_rows = _read_daily_snapshot_file(settings.paper_trading_daily_snapshots_path)
+    history_rows = _jsonl_tail_filtered(settings.paper_trading_history_path, limit=max(limit * 20, 200))
+    daily = _merge_daily_snapshots_with_history(snapshot_rows, history_rows)
+    rows = sorted(daily.values(), key=lambda row: str(row.get("trade_date") or ""), reverse=True)[:limit]
+    return {"rows": len(rows), "daily": _deep_jsonable(rows)}

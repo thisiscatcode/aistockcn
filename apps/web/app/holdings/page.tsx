@@ -2,7 +2,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { MetricCard, Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
-import { getPaperHoldings } from "@/lib/api";
+import { getPaperDailyHistory, getPaperHoldings } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
 
@@ -19,6 +19,10 @@ function asNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function asRecord(value: unknown): DashboardRow {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as DashboardRow) : {};
 }
 
 function normalizeSymbol(value: unknown): string {
@@ -94,9 +98,48 @@ function pnlTone(value: number | null) {
   return value > 0 ? "positive" : "negative";
 }
 
+function positionDisplayRow(row: DashboardRow) {
+  const symbol = row.symbol ?? row.code;
+  const englishName = row.english_name ?? row.stock_name ?? row.security_name ?? null;
+  const chineseName = row.name ?? null;
+  const code = row.display_symbol ?? displaySymbol(symbol, row.exchange);
+  const detail = [truncateText(englishName), truncateText(chineseName, 18)].filter(Boolean).join(" / ");
+  const currentPnl = asNumber(row.unrealized_pnl ?? row.pl_val);
+  const currentPnlPercent = pnlPercent(row, currentPnl);
+  return {
+    code_name: code,
+    code_name_detail: detail,
+    code_name_href: googleStockSearchUrl(symbol),
+    market_value: row.market_value ?? null,
+    quantity: row.quantity ?? row.qty ?? null,
+    last_price: row.last_price ?? row.price ?? row.current_price ?? null,
+    cost: row.avg_cost ?? row.cost_price ?? row.average_cost ?? null,
+    current_pnl: formatSignedNumber(currentPnl),
+    current_pnl_detail: formatSignedPercent(currentPnlPercent),
+    current_pnl_tone: pnlTone(currentPnl),
+  };
+}
+
+function orderDisplayRow(row: DashboardRow) {
+  return {
+    broker_order_id: row.broker_order_id ?? row.order_id ?? null,
+    symbol: normalizeSymbol(row.symbol ?? row.code),
+    side: String(row.side ?? row.trd_side ?? "").toUpperCase(),
+    order_status: row.order_status ?? row.status ?? null,
+    quantity: row.quantity ?? row.qty ?? null,
+    price: row.price ?? null,
+    dealt_qty: row.dealt_qty ?? null,
+    dealt_avg_price: row.dealt_avg_price ?? null,
+    created_at: row.created_at ?? row.create_time ?? row.updated_at ?? null,
+  };
+}
+
 export default async function HoldingsPage() {
   const user = await requireAuth();
-  const snapshot = await getPaperHoldings(1000, 300, 5000);
+  const [snapshot, dailyHistory] = await Promise.all([
+    getPaperHoldings(1000, 300, 5000),
+    getPaperDailyHistory(20, 5000).catch(() => ({ rows: 0, daily: [] })),
+  ]);
   const summary = snapshot.summary ?? {};
   const positions = snapshot.positions as DashboardRow[];
   const computedMarketValue = positions.reduce((total, row) => total + (asNumber(row.market_value) ?? 0), 0);
@@ -104,27 +147,7 @@ export default async function HoldingsPage() {
   const marketValue = asNumber(summary.market_value) ?? computedMarketValue;
   const unrealizedPnl = asNumber(summary.unrealized_pnl) ?? computedUnrealizedPnl;
 
-  const positionRows = positions.map((row) => {
-    const symbol = row.symbol ?? row.code;
-    const englishName = row.english_name ?? row.stock_name ?? row.security_name ?? null;
-    const chineseName = row.name ?? null;
-    const code = row.display_symbol ?? displaySymbol(symbol, row.exchange);
-    const detail = [truncateText(englishName), truncateText(chineseName, 18)].filter(Boolean).join(" / ");
-    const currentPnl = asNumber(row.unrealized_pnl ?? row.pl_val);
-    const currentPnlPercent = pnlPercent(row, currentPnl);
-    return {
-      code_name: code,
-      code_name_detail: detail,
-      code_name_href: googleStockSearchUrl(symbol),
-      market_value: row.market_value ?? null,
-      quantity: row.quantity ?? row.qty ?? null,
-      last_price: row.last_price ?? row.price ?? row.current_price ?? null,
-      cost: row.avg_cost ?? row.cost_price ?? row.average_cost ?? null,
-      current_pnl: formatSignedNumber(currentPnl),
-      current_pnl_detail: formatSignedPercent(currentPnlPercent),
-      current_pnl_tone: pnlTone(currentPnl),
-    };
-  });
+  const positionRows = positions.map(positionDisplayRow);
 
   const positionColumns = [
     { key: "code_name", label: "Code / Name" },
@@ -134,6 +157,18 @@ export default async function HoldingsPage() {
     { key: "cost", label: "Cost" },
     { key: "current_pnl", label: "Current P/L" },
   ];
+  const orderColumns = [
+    { key: "broker_order_id", label: "Order ID" },
+    { key: "symbol", label: "Symbol" },
+    { key: "side", label: "Side" },
+    { key: "order_status", label: "Status" },
+    { key: "quantity", label: "Qty" },
+    { key: "price", label: "Price" },
+    { key: "dealt_qty", label: "Dealt Qty" },
+    { key: "dealt_avg_price", label: "Dealt Avg Price" },
+    { key: "created_at", label: "Created At" },
+  ];
+  const dailyRows = dailyHistory.daily as DashboardRow[];
 
   return (
     <Shell
@@ -165,6 +200,49 @@ export default async function HoldingsPage() {
 
       <Panel title="Current Positions" aside={<span className="pill">{formatNumber(positionRows.length, user.locale)} rows</span>}>
         <DataTable rows={positionRows} columns={positionColumns} emptyLabel="No Futu positions." locale={user.locale} pageSize={50} />
+      </Panel>
+
+      <Panel title="Daily Activity" aside={<span className="pill">{formatNumber(dailyHistory.rows, user.locale)} days</span>}>
+        <div className="daily-activity-stack">
+          {dailyRows.length ? dailyRows.map((day, index) => {
+            const daySummary = asRecord(day.summary);
+            const dayOrders = ((day.orders as DashboardRow[] | undefined) ?? []).map(orderDisplayRow);
+            const dayPositions = ((day.positions as DashboardRow[] | undefined) ?? []).map(positionDisplayRow);
+            const hasPositionSnapshot = Boolean(day.positions_snapshot_available);
+            return (
+              <details className="daily-activity-day" key={String(day.trade_date ?? index)} open={index === 0}>
+                <summary>
+                  <span>{formatDisplayValue(day.trade_date, { locale: user.locale, key: "trade_date" })}</span>
+                  <span className="daily-activity-meta">
+                    {formatNumber(dayOrders.length, user.locale)} orders · {formatNumber(dayPositions.length, user.locale)} positions
+                  </span>
+                </summary>
+                <div className="daily-activity-body">
+                  <div className="inline-pill-row">
+                    <span className="pill">Total Assets: {formatDisplayValue(daySummary.total_assets, { locale: user.locale, key: "total_assets" })}</span>
+                    <span className="pill">Cash: {formatDisplayValue(daySummary.cash, { locale: user.locale, key: "cash" })}</span>
+                    <span className="pill">Market Value: {formatDisplayValue(daySummary.market_value, { locale: user.locale, key: "market_value" })}</span>
+                    <span className="pill">Realized PnL: {formatDisplayValue(daySummary.realized_pnl, { locale: user.locale, key: "realized_pnl" })}</span>
+                    <span className="pill">Unrealized PnL: {formatDisplayValue(daySummary.unrealized_pnl, { locale: user.locale, key: "unrealized_pnl" })}</span>
+                    <span className="pill">Total PnL: {formatDisplayValue(daySummary.total_pnl, { locale: user.locale, key: "total_pnl" })}</span>
+                  </div>
+                  <div className="daily-activity-section">
+                    <h3>Orders</h3>
+                    <DataTable rows={dayOrders} columns={orderColumns} emptyLabel="No orders recorded for this date." locale={user.locale} pageSize={25} />
+                  </div>
+                  <div className="daily-activity-section">
+                    <h3>Position Status</h3>
+                    {hasPositionSnapshot ? (
+                      <DataTable rows={dayPositions} columns={positionColumns} emptyLabel="No open positions recorded for this date." locale={user.locale} pageSize={25} />
+                    ) : (
+                      <p className="table-note">Position snapshot was not recorded for this date.</p>
+                    )}
+                  </div>
+                </div>
+              </details>
+            );
+          }) : <p className="empty-state">No daily paper activity has been recorded yet.</p>}
+        </div>
       </Panel>
     </Shell>
   );
