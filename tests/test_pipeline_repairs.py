@@ -559,6 +559,14 @@ class PipelineRepairTests(unittest.TestCase):
                                 "created_at": "2026-05-20T18:30:00+00:00",
                             }
                         ],
+                        "skipped_orders": [
+                            {
+                                "symbol": "002294",
+                                "side": "SELL",
+                                "quantity": 100,
+                                "error": "quote unavailable",
+                            }
+                        ],
                     }
                 )
                 + "\n",
@@ -577,6 +585,7 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(row["positions_rows"], 1)
         self.assertEqual(row["orders_rows"], 1)
         self.assertEqual(row["orders"][0]["broker_order_id"], "order-1")
+        self.assertNotEqual(row["orders"][0]["symbol"], "002294")
 
     def test_paper_sync_noop_updates_state_without_ledger_entry(self) -> None:
         class NoopGateway:

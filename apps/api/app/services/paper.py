@@ -299,7 +299,6 @@ def _daily_order_rows_from_history(row: dict[str, Any]) -> list[dict[str, Any]]:
     for key, fallback_status in [
         ("placed_orders", None),
         ("cancelled_orders", "CANCELLED"),
-        ("skipped_orders", "SKIPPED"),
     ]:
         for item in row.get(key) or []:
             if not isinstance(item, dict):
@@ -307,8 +306,6 @@ def _daily_order_rows_from_history(row: dict[str, Any]) -> list[dict[str, Any]]:
             order = dict(item)
             if fallback_status and not order.get("order_status"):
                 order["order_status"] = fallback_status
-            if key == "skipped_orders" and not order.get("created_at"):
-                order["created_at"] = row.get("recorded_at")
             orders.append(order)
     return orders
 
