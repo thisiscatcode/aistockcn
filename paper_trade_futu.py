@@ -1039,6 +1039,11 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             noop_message: str | None
             if active_orders:
                 noop_message = f"score snapshot {signal_date} is unchanged and {len(active_orders)} active orders are still working"
+            elif has_pending_actions:
+                noop_message = (
+                    f"score snapshot {signal_date} has already been attempted; "
+                    "waiting for the next score snapshot before placing more orders"
+                )
             elif not has_pending_actions:
                 noop_message = f"score snapshot {signal_date} is unchanged and portfolio is already aligned"
             else:

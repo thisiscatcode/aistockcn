@@ -529,6 +529,101 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(state["last_status"], "noop")
         self.assertFalse(history_path.exists())
 
+    def test_paper_sync_does_not_reorder_same_score_snapshot(self) -> None:
+        class NoopGateway:
+            def __init__(self, config: SyncConfig) -> None:
+                self.config = config
+
+            def health(self) -> dict[str, object]:
+                return {"status": "ok"}
+
+            def sync_agent(self) -> None:
+                return None
+
+            def get_agent_positions(self) -> list[dict[str, object]]:
+                return []
+
+            def get_agent_orders(self) -> list[dict[str, object]]:
+                return []
+
+            def get_balance(self) -> list[dict[str, object]]:
+                return [{"cash": 1000.0, "power": 1000.0, "total_assets": 1000.0}]
+
+            def get_agent_summary(self) -> dict[str, object]:
+                return {"total_assets": 1000.0, "total_pnl": 0.0}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-20",
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "Ping An Bank",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            ).to_parquet(scores_path, index=False)
+            signature = score_file_signature(scores_path)
+            (state_dir / "state.json").write_text(
+                json.dumps({"last_score_signature": signature}),
+                encoding="utf-8",
+            )
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=state_dir,
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=None,
+                max_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=False,
+            )
+            pending_plan = pd.DataFrame(
+                [
+                    {
+                        "code": "000001",
+                        "rank": 1,
+                        "score": 0.9,
+                        "buy_order_qty": 100,
+                        "sell_order_qty": 0,
+                    }
+                ]
+            )
+
+            with mock.patch("paper_trade_futu.GatewayClient", NoopGateway):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(pending_plan, {"buy_order_count": 1, "sell_order_count": 0}),
+                ):
+                    with mock.patch("paper_trade_futu.execute_plan") as execute:
+                        code, state = sync_once(config)
+
+            history_path = state_dir / "sync_history.jsonl"
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "noop")
+        self.assertIn("already been attempted", state["last_message"])
+        self.assertFalse(history_path.exists())
+        execute.assert_not_called()
+
     def test_transaction_fee_model_matches_a_share_rules(self) -> None:
         self.assertAlmostEqual(transaction_fee("BUY", 10_000.0), 20.4, places=6)
         self.assertAlmostEqual(transaction_fee("SELL", 10_000.0), 25.4, places=6)
