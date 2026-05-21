@@ -2,6 +2,7 @@ import type { PanelLocale } from "@/lib/i18n";
 
 const EMPTY_VALUE = "—";
 const PANEL_DISPLAY_TIME_ZONE = "Asia/Shanghai";
+const ISO_DATE_TIME_WITHOUT_ZONE_PATTERN = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
 
 type NumberOptions = {
   maximumFractionDigits?: number;
@@ -17,9 +18,17 @@ function isDateOnlyString(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 
+function normalizeDateTimeString(value: string) {
+  const trimmed = value.trim();
+  if (ISO_DATE_TIME_WITHOUT_ZONE_PATTERN.test(trimmed)) {
+    return `${trimmed.replace(" ", "T")}Z`;
+  }
+  return trimmed;
+}
+
 function isDateTimeString(value: string) {
   const trimmed = value.trim();
-  return (trimmed.includes("T") || trimmed.includes(" ")) && !Number.isNaN(Date.parse(trimmed));
+  return (trimmed.includes("T") || trimmed.includes(" ")) && !Number.isNaN(Date.parse(normalizeDateTimeString(trimmed)));
 }
 
 function looksDateLike(value: string, key?: string) {
@@ -198,7 +207,8 @@ export function formatDate(value: unknown, locale: PanelLocale) {
       timeZone: PANEL_DISPLAY_TIME_ZONE
     }).format(date);
   }
-  const date = value instanceof Date ? value : new Date(String(value));
+  const normalizedValue = typeof value === "string" ? normalizeDateTimeString(value) : String(value);
+  const date = value instanceof Date ? value : new Date(normalizedValue);
   if (Number.isNaN(date.getTime())) {
     return typeof value === "string" ? value : EMPTY_VALUE;
   }
@@ -214,7 +224,8 @@ export function formatDateTime(value: unknown, locale: PanelLocale) {
   if (!value) {
     return EMPTY_VALUE;
   }
-  const date = value instanceof Date ? value : new Date(String(value));
+  const normalizedValue = typeof value === "string" ? normalizeDateTimeString(value) : String(value);
+  const date = value instanceof Date ? value : new Date(normalizedValue);
   if (Number.isNaN(date.getTime())) {
     return typeof value === "string" ? value : EMPTY_VALUE;
   }

@@ -658,8 +658,8 @@ export default async function PaperPage({
     { key: "price", label: "Price" },
     { key: "dealt_qty", label: "Dealt Qty" },
     { key: "dealt_avg_price", label: "Dealt Avg Price" },
-    { key: "created_at", label: "Created At" },
-    { key: "updated_at", label: "Updated At" },
+    { key: "created_at", label: "Created At (Beijing)" },
+    { key: "updated_at", label: "Updated At (Beijing)" },
     { key: "remark", label: "Remark" },
   ];
   const historyColumns = [
