@@ -1093,7 +1093,6 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     placed_order_ids=[],
                     skipped_symbols=[],
                 )
-                append_jsonl(paths["history"], {**summary, "recorded_at": now_iso()})
                 return 0, updated
 
         if config.dry_run:
@@ -1144,7 +1143,6 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 active_order_count=len(active_orders),
                 position_count=len(positions),
             )
-            append_jsonl(paths["history"], {**result, "recorded_at": now_iso()})
             return 0, updated
 
         execution = execute_plan(

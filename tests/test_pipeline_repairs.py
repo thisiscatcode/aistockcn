@@ -27,6 +27,8 @@ from paper_trade_futu import (
     parse_sina_quote_price,
     persist_targets,
     sina_quote_code,
+    score_file_signature,
+    sync_once,
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 from app.services import batch as batch_service
@@ -424,6 +426,108 @@ class PipelineRepairTests(unittest.TestCase):
             stored = pd.read_parquet(targets_path)
 
         self.assertEqual(stored["code"].tolist(), ["688496"])
+
+    def test_paper_history_filters_noop_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            history_path = Path(tmp) / "sync_history.jsonl"
+            rows = [
+                {"status": "noop", "recorded_at": "2026-05-20T01:00:00+00:00"},
+                {"status": "success", "recorded_at": "2026-05-20T01:01:00+00:00", "message": "placed"},
+                {"status": "dry_run", "recorded_at": "2026-05-20T01:02:00+00:00"},
+                {"status": "error", "recorded_at": "2026-05-20T01:03:00+00:00", "message": "failed"},
+            ]
+            history_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            settings = SimpleNamespace(paper_trading_history_path=history_path)
+
+            with mock.patch.object(paper_service, "get_settings", return_value=settings):
+                history = paper_service.get_paper_trading_history(limit=10)
+                performance = paper_service.get_paper_trading_performance(limit=10)
+
+        self.assertEqual(history["rows"], 2)
+        self.assertEqual([row["status"] for row in history["history"]], ["error", "success"])
+        self.assertEqual(performance["rows"], 2)
+        self.assertEqual([row["status"] for row in performance["snapshots"]], ["success", "error"])
+
+    def test_paper_sync_noop_updates_state_without_ledger_entry(self) -> None:
+        class NoopGateway:
+            def __init__(self, config: SyncConfig) -> None:
+                self.config = config
+
+            def health(self) -> dict[str, object]:
+                return {"status": "ok"}
+
+            def sync_agent(self) -> None:
+                return None
+
+            def get_agent_positions(self) -> list[dict[str, object]]:
+                return []
+
+            def get_agent_orders(self) -> list[dict[str, object]]:
+                return []
+
+            def get_balance(self) -> list[dict[str, object]]:
+                return [{"cash": 1000.0, "power": 1000.0, "total_assets": 1000.0}]
+
+            def get_agent_summary(self) -> dict[str, object]:
+                return {"total_assets": 1000.0, "total_pnl": 0.0}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-20",
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "Ping An Bank",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            ).to_parquet(scores_path, index=False)
+            signature = score_file_signature(scores_path)
+            (state_dir / "state.json").write_text(
+                json.dumps({"last_score_signature": signature}),
+                encoding="utf-8",
+            )
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=state_dir,
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=None,
+                max_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=False,
+            )
+
+            with mock.patch("paper_trade_futu.GatewayClient", NoopGateway):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(pd.DataFrame(), {"buy_order_count": 0, "sell_order_count": 0}),
+                ):
+                    code, state = sync_once(config)
+
+            history_path = state_dir / "sync_history.jsonl"
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "noop")
+        self.assertFalse(history_path.exists())
 
     def test_transaction_fee_model_matches_a_share_rules(self) -> None:
         self.assertAlmostEqual(transaction_fee("BUY", 10_000.0), 20.4, places=6)

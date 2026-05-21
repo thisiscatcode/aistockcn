@@ -60,6 +60,30 @@ def _jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
     return rows[-limit:]
 
 
+def _is_ledger_history_row(row: dict[str, Any]) -> bool:
+    status = str(row.get("status") or "").strip().lower()
+    return status not in {"", "noop", "dry_run"}
+
+
+def _jsonl_tail_filtered(path: Path, limit: int) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if _is_ledger_history_row(row):
+                rows.append(row)
+    except OSError:
+        return []
+    return rows[-limit:]
+
+
 def _sort_by_numeric_desc(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: float(row.get(key) or 0.0), reverse=True)
 
@@ -574,12 +598,12 @@ def cancel_paper_trading_order(order_id: str) -> dict[str, Any]:
 
 def get_paper_trading_history(*, limit: int = 50) -> dict[str, Any]:
     settings = get_settings()
-    rows = _jsonl_tail(settings.paper_trading_history_path, limit=limit)
+    rows = _jsonl_tail_filtered(settings.paper_trading_history_path, limit=limit)
     return {"rows": len(rows), "history": list(reversed(rows))}
 
 
 def get_paper_trading_performance(*, limit: int = 240) -> dict[str, Any]:
     settings = get_settings()
-    rows = _jsonl_tail(settings.paper_trading_history_path, limit=limit)
+    rows = _jsonl_tail_filtered(settings.paper_trading_history_path, limit=limit)
     snapshots = [_history_performance_row(row) for row in rows]
     return {"rows": len(snapshots), "snapshots": snapshots}

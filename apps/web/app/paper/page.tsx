@@ -831,7 +831,7 @@ export default async function PaperPage({
 
         <Panel title="Recent Rebalances" aside={<span className="pill">{formatNumber(history.rows, user.locale)} snapshots</span>}>
           <p className="table-note">
-            Every daemon sync now records a ledger entry with status, account values, placed or cancelled order IDs, and skipped symbols.
+            Ledger entries are shown only when the daemon places, cancels, skips, or errors on a rebalance.
           </p>
           <DataTable rows={historyRows} columns={historyColumns} emptyLabel={copy.common.noRows} locale={user.locale} pageSize={25} />
         </Panel>
