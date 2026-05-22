@@ -41,6 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sell-limit-bps", type=float, default=50.0)
     parser.add_argument("--budget-total", type=float, default=None)
     parser.add_argument("--max-order-qty", type=int, default=1000)
+    parser.add_argument("--max-buy-order-qty", type=int, default=None)
+    parser.add_argument("--max-sell-order-qty", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-cancel-open-orders", action="store_true")

@@ -847,7 +847,8 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_order_qty=1000,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
                 force=False,
@@ -928,7 +929,8 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_order_qty=1000,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
                 force=False,
@@ -990,7 +992,8 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_order_qty=1000,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
                 force=False,
@@ -1048,7 +1051,8 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_order_qty=1000,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
                 force=False,
@@ -1085,7 +1089,8 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_order_qty=1000,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
                 force=False,
@@ -1137,7 +1142,7 @@ class PipelineRepairTests(unittest.TestCase):
                 return {"order_id": "order-1", "order_status": "SUBMITTED"}
 
         client = OrderClient()
-        config = SimpleNamespace(cancel_open_orders=False, max_order_qty=1000)
+        config = SimpleNamespace(cancel_open_orders=False, max_buy_order_qty=1000, max_sell_order_qty=1000)
         plan = pd.DataFrame(
             [
                 {
@@ -1162,6 +1167,34 @@ class PipelineRepairTests(unittest.TestCase):
         get_price.assert_called_once_with("000001", None)
         self.assertEqual(client.orders[0]["symbol"], "000001")
         self.assertEqual(client.orders[0]["price"], 10.88)
+
+    def test_paper_execution_uses_separate_buy_sell_quantity_caps(self) -> None:
+        class OrderClient:
+            def __init__(self) -> None:
+                self.orders: list[dict[str, object]] = []
+
+            def place_order(self, **kwargs: object) -> dict[str, object]:
+                self.orders.append(dict(kwargs))
+                return {"order_id": f"order-{len(self.orders)}", "order_status": "SUBMITTED"}
+
+        client = OrderClient()
+        config = SimpleNamespace(cancel_open_orders=False, max_buy_order_qty=100, max_sell_order_qty=9999999999)
+        plan = pd.DataFrame(
+            [
+                {"rank": None, "score": None, "code": "605288", "buy_order_qty": 0, "sell_order_qty": 300},
+                {"rank": 1, "score": 0.9, "code": "000001", "buy_order_qty": 500, "sell_order_qty": 0},
+            ]
+        )
+
+        with mock.patch("paper_trade_futu.is_active_trading_hours", return_value=True):
+            with mock.patch("paper_trade_futu.get_sina_latest_price", return_value=10.0):
+                result = execute_plan(client, config, plan=plan, signal_date="2026-05-20", active_orders=[])
+
+        self.assertEqual(result["skipped_orders"], [])
+        self.assertEqual([(row["side"], row["symbol"], row["quantity"]) for row in client.orders], [
+            ("SELL", "605288", 300),
+            ("BUY", "000001", 100),
+        ])
 
     def test_backtest_rebalance_fees_count_buy_and_sell_orders(self) -> None:
         fees = estimate_rebalance_fees(

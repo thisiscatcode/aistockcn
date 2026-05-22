@@ -547,7 +547,8 @@ def get_paper_trading_status() -> dict[str, Any]:
             "sell_limit_bps": settings.paper_trading_sell_limit_bps,
             "budget_total": settings.paper_trading_budget_total,
             "interval_seconds": settings.paper_trading_interval_seconds,
-            "max_order_qty": settings.paper_trading_max_order_qty,
+            "max_buy_order_qty": settings.paper_trading_max_buy_order_qty,
+            "max_sell_order_qty": settings.paper_trading_max_sell_order_qty,
         },
     }
 

@@ -42,6 +42,8 @@ SELL_LIMIT_BPS="${PAPER_TRADING_SELL_LIMIT_BPS:-50}"
 BUDGET_TOTAL="${PAPER_TRADING_BUDGET_TOTAL:-}"
 INTERVAL_SECONDS="${PAPER_TRADING_INTERVAL_SECONDS:-300}"
 MAX_ORDER_QTY="${PAPER_TRADING_MAX_ORDER_QTY:-1000}"
+MAX_BUY_ORDER_QTY="${PAPER_TRADING_MAX_BUY_ORDER_QTY:-$MAX_ORDER_QTY}"
+MAX_SELL_ORDER_QTY="${PAPER_TRADING_MAX_SELL_ORDER_QTY:-$MAX_ORDER_QTY}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/paper_trading_daemon_${TIMESTAMP}.log"
 PID_FILE="$PID_DIR/paper_trading_daemon.pid"
@@ -65,7 +67,8 @@ ARGS=(
   "--buy-limit-bps" "$BUY_LIMIT_BPS"
   "--sell-limit-bps" "$SELL_LIMIT_BPS"
   "--interval-seconds" "$INTERVAL_SECONDS"
-  "--max-order-qty" "$MAX_ORDER_QTY"
+  "--max-buy-order-qty" "$MAX_BUY_ORDER_QTY"
+  "--max-sell-order-qty" "$MAX_SELL_ORDER_QTY"
 )
 
 if [[ -n "$GATEWAY_ACCOUNT_ID" ]]; then

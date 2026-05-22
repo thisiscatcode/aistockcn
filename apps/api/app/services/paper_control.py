@@ -218,8 +218,10 @@ def _paper_command() -> list[str]:
         str(settings.paper_trading_sell_limit_bps),
         "--interval-seconds",
         str(settings.paper_trading_interval_seconds),
-        "--max-order-qty",
-        str(settings.paper_trading_max_order_qty),
+        "--max-buy-order-qty",
+        str(settings.paper_trading_max_buy_order_qty),
+        "--max-sell-order-qty",
+        str(settings.paper_trading_max_sell_order_qty),
     ]
     if settings.futu_gateway_account_id is not None:
         command.extend(["--account-id", str(settings.futu_gateway_account_id)])

@@ -372,7 +372,8 @@ class SyncConfig:
     lot_size: int
     cash_buffer_pct: float
     budget_total: float | None
-    max_order_qty: int
+    max_buy_order_qty: int
+    max_sell_order_qty: int
     cancel_open_orders: bool
     sync_existing_orders: bool
     force: bool
@@ -919,7 +920,7 @@ def build_plan(
             price=price,
             lot_size=config.lot_size,
         )
-        actual_qty = min(buy_qty, affordable_qty, config.max_order_qty)
+        actual_qty = min(buy_qty, affordable_qty, config.max_buy_order_qty)
         if actual_qty <= 0:
             plan.at[index, "buy_order_qty"] = 0
             plan.at[index, "estimated_order_notional"] = 0.0
@@ -1085,7 +1086,8 @@ def execute_plan(
             quantity = int(row[qty_col])
             if quantity <= 0:
                 continue
-            quantity = min(quantity, config.max_order_qty)
+            max_order_qty = config.max_sell_order_qty if side == "SELL" else config.max_buy_order_qty
+            quantity = min(quantity, max_order_qty)
             symbol = str(row["code"])
             try:
                 latest_price = get_sina_latest_price(symbol, row.get("exchange"))
@@ -1268,6 +1270,8 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                         "lot_size": config.lot_size,
                         "cash_buffer_pct": config.cash_buffer_pct,
                         "budget_total": config.budget_total,
+                        "max_buy_order_qty": config.max_buy_order_qty,
+                        "max_sell_order_qty": config.max_sell_order_qty,
                     },
                     last_attempt_at=now_iso(),
                     last_status="noop",
@@ -1327,6 +1331,8 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "lot_size": config.lot_size,
                     "cash_buffer_pct": config.cash_buffer_pct,
                     "budget_total": config.budget_total,
+                    "max_buy_order_qty": config.max_buy_order_qty,
+                    "max_sell_order_qty": config.max_sell_order_qty,
                 },
                 last_attempt_at=now_iso(),
                 last_status="dry_run",
@@ -1393,6 +1399,8 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "lot_size": config.lot_size,
                     "cash_buffer_pct": config.cash_buffer_pct,
                     "budget_total": config.budget_total,
+                    "max_buy_order_qty": config.max_buy_order_qty,
+                    "max_sell_order_qty": config.max_sell_order_qty,
                 },
                 last_attempt_at=now_iso(),
                 last_status="noop",
@@ -1478,6 +1486,8 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "lot_size": config.lot_size,
                 "cash_buffer_pct": config.cash_buffer_pct,
                 "budget_total": config.budget_total,
+                "max_buy_order_qty": config.max_buy_order_qty,
+                "max_sell_order_qty": config.max_sell_order_qty,
             },
             last_attempt_at=now_iso(),
             last_success_at=now_iso(),
@@ -1547,6 +1557,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sell-limit-bps", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--budget-total", type=float, default=None)
     parser.add_argument("--max-order-qty", type=int, default=DEFAULT_MAX_ORDER_QTY)
+    parser.add_argument("--max-buy-order-qty", type=int, default=None)
+    parser.add_argument("--max-sell-order-qty", type=int, default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-cancel-open-orders", action="store_true")
@@ -1570,7 +1582,8 @@ def build_config(args: argparse.Namespace) -> SyncConfig:
         lot_size=max(int(args.lot_size), 1),
         cash_buffer_pct=max(min(float(args.cash_buffer_pct), 0.95), 0.0),
         budget_total=float(args.budget_total) if args.budget_total is not None else None,
-        max_order_qty=max(int(args.max_order_qty), 1),
+        max_buy_order_qty=max(int(args.max_buy_order_qty if args.max_buy_order_qty is not None else args.max_order_qty), 1),
+        max_sell_order_qty=max(int(args.max_sell_order_qty if args.max_sell_order_qty is not None else args.max_order_qty), 1),
         cancel_open_orders=not bool(args.no_cancel_open_orders),
         sync_existing_orders=not bool(args.no_sync_existing_orders),
         force=bool(args.force),
