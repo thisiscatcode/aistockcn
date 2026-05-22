@@ -38,6 +38,7 @@ class Settings:
     futu_gateway_agent_id_header: str
     futu_gateway_agent_key_header: str
     futu_gateway_account_id: int | None
+    paper_db_url: str | None
     paper_trading_top_k: int
     paper_trading_min_score: float
     paper_trading_lot_size: int
@@ -158,6 +159,7 @@ def get_settings() -> Settings:
         futu_gateway_agent_id_header=os.getenv("FUTU_GATEWAY_AGENT_ID_HEADER", "X-Agent-Id").strip() or "X-Agent-Id",
         futu_gateway_agent_key_header=os.getenv("FUTU_GATEWAY_AGENT_KEY_HEADER", "X-Agent-Key").strip() or "X-Agent-Key",
         futu_gateway_account_id=_optional_int_env("FUTU_GATEWAY_ACCOUNT_ID"),
+        paper_db_url=(os.getenv("PAPER_DB_URL") or "").strip() or None,
         paper_trading_top_k=max(_int_env("PAPER_TRADING_TOP_K", 5), 1),
         paper_trading_min_score=_float_env("PAPER_TRADING_MIN_SCORE", 0.5),
         paper_trading_lot_size=max(_int_env("PAPER_TRADING_LOT_SIZE", 100), 1),

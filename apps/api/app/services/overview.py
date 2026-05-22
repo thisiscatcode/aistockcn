@@ -95,23 +95,36 @@ def _recommended_weight(row: dict[str, Any], total_assets: float | None) -> floa
     return None
 
 
+def _row_code(row: dict[str, Any]) -> str:
+    return str(row.get("code") or row.get("symbol") or "").strip()
+
+
+def _model_pick_signal_type(row: dict[str, Any]) -> str:
+    raw_signal = str(row.get("action") or row.get("signal_type") or "").strip().upper()
+    return raw_signal or "BUY"
+
+
 def _top_pick_rows(target_rows: list[dict[str, Any]], pick_rows: list[dict[str, Any]], total_assets: float | None) -> list[dict[str, Any]]:
-    source_rows = target_rows if target_rows else pick_rows
+    source_rows = pick_rows if pick_rows else target_rows
+    target_by_code = {_row_code(row): row for row in target_rows if _row_code(row)}
+    using_model_picks = bool(pick_rows)
     rows: list[dict[str, Any]] = []
     for index, row in enumerate(source_rows[:10], start=1):
+        target_row = target_by_code.get(_row_code(row), {})
+        weight_source = target_row or row
         rows.append(
             {
                 "rank": row.get("rank") or index,
                 "code": row.get("code") or row.get("symbol"),
                 "name": row.get("name") or row.get("company"),
                 "industry": row.get("industry"),
-                "signal_type": _signal_type(row),
+                "signal_type": _model_pick_signal_type(row) if using_model_picks else _signal_type(row),
                 "confidence": row.get("score"),
-                "recommended_weight": _recommended_weight(row, total_assets),
-                "target_qty": row.get("target_qty"),
-                "estimated_order_notional": row.get("estimated_order_notional"),
+                "recommended_weight": _recommended_weight(weight_source, total_assets),
+                "target_qty": target_row.get("target_qty") or row.get("target_qty"),
+                "estimated_order_notional": target_row.get("estimated_order_notional") or row.get("estimated_order_notional"),
                 "reason": row.get("reason"),
-                "source": "paper_target" if target_rows else "model_pick",
+                "source": "model_pick" if using_model_picks else "paper_target",
             }
         )
     return records_to_json(rows)

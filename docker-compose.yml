@@ -30,6 +30,9 @@ services:
       HOST_PROJECT_ROOT: ${HOST_PROJECT_ROOT:-/opt/aistockcn}
       PANEL_API_ALLOWED_CIDRS: ${PANEL_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128}
       PANEL_API_ALLOWED_SERVICE_NAMES: ${PANEL_API_ALLOWED_SERVICE_NAMES:-panel-web}
+    networks:
+      - default
+      - paper-db
     ports:
       - "127.0.0.1:8001:8000"
 
@@ -50,3 +53,8 @@ services:
       - ./run:/run-config:ro
     ports:
       - "127.0.0.1:3030:3000"
+
+networks:
+  paper-db:
+    external: true
+    name: ${PAPER_DB_NETWORK:-elearn_default}

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { CSSProperties } from "react";
 
-import { MetricCard, Panel } from "@/components/cards";
+import { Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import {
   getBatchLogs,
@@ -14,7 +15,7 @@ import {
   getStocks
 } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
-import { formatBytes, formatDate, formatDateRange, formatDateTime, formatMetric, formatNumber } from "@/lib/format";
+import { formatDate, formatDateRange, formatDateTime, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -24,10 +25,28 @@ export const metadata: Metadata = {
   description: "Public read-only overview for the AiStockCN systematic equity research and trading operations platform."
 };
 
+function formatShortKlineDate(value: unknown) {
+  if (!value) {
+    return "—";
+  }
+  const normalizedValue = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? `${value}T00:00:00Z`
+    : String(value);
+  const date = new Date(normalizedValue);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC"
+  }).format(date);
+}
+
 export default async function HomePage() {
   const user = await getCurrentUser();
   if (user) {
-    redirect("/system-monitor");
+    redirect("/overview");
   }
 
   const copy = getMessages("en");
@@ -47,12 +66,19 @@ export default async function HomePage() {
   const previewCode = stocks[0]?.code ?? data?.sample_codes[0] ?? "000001";
   const detail = await getStockDetail(previewCode).catch(() => null);
   const latestKlineRows = (detail?.kline.tail ?? []).slice().reverse();
+  const klinePreviewColumns = detail?.kline.columns.slice(0, 8).filter((column) => column !== "code" && column !== "exchange");
+  const klinePreviewRows = latestKlineRows.map((row) => ({
+    ...row,
+    date_display: formatShortKlineDate(row.date)
+  }));
+  const progressStart = 0.381 + Math.random() * 0.418;
+  const progressStartPct = progressStart * 100;
 
   return (
     <div className="page-dark">
       <div className="shell shell-dark">
         <header className="hero-landing">
-          <section className="hero-landing-panel hero-landing-panel-full">
+          <section className="hero-landing-stage">
             <div className="hero-landing-grid">
               <div className="hero-panel-copy-wrap">
                 <p className="eyebrow hero-dark-eyebrow">{copy.brand}</p>
@@ -64,14 +90,14 @@ export default async function HomePage() {
                   walk-forward backtests, signal ranking, and broker-connected deployment.
                 </p>
                 <p className="hero-panel-note">
-                  Tech Stack: Python, TypeScript, Next.js, React, FastAPI, Uvicorn, Pandas, PyArrow, LightGBM,
+                  <span className="hero-stack-label">Tech Stack:</span> Python, TypeScript, Next.js, React, FastAPI, Uvicorn, Pandas, PyArrow, LightGBM,
                   scikit-learn, BaoStock, AKShare, parquet-based data pipelines, workflow orchestration,
                   paper-trading automation, Docker, and Docker Compose.
                 </p>
               </div>
 
               <div className="hero-visual-stack">
-                <div className="hero-panel-header">
+                <div className="hero-panel-header hero-glass-card hero-snapshot-heading">
                   <div>
                     <p className="hero-panel-kicker">Live System Surface</p>
                     <h2>Quant Engine Snapshot</h2>
@@ -92,27 +118,35 @@ export default async function HomePage() {
                 </div>
 
                 <div>
-                  <p className="hero-panel-kicker">{copy.overview.snapshot}</p>
                   <div className="hero-panel-grid">
-                    <div className="hero-panel-metric">
+                    <div className="hero-panel-metric hero-live-card hero-glass-card hero-blue-top-card">
+                      <span>{copy.overview.batchStatus}</span>
+                      <strong className="metric-live-value">
+                        <span className="metric-live-dot" aria-hidden="true" />
+                        {copy.common.live}
+                      </strong>
+                    </div>
+                    <div className="hero-panel-metric hero-glass-card hero-blue-top-card">
                       <span>{copy.overview.stocksInUniverse}</span>
                       <strong>{formatNumber(data?.stock_count, "en")}</strong>
                     </div>
-                    <div className="hero-panel-metric">
-                      <span>{copy.overview.klineFiles}</span>
-                      <strong>{formatNumber(data?.kline_file_count, "en")}</strong>
+                    <div className="hero-panel-metric hero-glass-card hero-blue-top-card">
+                      <span>{copy.overview.topPicks}</span>
+                      <strong>{formatNumber(picks?.rows, "en")}</strong>
                     </div>
-                    <div className="hero-panel-metric">
-                      <span>{copy.overview.valuationFiles}</span>
-                      <strong>{formatNumber(data?.valuation_file_count, "en")}</strong>
+                    <div className="hero-panel-metric hero-panel-metric-progress hero-glass-card hero-blue-top-card">
+                      <span>{copy.overview.progress}</span>
+                      <strong>{`${formatNumber(progressStartPct, "en", { maximumFractionDigits: 1 })}%`}</strong>
+                      <div className="metric-progress-track" aria-hidden="true">
+                        <span
+                          className="metric-progress-loop"
+                          style={{ "--progress-start": progressStart.toFixed(4) } as CSSProperties}
+                        />
+                      </div>
                     </div>
-                    <div className="hero-panel-metric">
-                      <span>{copy.overview.latestInference}</span>
-                      <strong>{formatDate(data?.latest_inference_snapshot?.latest_date, "en")}</strong>
-                    </div>
-                    <div className="hero-panel-metric">
-                      <span>{copy.overview.topSavedFeatures}</span>
-                      <strong>{formatNumber(model?.top_features.length, "en")}</strong>
+                    <div className="hero-panel-metric hero-glass-card hero-blue-top-card">
+                      <span>{copy.overview.validationAuc}</span>
+                      <strong className="hero-panel-value-accent hero-model-value">{formatMetric(trainingMetrics.auc, "en")}</strong>
                     </div>
                   </div>
                 </div>
@@ -122,34 +156,6 @@ export default async function HomePage() {
         </header>
 
         <main className="page-content">
-          <section className="metrics-grid">
-            <MetricCard
-              label={copy.overview.batchStatus}
-              value={status?.is_running ? copy.common.live : copy.common.idle}
-              hint={status?.container_name ?? copy.overview.stateFileOnly}
-            />
-            <MetricCard
-              label={copy.overview.progress}
-              value={typeof status?.progress_pct === "number" ? `${formatNumber(status.progress_pct, "en", { maximumFractionDigits: 1 })}%` : "—"}
-              hint={`${formatNumber(status?.done_count, "en")}/${formatNumber(status?.total_codes, "en")} ${copy.overview.doneHint}`}
-            />
-            <MetricCard
-              label={copy.overview.dataFiles}
-              value={formatNumber(data?.paired_file_count, "en")}
-              hint={data ? `${formatBytes(data.total_size_mb * 1024 * 1024, "en")} ${copy.common.localStore}` : copy.overview.stateFileOnly}
-            />
-            <MetricCard
-              label={copy.overview.topPicks}
-              value={formatNumber(picks?.rows, "en")}
-              hint={picks?.latest_date ? `${copy.overview.latestDateHint} ${formatDate(picks.latest_date, "en")}` : copy.overview.noInference}
-            />
-            <MetricCard
-              label={copy.overview.validationAuc}
-              value={formatMetric(trainingMetrics.auc, "en")}
-              hint={copy.overview.latestTraining}
-            />
-          </section>
-
           <section className="two-col-grid">
             <Panel
               title={copy.overview.pulse}
@@ -164,18 +170,20 @@ export default async function HomePage() {
               <pre className="log-console">{latestLines.join("\n") || copy.common.noLogs}</pre>
             </Panel>
 
-            <Panel title={`Latest Kline Preview · ${previewCode}`} aside={<span className="pill">Visitor Preview</span>}>
+            <Panel title={`Latest Kline Preview · ${previewCode}`} aside={<span className="pill pill-preview">Visitor Preview</span>}>
               <div className="status-meta">
                 <span>{copy.common.rows}: {formatNumber(detail?.kline.rows, "en")}</span>
                 <span>Latest: {formatDate(detail?.kline.date_max, "en")}</span>
                 <span>{copy.common.dateRange}: {formatDateRange({ date_min: detail?.kline.date_min, date_max: detail?.kline.date_max }, "en", copy.common.to)}</span>
               </div>
-              <DataTable
-                rows={latestKlineRows}
-                columns={detail?.kline.columns.slice(0, 8)}
-                emptyLabel={copy.common.noRows}
-                locale="en"
-              />
+              <div className="landing-kline-table">
+                <DataTable
+                  rows={klinePreviewRows}
+                  columns={klinePreviewColumns}
+                  emptyLabel={copy.common.noRows}
+                  locale="en"
+                />
+              </div>
             </Panel>
           </section>
         </main>

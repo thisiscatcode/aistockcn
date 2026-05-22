@@ -12,7 +12,7 @@ export default async function LoginPage({
 }) {
   const user = await getCurrentUser();
   if (user) {
-    redirect("/system-monitor");
+    redirect("/overview");
   }
 
   const params = (await searchParams) ?? {};

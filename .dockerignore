@@ -5,6 +5,12 @@ __pycache__
 *.pyo
 *.pyd
 .pytest_cache
+node_modules
+.next
+*.next*
+apps/*/node_modules
+apps/*/.next
+apps/*/.next*
 quant_data
 logs
 run/panel.env

@@ -156,7 +156,10 @@ def _display_symbol_from_meta(symbol: str, exchange: str | None) -> str:
 
 def _stock_name_lookup(settings: Settings) -> dict[str, dict[str, str]]:
     lookup: dict[str, dict[str, str]] = {}
-    for path in [settings.stock_list_path, settings.stock_registry_path]:
+    for configured_path in [getattr(settings, "stock_list_path", None), getattr(settings, "stock_registry_path", None)]:
+        if configured_path is None:
+            continue
+        path = Path(configured_path)
         if not path.exists():
             continue
         try:
@@ -664,6 +667,33 @@ def _filter_actionable_target_rows(targets_df: pd.DataFrame) -> pd.DataFrame:
     return targets_df[actionable].copy()
 
 
+def _enrich_target_metadata(targets_df: pd.DataFrame, settings: Settings) -> pd.DataFrame:
+    if targets_df.empty:
+        return targets_df
+    lookup = _stock_name_lookup(settings)
+    if not lookup:
+        return targets_df
+    enriched = targets_df.copy()
+    if "code" not in enriched.columns:
+        return enriched
+    if "name" not in enriched.columns:
+        enriched["name"] = None
+    if "exchange" not in enriched.columns:
+        enriched["exchange"] = None
+    for index, row in enriched.iterrows():
+        symbol = _normalize_symbol(row.get("code"))
+        meta = lookup.get(symbol)
+        if not meta:
+            continue
+        current_name = str(row.get("name") or "").strip()
+        if not current_name or current_name == symbol:
+            enriched.at[index, "name"] = meta.get("name") or current_name or None
+        current_exchange = str(row.get("exchange") or "").strip()
+        if not current_exchange:
+            enriched.at[index, "exchange"] = meta.get("exchange") or current_exchange or None
+    return enriched
+
+
 def get_paper_trading_targets(*, limit: int = 25) -> dict[str, Any]:
     settings = get_settings()
     targets_df = _safe_read_parquet(settings.paper_trading_targets_path)
@@ -672,12 +702,14 @@ def get_paper_trading_targets(*, limit: int = 25) -> dict[str, Any]:
     targets_df = _filter_actionable_target_rows(targets_df)
     if targets_df.empty:
         return {"rows": 0, "targets": []}
+    targets_df = _enrich_target_metadata(targets_df, settings)
     ordered_columns = [
         column
         for column in [
             "signal_date",
             "rank",
             "code",
+            "exchange",
             "name",
             "industry",
             "score",

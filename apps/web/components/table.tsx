@@ -72,6 +72,15 @@ function cellDetail(row: TableRow, key: string): string | null {
   return detail ? detail : null;
 }
 
+function cellDisplay(row: TableRow, key: string): string | null {
+  const value = row[`${key}_display`];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const display = value.trim();
+  return display ? display : null;
+}
+
 function cellTitle(row: TableRow, key: string, fallback: string) {
   const detail = cellDetail(row, key);
   return detail ? `${fallback} / ${detail}` : fallback;
@@ -145,8 +154,9 @@ export function DataTable({
             {visibleRows.map((row, index) => (
               <tr key={`${(safeCurrentPage - 1) * currentPageSize + index}-${normalizedHeaders[0]?.key ?? "row"}`}>
                 {normalizedHeaders.map((header) => {
-                  const value = formatDisplayValue(row[header.key], { locale, key: header.key });
+                  const value = cellDisplay(row, header.key) ?? formatDisplayValue(row[header.key], { locale, key: header.key });
                   const href = linkHref(row, header.key);
+                  const externalHref = href ? /^https?:\/\//.test(href) : false;
                   const detail = cellDetail(row, header.key);
                   const tone = cellTone(row, header.key);
                   const contentClassName = [
@@ -157,7 +167,7 @@ export function DataTable({
                     <td key={header.key} className={numericColumns.has(header.key) ? "data-table-cell-numeric" : undefined}>
                       <span className={contentClassName} title={cellTitle(row, header.key, value)}>
                         {href ? (
-                          <a className="data-table-link" href={href} target="_blank" rel="noopener noreferrer">
+                          <a className="data-table-link" href={href} target={externalHref ? "_blank" : undefined} rel={externalHref ? "noopener noreferrer" : undefined}>
                             {value}
                           </a>
                         ) : (

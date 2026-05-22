@@ -5,6 +5,7 @@ import { ReactNode } from "react";
 import { PanelLocale, getMessages } from "@/lib/i18n";
 import { NavTabs } from "@/components/nav-tabs";
 import { ShanghaiTime } from "@/components/shanghai-time";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function Shell({
   title,
@@ -12,7 +13,8 @@ export function Shell({
   children,
   locale,
   username,
-  role
+  role,
+  tone = "dark"
 }: {
   title: string;
   subtitle: string;
@@ -20,22 +22,24 @@ export function Shell({
   locale: PanelLocale;
   username: string;
   role: PanelRole;
+  tone?: "light" | "dark";
 }) {
   const copy = getMessages(locale);
+  const isDark = tone === "dark";
   const navItem = (href: Route, label: string) => ({ href, label });
   const navItems: Array<{ href: Route; label: string }> = [
+    navItem("/overview", copy.shell.nav.overview),
     navItem("/system-monitor", copy.shell.nav.systemMonitor),
     navItem("/batch", copy.shell.nav.batch),
     navItem("/data", copy.shell.nav.data),
     navItem("/models", copy.shell.nav.models),
     navItem("/picks", copy.shell.nav.picks),
-    navItem("/holdings" as Route, copy.shell.nav.holdings),
     navItem("/paper", copy.shell.nav.paper),
     navItem("/admin", copy.shell.nav.admin)
   ];
 
-  return (
-    <div className="shell">
+  const content = (
+    <div className={`shell${isDark ? " shell-dark" : ""}`}>
       <header className="hero">
         <div className="hero-topline">
           <div className="hero-copy">
@@ -51,6 +55,7 @@ export function Shell({
           </div>
           <div className="hero-meta" aria-label={copy.shell.signedInAs}>
             <div className="hero-meta-line">
+              <ThemeToggle />
               <span>{copy.shell.signedInAs}:</span> <strong>{username}</strong>
               <form action="/auth/logout" method="post" className="hero-logout-form">
                 <button type="submit" className="logout-button">
@@ -68,6 +73,12 @@ export function Shell({
         </div>
       </header>
       <main className="page-content">{children}</main>
+    </div>
+  );
+
+  return (
+    <div className={`theme-shell-root${isDark ? " page-dark" : ""}`} data-theme-root data-theme={isDark ? "dark" : "bright"}>
+      {content}
     </div>
   );
 }

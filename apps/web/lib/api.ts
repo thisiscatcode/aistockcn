@@ -400,7 +400,8 @@ export type PaperOrders = {
 
 export type PaperHoldings = {
   generated_at?: string | null;
-  gateway: PaperGatewayStatus;
+  gateway?: PaperGatewayStatus;
+  source?: string | null;
   summary: Record<string, unknown>;
   balance: Array<Record<string, unknown>>;
   positions_rows: number;
@@ -411,9 +412,42 @@ export type PaperHoldings = {
   error?: string | null;
 };
 
+export type PaperDbHealth = {
+  healthy: boolean;
+  error?: string | null;
+  fills: number;
+  orders: number;
+  positions: number;
+};
+
+export type PaperStockDetail = {
+  symbol: string;
+  summary: Record<string, unknown>;
+  position?: Record<string, unknown> | null;
+  daily: Array<Record<string, unknown>>;
+  recent_orders: Array<Record<string, unknown>>;
+  recent_fills: Array<Record<string, unknown>>;
+  error?: string | null;
+};
+
+export type PaperStockLedger = {
+  symbol: string;
+  rows: number;
+  ledger: Array<Record<string, unknown>>;
+  daily: Array<Record<string, unknown>>;
+  error?: string | null;
+};
+
 export type PaperDailyHistory = {
   rows: number;
   daily: Array<Record<string, unknown>>;
+  error?: string | null;
+};
+
+export type PaperDailyDetail = {
+  trade_date: string;
+  day?: Record<string, unknown> | null;
+  error?: string | null;
 };
 
 export type PaperHistory = {
@@ -628,6 +662,76 @@ export function getPaperOrders(limit = 50, timeoutMs?: number) {
 
 export function getPaperHoldings(positionLimit = 500, orderLimit = 200, timeoutMs?: number) {
   return fetchJson<PaperHoldings>(`/api/paper/holdings?position_limit=${positionLimit}&order_limit=${orderLimit}`, { timeoutMs });
+}
+
+export function getPaperDbHealth(timeoutMs?: number) {
+  return fetchJson<PaperDbHealth>("/api/paper/db/health", { timeoutMs });
+}
+
+export function getPaperDbHoldings(positionLimit = 500, orderLimit = 200, timeoutMs?: number) {
+  return fetchJson<PaperHoldings>(`/api/paper/db/holdings?position_limit=${positionLimit}&order_limit=${orderLimit}`, { timeoutMs });
+}
+
+export function getPaperDbDailyHistory(limit = 20, timeoutMs?: number) {
+  return fetchJson<PaperDailyHistory>(`/api/paper/db/daily-history?limit=${limit}`, { timeoutMs });
+}
+
+export function getPaperDbDailyDetail(tradeDate: string, timeoutMs?: number) {
+  return fetchJson<PaperDailyDetail>(`/api/paper/db/daily-history/${encodeURIComponent(tradeDate)}`, { timeoutMs });
+}
+
+export function getPaperDbOrders({
+  symbol,
+  status,
+  startDate,
+  endDate,
+  limit = 200,
+  timeoutMs
+}: {
+  symbol?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  timeoutMs?: number;
+} = {}) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (symbol) query.set("symbol", symbol);
+  if (status) query.set("status", status);
+  if (startDate) query.set("start_date", startDate);
+  if (endDate) query.set("end_date", endDate);
+  return fetchJson<PaperOrders>(`/api/paper/db/orders?${query.toString()}`, { timeoutMs });
+}
+
+export function getPaperDbFills({
+  symbol,
+  side,
+  startDate,
+  endDate,
+  limit = 500,
+  timeoutMs
+}: {
+  symbol?: string;
+  side?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  timeoutMs?: number;
+} = {}) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (symbol) query.set("symbol", symbol);
+  if (side) query.set("side", side);
+  if (startDate) query.set("start_date", startDate);
+  if (endDate) query.set("end_date", endDate);
+  return fetchJson<{ rows: number; fills: Array<Record<string, unknown>>; error?: string | null }>(`/api/paper/db/fills?${query.toString()}`, { timeoutMs });
+}
+
+export function getPaperDbStock(symbol: string, timeoutMs?: number) {
+  return fetchJson<PaperStockDetail>(`/api/paper/db/stocks/${encodeURIComponent(symbol)}`, { timeoutMs });
+}
+
+export function getPaperDbStockLedger(symbol: string, limit = 1000, timeoutMs?: number) {
+  return fetchJson<PaperStockLedger>(`/api/paper/db/stocks/${encodeURIComponent(symbol)}/ledger?limit=${limit}`, { timeoutMs });
 }
 
 export function getPaperDailyHistory(limit = 20, timeoutMs?: number) {

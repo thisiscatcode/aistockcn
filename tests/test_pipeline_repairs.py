@@ -37,11 +37,109 @@ from app.services import benchmark as benchmark_service
 from app.services import model as model_service
 from app.services import model_profiles as model_profiles_service
 from app.services import paper as paper_service
+from app.services import paper_db as paper_db_service
 from app.services import source_readiness
 from app.services.log_translation import translate_log_line
 
 
 class PipelineRepairTests(unittest.TestCase):
+    def test_paper_db_symbol_ledger_keeps_avg_and_realized_pnl_separate(self) -> None:
+        fills = [
+            {
+                "created_at": datetime(2026, 3, 27, 1, 32),
+                "broker_order_id": "buy-1",
+                "symbol": "600703",
+                "side": "BUY",
+                "quantity": 100,
+                "price": 12.58,
+                "notional": 1258.0,
+            },
+            {
+                "created_at": datetime(2026, 3, 30, 1, 34),
+                "broker_order_id": "buy-2",
+                "symbol": "600703",
+                "side": "BUY",
+                "quantity": 100,
+                "price": 11.94,
+                "notional": 1194.0,
+            },
+            {
+                "created_at": datetime(2026, 5, 21, 1, 37),
+                "broker_order_id": "sell-1",
+                "symbol": "600703",
+                "side": "SELL",
+                "quantity": 100,
+                "price": 16.72,
+                "notional": 1672.0,
+            },
+        ]
+
+        ledger, daily = paper_db_service.build_symbol_ledger(fills)
+
+        self.assertAlmostEqual(ledger[1]["avg_cost_after"], 12.26)
+        self.assertAlmostEqual(ledger[2]["realized_pnl"], 446.0)
+        self.assertAlmostEqual(ledger[2]["position_quantity_after"], 100.0)
+        self.assertAlmostEqual(ledger[2]["avg_cost_after"], 12.26)
+        self.assertEqual(daily[0]["trade_date"], "2026-05-21")
+        self.assertAlmostEqual(daily[0]["realized_pnl"], 446.0)
+
+    def test_paper_db_health_reports_missing_db_url(self) -> None:
+        settings = SimpleNamespace(
+            paper_db_url=None,
+            futu_gateway_agent_id="aistockcn-paper-cn",
+            futu_gateway_market="CN",
+        )
+
+        with mock.patch.object(paper_db_service, "get_settings", return_value=settings):
+            result = paper_db_service.get_paper_db_health()
+
+        self.assertFalse(result["healthy"])
+        self.assertIn("PAPER_DB_URL", result["error"])
+
+    def test_paper_db_daily_history_contains_actual_trades_and_positions(self) -> None:
+        fills = [
+            {
+                "created_at": datetime(2026, 5, 20, 1, 0),
+                "broker_order_id": "buy-1",
+                "symbol": "600703",
+                "side": "BUY",
+                "quantity": 200,
+                "price": 10.0,
+                "notional": 2000.0,
+            },
+            {
+                "created_at": datetime(2026, 5, 21, 1, 0),
+                "broker_order_id": "sell-1",
+                "symbol": "600703",
+                "side": "SELL",
+                "quantity": 100,
+                "price": 15.0,
+                "notional": 1500.0,
+            },
+            {
+                "created_at": datetime(2026, 5, 21, 1, 1),
+                "broker_order_id": "buy-2",
+                "symbol": "605288",
+                "side": "BUY",
+                "quantity": 100,
+                "price": 50.0,
+                "notional": 5000.0,
+            },
+        ]
+
+        daily = paper_db_service.build_daily_position_history(fills, limit=10)
+
+        self.assertEqual(daily[0]["trade_date"], "2026-05-21")
+        self.assertEqual(daily[0]["fills_rows"], 2)
+        self.assertEqual(daily[0]["positions_rows"], 2)
+        latest_positions = {row["symbol"]: row for row in daily[0]["positions"]}
+        self.assertAlmostEqual(latest_positions["600703"]["quantity"], 100.0)
+        self.assertAlmostEqual(latest_positions["600703"]["avg_cost"], 10.0)
+        self.assertAlmostEqual(latest_positions["600703"]["realized_pnl"], 500.0)
+        self.assertAlmostEqual(latest_positions["605288"]["quantity"], 100.0)
+        self.assertEqual(daily[1]["trade_date"], "2026-05-20")
+        self.assertEqual(daily[1]["positions_rows"], 1)
+
     def test_valuation_uses_latest_prior_share_counts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
