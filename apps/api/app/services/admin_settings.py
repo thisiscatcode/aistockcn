@@ -8,7 +8,11 @@ from app.config import get_settings
 
 
 def _ensure_project_root_importable() -> None:
-    root = getattr(get_settings(), "project_root", Path(__file__).resolve().parents[4])
+    settings = get_settings()
+    root = getattr(settings, "project_root", None)
+    if root is None:
+        current = Path(__file__).resolve()
+        root = current.parents[4] if len(current.parents) > 4 else current.parents[-1]
     root_text = str(root)
     if root_text not in sys.path:
         sys.path.insert(0, root_text)
