@@ -2536,6 +2536,31 @@ select {
   max-height: 220px;
 }
 
+.settings-form {
+  display: grid;
+  gap: 14px;
+}
+
+.setting-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.setting-toggle-row input {
+  margin-top: 4px;
+}
+
+.setting-toggle-row span {
+  display: grid;
+  gap: 4px;
+}
+
+.setting-toggle-row small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .control-center-grid .panel-header {
   align-items: center;
   gap: 8px;

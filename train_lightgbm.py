@@ -15,6 +15,8 @@ import pyarrow.parquet as pq
 import pyarrow.types as patypes
 from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
 
+from control_settings import exclude_st_from_model_candidates, filter_model_candidate_rows
+
 
 DEFAULT_TRAIN_PATH = "quant_data/ml_features_ready.parquet"
 DEFAULT_INFERENCE_PATH = "quant_data/inference_features_latest.parquet"
@@ -222,7 +224,10 @@ def main() -> int:
 
     train_column_types = load_parquet_column_types(train_path)
     feature_cols, categorical_cols = choose_feature_columns_from_schema(train_column_types)
-    train_columns = list(dict.fromkeys(["date", "label", *feature_cols]))
+    identity_columns = ["date", "label"]
+    if "name" in train_column_types:
+        identity_columns.append("name")
+    train_columns = list(dict.fromkeys([*identity_columns, *feature_cols]))
 
     log(f"Loading training data: {train_path}")
     log(f"Training columns: {len(train_columns)}, model features: {len(feature_cols)}, categorical features: {len(categorical_cols)}")
@@ -231,6 +236,20 @@ def main() -> int:
     log(f"Loading scoring data: {inference_path}")
     inference_df = load_frame(inference_path)
     log(f"Training shape: {train_df.shape}, scoring shape: {inference_df.shape}")
+
+    exclude_st = exclude_st_from_model_candidates(train_path.parent)
+    if exclude_st:
+        before_train_rows = len(train_df)
+        before_inference_rows = len(inference_df)
+        train_df = filter_model_candidate_rows(train_df, exclude_st=True)
+        inference_df = filter_model_candidate_rows(inference_df, exclude_st=True)
+        log(
+            "ST candidate filter enabled: "
+            f"training {before_train_rows:,}->{len(train_df):,}, "
+            f"scoring {before_inference_rows:,}->{len(inference_df):,}"
+        )
+        if train_df.empty or inference_df.empty:
+            raise SystemExit("ST candidate filter removed all training or inference rows.")
 
     train_df["date"] = pd.to_datetime(train_df["date"])
     inference_df["date"] = pd.to_datetime(inference_df["date"])
@@ -315,6 +334,7 @@ def main() -> int:
         "feature_metadata_path": str(feature_metadata_path(train_path)) if feature_metadata else None,
         "valid_days": args.valid_days,
         "threshold": args.threshold,
+        "exclude_st_from_model_candidates": exclude_st,
         "metrics": metrics,
         "train_rows": int(len(X_train)),
         "valid_rows": int(len(X_valid)),

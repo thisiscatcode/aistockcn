@@ -20,6 +20,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from control_settings import (
+    exclude_st_from_model_candidates,
+    filter_model_candidate_rows,
+    is_st_stock_name,
+)
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 
 
@@ -315,6 +320,42 @@ def score_file_signature(path: Path) -> str:
     return f"{stat.st_mtime_ns}:{stat.st_size}"
 
 
+def quant_dir_for_scores_path(path: Path) -> Path:
+    resolved = Path(path)
+    if resolved.parent.name == "models" and resolved.parent.parent.name != "model_profiles":
+        return resolved.parent.parent
+    if len(resolved.parents) >= 4 and resolved.parent.name == "models" and resolved.parent.parent.parent.name == "model_profiles":
+        return resolved.parent.parent.parent.parent
+    return resolved.parent.parent
+
+
+def load_stock_name_lookup(quant_dir: Path) -> dict[str, str]:
+    for candidate in [quant_dir / "stock_list.parquet", quant_dir / "stock_registry.parquet"]:
+        if not candidate.exists():
+            continue
+        try:
+            frame = pd.read_parquet(candidate, columns=["code", "name"])
+        except Exception:
+            continue
+        lookup: dict[str, str] = {}
+        for row in frame.to_dict(orient="records"):
+            code = normalize_symbol(row.get("code"))
+            name = str(row.get("name") or "").strip()
+            if code and name and code not in lookup:
+                lookup[code] = name
+        if lookup:
+            return lookup
+    return {}
+
+
+def stock_name_for_position(symbol: str, row: dict[str, Any], lookup: dict[str, str]) -> str:
+    for key in ["name", "stock_name", "security_name", "english_name"]:
+        value = str(row.get(key) or "").strip()
+        if value:
+            return value
+    return lookup.get(normalize_symbol(symbol), "")
+
+
 @dataclass(frozen=True)
 class SyncConfig:
     scores_path: Path
@@ -458,6 +499,8 @@ def load_latest_scores(config: SyncConfig) -> tuple[pd.DataFrame, str, str]:
     latest_scores["score"] = pd.to_numeric(latest_scores["score"], errors="coerce")
     latest_scores["close"] = pd.to_numeric(latest_scores["close"], errors="coerce")
     latest_scores = latest_scores.dropna(subset=["score", "close"])
+    if exclude_st_from_model_candidates(quant_dir_for_scores_path(config.scores_path)):
+        latest_scores = filter_model_candidate_rows(latest_scores, exclude_st=True)
     latest_scores = latest_scores[latest_scores["score"] >= config.min_score].sort_values("score", ascending=False).head(config.top_k)
     if latest_scores.empty:
         raise RuntimeError(f"no candidates reached score >= {config.min_score} on {latest_text}")
@@ -736,6 +779,9 @@ def build_plan(
     score_lookup: dict[str, dict[str, Any]] = {}
     plan_rows: list[dict[str, Any]] = []
     target_symbols: list[str] = []
+    manual_st_positions_ignored: list[str] = []
+    exclude_st = exclude_st_from_model_candidates(quant_dir_for_scores_path(config.scores_path))
+    stock_name_lookup = load_stock_name_lookup(quant_dir_for_scores_path(config.scores_path)) if exclude_st else {}
     for _, row in latest_scores.iterrows():
         symbol = normalize_symbol(row["code"])
         target_symbols.append(symbol)
@@ -777,6 +823,10 @@ def build_plan(
             continue
         current_qty = int(round(to_float(current.get("quantity"))))
         if current_qty <= 0:
+            continue
+        current_name = stock_name_for_position(symbol, current, stock_name_lookup)
+        if exclude_st and is_st_stock_name(current_name):
+            manual_st_positions_ignored.append(symbol)
             continue
         base_price = to_float(current.get("last_price")) or to_float(current.get("avg_cost"))
         plan_rows.append(
@@ -918,6 +968,7 @@ def build_plan(
         "sell_order_count": int((plan["sell_order_qty"] > 0).sum()),
         "buy_order_count": int((plan["buy_order_qty"] > 0).sum()),
         "skip_count": int(plan["action"].astype(str).str.startswith("SKIP_").sum()),
+        "manual_st_positions_ignored": manual_st_positions_ignored,
     }
     return plan, summary
 

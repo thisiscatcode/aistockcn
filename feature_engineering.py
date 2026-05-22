@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
+from control_settings import exclude_st_from_model_candidates, filter_model_candidate_rows
+
 
 DEFAULT_DATA_DIR = "quant_data"
 DEFAULT_OUTPUT = "quant_data/ml_features_ready.parquet"
@@ -42,13 +44,6 @@ SUPPORTED_PANEL_COLUMNS = [
 ]
 
 
-def is_investable_stock_name(name: object) -> bool:
-    normalized = str(name).strip()
-    if not normalized:
-        return True
-    return not normalized.endswith("退")
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build LightGBM-ready features from parquet files.")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Input data directory.")
@@ -73,7 +68,10 @@ def load_stock_list(data_dir: Path, limit: int) -> pd.DataFrame:
     stock_df["exchange"] = stock_df["exchange"].astype(str).str.lower()
     if "name" not in stock_df.columns:
         stock_df["name"] = stock_df["code"]
-    stock_df = stock_df[stock_df["name"].map(is_investable_stock_name)].copy()
+    stock_df = filter_model_candidate_rows(
+        stock_df,
+        exclude_st=exclude_st_from_model_candidates(data_dir),
+    )
     if "industry" not in stock_df.columns:
         stock_df["industry"] = "UNKNOWN"
     else:

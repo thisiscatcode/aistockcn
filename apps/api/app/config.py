@@ -17,6 +17,7 @@ class Settings:
     stock_list_path: Path
     stock_registry_path: Path
     stock_list_subset_path: Path
+    control_settings_path: Path
     reference_dir: Path
     reference_valuation_dir: Path
     reference_status_path: Path
@@ -132,6 +133,7 @@ def get_settings() -> Settings:
         stock_list_path=quant_dir / "stock_list.parquet",
         stock_registry_path=quant_dir / "stock_registry.parquet",
         stock_list_subset_path=quant_dir / "stock_list_subset.parquet",
+        control_settings_path=quant_dir / "control_settings.json",
         reference_dir=reference_dir,
         reference_valuation_dir=reference_dir / "valuation_reference",
         reference_status_path=reference_dir / "reference_status.json",

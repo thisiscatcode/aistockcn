@@ -10,6 +10,7 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.routers.admin import router as admin_router
 from app.routers.control import router as control_router
 from app.routers.data import router as data_router
 from app.routers.logs import router as logs_router
@@ -94,6 +95,7 @@ async def restrict_api_clients(request: Request, call_next):
 app.include_router(status_router)
 app.include_router(logs_router)
 app.include_router(data_router)
+app.include_router(admin_router)
 app.include_router(model_router)
 app.include_router(overview_router)
 app.include_router(paper_router)
@@ -118,6 +120,7 @@ def root() -> dict[str, object]:
             "/api/data/explorer/export",
             "/api/data/stocks",
             "/api/data/stock/{code}",
+            "/api/admin/settings",
             "/api/model/latest",
             "/api/model/picks",
             "/api/overview/portfolio",
@@ -150,5 +153,6 @@ def root() -> dict[str, object]:
             "/api/control/paper/stop",
             "/api/control/reference/start",
             "/api/control/reference/stop",
+            "/api/control/admin/settings",
         ],
     }

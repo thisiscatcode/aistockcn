@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException
 
 from app.config import get_settings
+from app.services.admin_settings import update_admin_settings
 from app.services.batch import BatchControlError, start_batch, stop_batch
 from app.services.model import activate_model_for_paper
 from app.services.paper import PaperGatewayError, cancel_paper_trading_order
@@ -17,6 +18,17 @@ def _require_admin_key(x_panel_admin_key: str | None = Header(default=None)) -> 
     expected = get_settings().panel_admin_key
     if not expected or x_panel_admin_key != expected:
         raise HTTPException(status_code=403, detail={"code": "forbidden", "message": "Admin control key rejected."})
+
+
+@router.post("/admin/settings")
+def admin_settings_update(
+    payload: dict[str, object],
+    x_panel_admin_key: str | None = Header(default=None),
+) -> dict[str, object]:
+    _require_admin_key(x_panel_admin_key)
+    return update_admin_settings(
+        exclude_st_from_model_candidates=bool(payload.get("exclude_st_from_model_candidates", True)),
+    )
 
 
 @router.post("/batch/start")

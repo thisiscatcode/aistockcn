@@ -10,6 +10,7 @@ import pyarrow as pa
 from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
+from app.services.admin_settings import filter_model_candidate_rows
 from app.services.model_profiles import get_model_profile_catalog, set_active_model_profile
 
 TRUSTED_BACKTEST_METHOD_VERSIONS = {
@@ -354,6 +355,20 @@ def get_latest_picks(*, limit: int = 25, profile_name: str | None = None) -> dic
         settings.stock_registry_path,
         column="trade_date",
     )
+    if scores_df.empty:
+        return {
+            "rows": 0,
+            "latest_date": None,
+            "source_close_date": source_close_date,
+            "raw_sync_date": raw_sync_date,
+            "feature_time": feature_time,
+            "data_src_time": feature_time,
+            "model_time": model_time,
+            "profile_name": selected_profile,
+            "picks": [],
+        }
+
+    scores_df = filter_model_candidate_rows(scores_df)
     if scores_df.empty:
         return {
             "rows": 0,

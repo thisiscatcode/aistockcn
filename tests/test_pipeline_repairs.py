@@ -18,12 +18,14 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from batch_download_all_a import merge_existing_output
 from backtest_walk_forward import annualized_return, estimate_rebalance_fees, max_drawdown, training_end_for_rebalance
 from build_inference_features import build_inference_frame
+from control_settings import is_investable_stock_name, is_st_stock_name, read_control_settings, write_control_settings
 from download_data import build_valuation_df, reference_status_path, write_reference_status
 from paper_trade_futu import (
     SyncConfig,
     build_plan,
     compute_affordable_buy_quantity,
     execute_plan,
+    load_latest_scores,
     parse_sina_quote_price,
     persist_targets,
     sina_quote_code,
@@ -33,6 +35,7 @@ from paper_trade_futu import (
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 from app.services import batch as batch_service
+from app.services import admin_settings as admin_settings_service
 from app.services import benchmark as benchmark_service
 from app.services import model as model_service
 from app.services import model_profiles as model_profiles_service
@@ -312,6 +315,104 @@ class PipelineRepairTests(unittest.TestCase):
 
             self.assertEqual(len(inference_df), 1)
             self.assertEqual(inference_df.loc[0, "code"], "000001")
+
+    def test_st_name_filter_and_control_settings_default_on(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp)
+            settings = read_control_settings(quant_dir)
+
+        self.assertTrue(settings["exclude_st_from_model_candidates"])
+        self.assertTrue(is_st_stock_name("*ST元道"))
+        self.assertTrue(is_st_stock_name("ST金顶"))
+        self.assertTrue(is_st_stock_name("S*ST测试"))
+        self.assertFalse(is_st_stock_name("平安银行"))
+        self.assertFalse(is_investable_stock_name("退市股退", exclude_st=False))
+        self.assertFalse(is_investable_stock_name("ST金顶", exclude_st=True))
+        self.assertTrue(is_investable_stock_name("ST金顶", exclude_st=False))
+
+    def test_inference_candidate_loading_excludes_st_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            (data_dir / "daily_kline").mkdir(parents=True)
+            (data_dir / "daily_valuation").mkdir(parents=True)
+            dates = pd.date_range("2026-03-18", periods=25, freq="B")
+            pd.DataFrame(
+                [
+                    {"code": "000001", "exchange": "sz", "name": "平安银行", "industry": "Bank"},
+                    {"code": "688496", "exchange": "sh", "name": "*ST清越", "industry": "Display"},
+                ]
+            ).to_parquet(data_dir / "stock_list.parquet", index=False)
+            for code, exchange in [("000001", "sz"), ("688496", "sh")]:
+                pd.DataFrame(
+                    {
+                        "date": dates,
+                        "code": code,
+                        "exchange": exchange,
+                        "open": range(10, 35),
+                        "high": range(11, 36),
+                        "low": range(9, 34),
+                        "close": range(10, 35),
+                        "volume": [1000] * len(dates),
+                        "amount": [10000] * len(dates),
+                        "turnover": [1.0] * len(dates),
+                        "amplitude": [1.0] * len(dates),
+                        "pct_chg": [0.1] * len(dates),
+                        "change": [0.1] * len(dates),
+                    }
+                ).to_parquet(data_dir / "daily_kline" / f"{code}.parquet", index=False)
+                pd.DataFrame(
+                    {
+                        "date": dates,
+                        "code": code,
+                        "exchange": exchange,
+                        "close": range(10, 35),
+                        "pct_chg": [0.1] * len(dates),
+                        "total_market_cap": [100.0] * len(dates),
+                        "float_market_cap": [90.0] * len(dates),
+                        "total_shares": [10.0] * len(dates),
+                        "float_shares": [9.0] * len(dates),
+                        "pe_ttm": [5.0] * len(dates),
+                        "pb": [1.0] * len(dates),
+                        "ps": [2.0] * len(dates),
+                        "pcf": [3.0] * len(dates),
+                    }
+                ).to_parquet(data_dir / "daily_valuation" / f"{code}.parquet", index=False)
+
+            enabled_df = build_inference_frame(data_dir, limit=0, as_of_date=None)
+            write_control_settings(data_dir, {"exclude_st_from_model_candidates": False})
+            disabled_df = build_inference_frame(data_dir, limit=0, as_of_date=None)
+
+        self.assertEqual(enabled_df["code"].tolist(), ["000001"])
+        self.assertEqual(disabled_df["code"].tolist(), ["000001", "688496"])
+
+    def test_model_picks_filters_st_from_old_score_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            models_dir = quant_dir / "models"
+            models_dir.mkdir(parents=True)
+            scores_path = models_dir / "inference_scores_latest.parquet"
+            pd.DataFrame(
+                [
+                    {"date": "2026-05-20", "code": "688496", "name": "*ST清越", "industry": "Display", "score": 0.99, "close": 1.5},
+                    {"date": "2026-05-20", "code": "000001", "name": "平安银行", "industry": "Bank", "score": 0.8, "close": 10.0},
+                ]
+            ).to_parquet(scores_path, index=False)
+            pd.DataFrame([{"date": "2026-05-20"}]).to_parquet(quant_dir / "inference_features_latest.parquet", index=False)
+            settings = SimpleNamespace(
+                quant_dir=quant_dir,
+                models_dir=models_dir,
+                stock_list_path=quant_dir / "missing_stock_list.parquet",
+                stock_registry_path=quant_dir / "missing_stock_registry.parquet",
+                control_settings_path=quant_dir / "control_settings.json",
+            )
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(admin_settings_service, "get_settings", return_value=settings):
+                    with mock.patch.object(model_service, "_scores_path_for_profile", return_value=(None, scores_path)):
+                        result = model_service.get_latest_picks(limit=5)
+
+        self.assertEqual(result["rows"], 1)
+        self.assertEqual([row["code"] for row in result["picks"]], ["000001"])
 
     def test_provider_probe_timeout_is_reported(self) -> None:
         with mock.patch.object(source_readiness, "bs", object()), mock.patch.object(source_readiness, "ak", object()):
@@ -920,6 +1021,104 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(int(plan.loc[0, "buy_order_qty"]), 100)
         self.assertAlmostEqual(float(plan.loc[0, "estimated_order_fee"]), 20.04, places=6)
         self.assertAlmostEqual(float(summary["estimated_order_fee"]), 20.04, places=6)
+
+    def test_paper_latest_scores_filters_st_before_top_k(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            scores_path = quant_dir / "models" / "scores.parquet"
+            scores_path.parent.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {"date": "2026-05-20", "code": "688496", "exchange": "SH", "name": "*ST清越", "industry": "Display", "score": 0.99, "close": 1.5},
+                    {"date": "2026-05-20", "code": "000001", "exchange": "SZ", "name": "平安银行", "industry": "Bank", "score": 0.8, "close": 10.0},
+                ]
+            ).to_parquet(scores_path, index=False)
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=quant_dir / "paper_trading",
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=None,
+                max_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+
+            latest_scores, _signal_date, _signature = load_latest_scores(config)
+
+        self.assertEqual(latest_scores["code"].tolist(), ["000001"])
+
+    def test_paper_plan_ignores_existing_st_positions_for_manual_handling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            scores_path = quant_dir / "models" / "scores.parquet"
+            scores_path.parent.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {"code": "688496", "name": "*ST清越"},
+                    {"code": "600000", "name": "浦发银行"},
+                ]
+            ).to_parquet(quant_dir / "stock_list.parquet", index=False)
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=quant_dir / "paper_trading",
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=None,
+                max_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+            latest_scores = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-20",
+                        "rank": 1,
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "平安银行",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            )
+
+            plan, summary = build_plan(
+                config,
+                latest_scores=latest_scores,
+                positions={
+                    "688496": {"symbol": "688496", "quantity": 100, "last_price": 1.5, "market_value": 150.0},
+                    "600000": {"symbol": "600000", "quantity": 100, "last_price": 10.0, "market_value": 1000.0},
+                },
+                balance_metrics={"power": 2000.0, "cash": 2000.0, "total_assets": 3000.0},
+            )
+
+        self.assertNotIn("688496", plan["code"].tolist())
+        self.assertIn("600000", plan["code"].tolist())
+        self.assertEqual(summary["manual_st_positions_ignored"], ["688496"])
 
     def test_sina_quote_parser_uses_latest_price_field(self) -> None:
         payload = 'var hq_str_sz000001="平安银行,10.860,10.860,10.770,10.880,10.760,10.770,10.780,74763214";'

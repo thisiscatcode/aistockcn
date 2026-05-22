@@ -23,6 +23,7 @@ COPY train_profile_runner.py .
 COPY backtest_walk_forward.py .
 COPY batch_download_all_a.py .
 COPY repair_valuation_reference_fields.py .
+COPY control_settings.py .
 COPY trading_fees.py .
 COPY paper_trade_futu.py .
 COPY paper_trade_daemon.py .

@@ -109,6 +109,14 @@ export type ReferenceBatchStatus = {
   log_lines: string[];
 };
 
+export type AdminSettings = {
+  path?: string | null;
+  settings: {
+    exclude_st_from_model_candidates?: boolean;
+    updated_at?: string | null;
+  };
+};
+
 export type WorkflowRuntimeDetail = {
   label: string;
   value: string;
@@ -634,6 +642,10 @@ export function getPicks(limit = 25, profile?: string) {
     query.set("profile", profile);
   }
   return fetchJson<PicksOverview>(`/api/model/picks?${query.toString()}`);
+}
+
+export function getAdminSettings() {
+  return fetchJson<AdminSettings>("/api/admin/settings");
 }
 
 export function getPortfolioOverview() {

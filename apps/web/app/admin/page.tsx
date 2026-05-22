@@ -2,7 +2,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { Shell } from "@/components/shell";
-import { getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
+import { getAdminSettings, getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { getAdminCatalog } from "@/lib/admin";
 import { formatBytes, formatDate, formatDateRange, formatDateTime, formatDisplayValue, formatMetric, formatNumber } from "@/lib/format";
@@ -67,14 +67,15 @@ export default async function AdminPage() {
   const copy = getMessages(user.locale);
   const admin = getAdminCatalog(user.locale);
 
-  const [status, data, model, picks, pipeline, workflow, referenceStatus] = await Promise.all([
+  const [status, data, model, picks, pipeline, workflow, referenceStatus, adminSettings] = await Promise.all([
     getBatchStatus(),
     getDataSummary(),
     getModelOverview(),
     getPicks(10),
     getPipelineSummary(),
     getWorkflowStatus(),
-    getReferenceBatchStatus()
+    getReferenceBatchStatus(),
+    getAdminSettings()
   ]);
 
   const training = (model.training_metadata ?? {}) as Record<string, unknown>;
@@ -101,6 +102,7 @@ export default async function AdminPage() {
       ? trainingArtifactCodes === backtestCodes
       : null;
   const runtimeByStep = new Map(workflow.steps.map((step) => [step.step, step]));
+  const excludeStFromModelCandidates = adminSettings.settings.exclude_st_from_model_candidates !== false;
 
   return (
     <Shell
@@ -169,6 +171,33 @@ export default async function AdminPage() {
                 : "The latest step 2 artifact can be newer than the saved model/backtest. This panel makes that drift visible so admin can decide whether step 4 and Backtest need to rerun."}
             </p>
           </div>
+        </Panel>
+
+        <Panel title="Model Candidate Settings">
+          <form className="settings-form" action="/admin/settings" method="post">
+            <label className="setting-toggle-row">
+              <input
+                type="checkbox"
+                name="exclude_st_from_model_candidates"
+                defaultChecked={excludeStFromModelCandidates}
+                disabled={!isAdmin}
+              />
+              <span>
+                <strong>Exclude ST stocks from model candidates</strong>
+                <small>Training, scoring, picks, and paper targets ignore ST; existing ST holdings stay manual-only.</small>
+              </span>
+            </label>
+            <div className="status-meta">
+              <span>Config: {adminSettings.path ?? "—"}</span>
+              <span>Updated: {formatDateTime(adminSettings.settings.updated_at, user.locale)}</span>
+              <span>Status: {excludeStFromModelCandidates ? "Enabled" : "Disabled"}</span>
+            </div>
+            {isAdmin ? (
+              <div className="action-row">
+                <button className="auth-submit action-button" type="submit">Save Settings</button>
+              </div>
+            ) : null}
+          </form>
         </Panel>
 
         <Panel title="Slow Reference Data" aside={<span className={`pill ${runtimePillClass(referenceStatus.status)}`}>{referenceStatus.status_label}</span>}>
