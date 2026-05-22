@@ -174,29 +174,22 @@ export default async function AdminPage() {
         </Panel>
 
         <Panel title="Model Candidate Settings">
-          <form className="settings-form" action="/admin/settings" method="post">
-            <label className="setting-toggle-row">
-              <input
-                type="checkbox"
-                name="exclude_st_from_model_candidates"
-                defaultChecked={excludeStFromModelCandidates}
-                disabled={!isAdmin}
-              />
-              <span>
-                <strong>Exclude ST stocks from model candidates</strong>
-                <small>Training, scoring, picks, and paper targets ignore ST; existing ST holdings stay manual-only.</small>
-              </span>
-            </label>
-            <div className="status-meta">
-              <span>Config: {adminSettings.path ?? "—"}</span>
-              <span>Updated: {formatDateTime(adminSettings.settings.updated_at, user.locale)}</span>
-              <span>Status: {excludeStFromModelCandidates ? "Enabled" : "Disabled"}</span>
-            </div>
-            {isAdmin ? (
-              <div className="action-row">
-                <button className="auth-submit action-button" type="submit">Save Settings</button>
-              </div>
-            ) : null}
+          <form className="compact-setting-form" action="/admin/settings" method="post">
+            <span className="compact-setting-label">Exclude ST stocks from model candidates</span>
+            <input
+              type="hidden"
+              name="exclude_st_from_model_candidates"
+              value={excludeStFromModelCandidates ? "off" : "on"}
+            />
+            <button
+              className={`ios-switch ${excludeStFromModelCandidates ? "is-on" : ""}`}
+              type="submit"
+              disabled={!isAdmin}
+              aria-label="Exclude ST stocks from model candidates"
+              aria-pressed={excludeStFromModelCandidates}
+            >
+              <span>{excludeStFromModelCandidates ? "On" : "Off"}</span>
+            </button>
           </form>
         </Panel>
 

@@ -2536,29 +2536,71 @@ select {
   max-height: 220px;
 }
 
-.settings-form {
-  display: grid;
-  gap: 14px;
-}
-
-.setting-toggle-row {
+.compact-setting-form {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.setting-toggle-row input {
-  margin-top: 4px;
+.compact-setting-label {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.25;
 }
 
-.setting-toggle-row span {
-  display: grid;
-  gap: 4px;
+.ios-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.42);
+  cursor: pointer;
+  padding: 0;
+  transition: background 160ms ease, opacity 160ms ease;
 }
 
-.setting-toggle-row small {
-  color: var(--muted);
-  line-height: 1.5;
+.ios-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.28);
+  transition: transform 160ms ease;
+}
+
+.ios-switch.is-on {
+  background: #34c759;
+}
+
+.ios-switch.is-on::after {
+  transform: translateX(26px);
+}
+
+.ios-switch span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.ios-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.ios-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .control-center-grid .panel-header {
