@@ -18,6 +18,7 @@ from app.services.pipeline_control import (
     stop_step,
 )
 from app.services.files import read_json, write_json_atomic
+from app.services.fei_db_sync import run_kline_import_after_step1
 
 STOP_REQUESTED = False
 CURRENT_STEP_KEY: str | None = None
@@ -109,6 +110,28 @@ def _run_step(step_key: str, label: str) -> None:
     _write_state(completed_steps=completed, current_step_key=None, current_step_label=None)
 
 
+def _run_fei_kline_import() -> None:
+    global CURRENT_STEP_KEY, CURRENT_STEP_LABEL
+
+    label = "FEI Kline DB Import"
+    CURRENT_STEP_KEY = "fei_kline_import"
+    CURRENT_STEP_LABEL = label
+    _write_state(status="running", current_step_key="fei_kline_import", current_step_label=label, failed_step_key=None, error_message=None)
+    _log(f"Starting {label}.")
+    result = run_kline_import_after_step1()
+    _log(
+        f"{label} completed for {result['target_trade_date']} "
+        f"with {result['imported_rows']} rows. STCN loop is now requested."
+    )
+    state = read_json(_state_path())
+    completed = list(state.get("completed_steps", []))
+    if "fei_kline_import" not in completed:
+        completed.append("fei_kline_import")
+    _write_state(completed_steps=completed, current_step_key=None, current_step_label=None)
+    CURRENT_STEP_KEY = None
+    CURRENT_STEP_LABEL = None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timestamp", required=True)
@@ -136,6 +159,8 @@ def main() -> int:
     try:
         for step_key, label in ordered_steps:
             _run_step(step_key, label)
+            if step_key == "step1":
+                _run_fei_kline_import()
 
         _write_state(status="completed", finished_at=_now_iso(), current_step_key=None, current_step_label=None)
         _log("Daily pipeline completed successfully.")

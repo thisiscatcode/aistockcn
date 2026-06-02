@@ -111,13 +111,13 @@ pd: Any = None
 def is_investable_stock_name(name: Any) -> bool:
     """Filter out names that look delisted or non-investable.
 
-    The current rule is deliberately simple: names ending with ``退`` are
-    treated as stocks we do not want in the active investable universe.
+    A-share delisting-board names commonly either start with ``退市`` or end
+    with ``退``. Both shapes are excluded from the active investable universe.
     """
-    normalized = str(name).strip()
+    normalized = str(name).strip().replace(" ", "")
     if not normalized:
         return True
-    return not normalized.endswith("退")
+    return not (normalized.startswith("退市") or normalized.endswith("退"))
 
 
 def parse_args() -> argparse.Namespace:

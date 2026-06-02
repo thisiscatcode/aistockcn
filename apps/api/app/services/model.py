@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 
@@ -17,6 +18,9 @@ TRUSTED_BACKTEST_METHOD_VERSIONS = {
     "purged_label_horizon_v1",
     "purged_label_horizon_costs_v2",
 }
+LOBSTER_PICK_KLINE_COLUMNS = ["date", "code", "exchange", "close", "volume", "amount", "turnover"]
+LOBSTER_PICK_VALUATION_COLUMNS = ["date", "code", "exchange", "float_market_cap"]
+_LOBSTER_PICK_CACHE: dict[str, Any] = {}
 
 
 def _safe_read_csv(path: Path) -> pd.DataFrame:
@@ -35,6 +39,56 @@ def _safe_read_parquet(path: Path, columns: list[str] | None = None) -> pd.DataF
         return pd.read_parquet(path, columns=columns)
     except (pa.ArrowException, OSError, ValueError):
         return pd.DataFrame()
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number):
+        return None
+    return number
+
+
+def _date_string(value: Any) -> str | None:
+    date_value = pd.to_datetime(value, errors="coerce")
+    if pd.isna(date_value):
+        return None
+    return pd.Timestamp(date_value).date().isoformat()
+
+
+def _code_board(code: str) -> str:
+    if code.startswith(("300", "301")):
+        return "创业板"
+    return "主板"
+
+
+def _is_lobster_allowed_code(code: str) -> bool:
+    return code.startswith(("000", "001", "002", "003", "300", "301", "600", "601", "603", "605"))
+
+
+def _lobster_cache_key(settings: Any) -> str:
+    parts: list[str] = []
+    for path in [settings.stock_list_path, settings.quant_dir / "inference_features_latest.parquet"]:
+        try:
+            stat = path.stat()
+            parts.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
+        except OSError:
+            parts.append(f"{path.name}:missing")
+    return "|".join(parts)
+
+
+def _slice_lobster_payload(payload: dict[str, Any], limit: int) -> dict[str, Any]:
+    safe_limit = max(min(int(limit or 100), 500), 1)
+    rows = list(payload.get("picks") or [])
+    limited_rows = rows[:safe_limit]
+    return {
+        **payload,
+        "returned": int(len(limited_rows)),
+        "limit": safe_limit,
+        "picks": limited_rows,
+    }
 
 
 def _file_updated_at(path: Path) -> str | None:
@@ -427,6 +481,181 @@ def get_latest_picks(*, limit: int = 25, profile_name: str | None = None) -> dic
         "profile_name": selected_profile,
         "picks": records_to_json(top_df[ordered_columns].to_dict(orient="records")),
     }
+
+
+def get_lobster_picks(*, limit: int = 100) -> dict[str, Any]:
+    settings = get_settings()
+    cache_key = _lobster_cache_key(settings)
+    if _LOBSTER_PICK_CACHE.get("key") == cache_key and isinstance(_LOBSTER_PICK_CACHE.get("payload"), dict):
+        return _slice_lobster_payload(_LOBSTER_PICK_CACHE["payload"], limit)
+
+    stock_df = _safe_read_parquet(settings.stock_list_path)
+    if stock_df.empty or "code" not in stock_df.columns:
+        return {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "trade_date": None,
+            "source": "quant_data",
+            "universe": 0,
+            "scanned": 0,
+            "qualified": 0,
+            "returned": 0,
+            "limit": limit,
+            "rules": {
+                "volume": "last_3_days_strictly_increasing",
+                "turnover": "each_last_3_days_lte_10_pct",
+                "three_day_gain": "gt_0_lte_10_pct",
+                "score": "latest_amount / latest_float_market_cap * 100",
+                "sort": "score_desc_then_amount_desc",
+            },
+            "picks": [],
+        }
+
+    stock_df = stock_df.copy()
+    stock_df["code"] = stock_df["code"].astype(str).str.zfill(6)
+    stock_df = stock_df[stock_df["code"].map(_is_lobster_allowed_code)].copy()
+    if "is_active" in stock_df.columns:
+        stock_df = stock_df[stock_df["is_active"].fillna(True).astype(bool)].copy()
+    if "exchange" not in stock_df.columns:
+        stock_df["exchange"] = ""
+    if "name" not in stock_df.columns:
+        stock_df["name"] = stock_df["code"]
+    if "industry" not in stock_df.columns:
+        stock_df["industry"] = ""
+
+    target_trade_date = _parquet_date_max(settings.stock_list_path, column="trade_date")
+    if target_trade_date is None:
+        target_trade_date = _parquet_date_max(settings.stock_registry_path, column="trade_date")
+
+    metadata_by_code = {
+        str(row.code).zfill(6): row
+        for row in stock_df[["code", "exchange", "name", "industry"]].itertuples(index=False)
+    }
+
+    rows: list[dict[str, Any]] = []
+    scanned = 0
+    kline_dir = settings.quant_dir / "daily_kline"
+    valuation_dir = settings.quant_dir / "daily_valuation"
+
+    for code, stock in metadata_by_code.items():
+        kline_path = kline_dir / f"{code}.parquet"
+        valuation_path = valuation_dir / f"{code}.parquet"
+        if not kline_path.exists() or not valuation_path.exists():
+            continue
+
+        kline_df = _safe_read_parquet(kline_path, columns=LOBSTER_PICK_KLINE_COLUMNS)
+        if kline_df.empty or len(kline_df) < 3:
+            continue
+
+        kline_df = kline_df.copy()
+        kline_df["date"] = pd.to_datetime(kline_df["date"], errors="coerce")
+        kline_df = kline_df.dropna(subset=["date"]).sort_values("date")
+        if target_trade_date is not None:
+            kline_df = kline_df[kline_df["date"] <= pd.Timestamp(target_trade_date)]
+        latest_three = kline_df.tail(3).copy()
+        if len(latest_three) < 3:
+            continue
+
+        latest_date = _date_string(latest_three["date"].iloc[-1])
+        if target_trade_date is not None and latest_date != target_trade_date:
+            continue
+
+        scanned += 1
+        closes = pd.to_numeric(latest_three["close"], errors="coerce").to_numpy(dtype=float)
+        volumes = pd.to_numeric(latest_three["volume"], errors="coerce").to_numpy(dtype=float)
+        turnovers = pd.to_numeric(latest_three["turnover"], errors="coerce").to_numpy(dtype=float)
+        amount = _safe_float(latest_three["amount"].iloc[-1])
+        if (
+            len(closes) != 3
+            or len(volumes) != 3
+            or len(turnovers) != 3
+            or not np.isfinite(closes).all()
+            or not np.isfinite(volumes).all()
+            or not np.isfinite(turnovers).all()
+            or amount is None
+        ):
+            continue
+
+        volume_up = volumes[0] < volumes[1] < volumes[2]
+        turnover_ok = bool((turnovers <= 10).all())
+        if closes[0] <= 0:
+            continue
+        three_day_gain_pct = (closes[2] / closes[0] - 1) * 100
+        early_gain = 0 < three_day_gain_pct <= 10
+        if not (volume_up and turnover_ok and early_gain):
+            continue
+
+        valuation_df = _safe_read_parquet(valuation_path, columns=LOBSTER_PICK_VALUATION_COLUMNS)
+        if valuation_df.empty:
+            continue
+        valuation_df = valuation_df.copy()
+        valuation_df["date"] = pd.to_datetime(valuation_df["date"], errors="coerce")
+        valuation_df = valuation_df.dropna(subset=["date"]).sort_values("date")
+        if latest_date is not None:
+            valuation_df = valuation_df[valuation_df["date"] <= pd.Timestamp(latest_date)]
+        if valuation_df.empty:
+            continue
+        float_market_cap = _safe_float(valuation_df["float_market_cap"].iloc[-1])
+        if float_market_cap is None or float_market_cap <= 0:
+            continue
+
+        score = amount / float_market_cap * 100
+        date_values = [_date_string(value) for value in latest_three["date"].tolist()]
+        turnover_values = [round(float(value), 4) for value in turnovers.tolist()]
+        volume_values = [float(value) for value in volumes.tolist()]
+        close_values = [round(float(value), 4) for value in closes.tolist()]
+        amount_yi = amount / 100_000_000
+        float_market_cap_yi = float_market_cap / 100_000_000
+        rows.append(
+            {
+                "signal_date": latest_date,
+                "code": code,
+                "exchange": str(getattr(stock, "exchange", "") or "").lower(),
+                "board": _code_board(code),
+                "name": str(getattr(stock, "name", "") or code),
+                "industry": str(getattr(stock, "industry", "") or ""),
+                "price": round(float(closes[-1]), 3),
+                "score": round(float(score), 4),
+                "amount": float(amount),
+                "amount_yi": round(float(amount_yi), 4),
+                "float_market_cap": float(float_market_cap),
+                "float_market_cap_yi": round(float(float_market_cap_yi), 4),
+                "current_turnover": round(float(turnovers[-1]), 4),
+                "three_day_gain_pct": round(float(three_day_gain_pct), 4),
+                "three_day_dates": date_values,
+                "three_day_volumes": volume_values,
+                "three_day_turnovers": turnover_values,
+                "three_day_closes": close_values,
+                "volume_path": " -> ".join(f"{value:,.0f}" for value in volume_values),
+                "turnover_path": " -> ".join(f"{value:.2f}%" for value in turnover_values),
+                "close_path": " -> ".join(f"{value:.2f}" for value in close_values),
+            }
+        )
+
+    rows = sorted(rows, key=lambda row: (row["score"], row["amount"]), reverse=True)
+    for index, row in enumerate(rows, start=1):
+        row["rank"] = index
+
+    payload = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "trade_date": target_trade_date,
+        "source": "quant_data/daily_kline + quant_data/daily_valuation",
+        "universe": int(len(stock_df)),
+        "scanned": int(scanned),
+        "qualified": int(len(rows)),
+        "returned": int(len(rows)),
+        "limit": int(len(rows)),
+        "rules": {
+            "volume": "last_3_days_strictly_increasing",
+            "turnover": "each_last_3_days_lte_10_pct",
+            "three_day_gain": "gt_0_lte_10_pct",
+            "score": "latest_amount / latest_float_market_cap * 100",
+            "sort": "score_desc_then_amount_desc",
+        },
+        "picks": records_to_json(rows),
+    }
+    _LOBSTER_PICK_CACHE.clear()
+    _LOBSTER_PICK_CACHE.update({"key": cache_key, "payload": payload})
+    return _slice_lobster_payload(payload, limit)
 
 
 def activate_model_for_paper(profile_name: str) -> dict[str, Any]:

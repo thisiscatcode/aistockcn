@@ -153,6 +153,7 @@ FULL_PIPELINE_PID_FILE = "full_pipeline.pid"
 FULL_PIPELINE_STATE_FILE = "full_pipeline_state.json"
 FULL_PIPELINE_LOG_PREFIX = "full_pipeline"
 FULL_PIPELINE_CONTAINER_PREFIX = "aistockcn-full-pipeline-"
+DOCKER_DB_HOST_ALIASES = ("postgres16", "postgres")
 
 
 def _now_iso() -> str:
@@ -161,6 +162,32 @@ def _now_iso() -> str:
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _host_network_database_url(database_url: str | None) -> str | None:
+    if not database_url:
+        return None
+    try:
+        scheme, rest = database_url.split("://", 1)
+    except ValueError:
+        return database_url
+    if scheme not in {"postgres", "postgresql"}:
+        return database_url
+
+    authority, separator, suffix = rest.partition("/")
+    userinfo, at, host_port = authority.rpartition("@")
+    for host in DOCKER_DB_HOST_ALIASES:
+        if host_port == host:
+            host_port = "127.0.0.1"
+            break
+        if host_port.startswith(f"{host}:"):
+            host_port = f"127.0.0.1{host_port[len(host):]}"
+            break
+    else:
+        return database_url
+
+    rewritten_authority = f"{userinfo}{at}{host_port}" if at else host_port
+    return f"{scheme}://{rewritten_authority}{separator}{suffix}"
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -584,6 +611,7 @@ def start_pipeline_run() -> dict[str, Any]:
     state_file = _state_file(FULL_PIPELINE_STATE_FILE)
     pid_file = _pid_file(FULL_PIPELINE_PID_FILE)
     container_name = _container_name(FULL_PIPELINE_CONTAINER_PREFIX)
+    paper_db_url = _host_network_database_url(settings.paper_db_url)
 
     _write_json(
         state_file,
@@ -618,13 +646,16 @@ def start_pipeline_run() -> dict[str, Any]:
             name=container_name,
             detach=True,
             working_dir="/app",
+            network_mode="host",
             environment={
                 "PROJECT_ROOT": "/workspace",
                 "HOST_PROJECT_ROOT": str(settings.host_project_root),
                 "TZ": "UTC",
+                **({"PAPER_DB_URL": paper_db_url} if paper_db_url else {}),
             },
             volumes={
                 str(settings.host_project_root): {"bind": "/workspace", "mode": "rw"},
+                str(settings.host_project_root / "apps" / "api"): {"bind": "/app", "mode": "rw"},
                 "/var/run/docker.sock": {"bind": "/var/run/docker.sock", "mode": "rw"},
             },
         )

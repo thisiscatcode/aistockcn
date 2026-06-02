@@ -10,15 +10,21 @@ apps/web/.next/
 apps/web/.next.root-owned-cache-*/
 apps/web/node_modules/
 apps/web/tsconfig.tsbuildinfo
+apps/web-fei/
 test-results/
 
 quant_data/
 
 logs/
 
+apps/api/run/
+tmp/
+
 run/*.pid
 run/*.pid.root-old
 run/*_logger.pid
+run/*.json
+run/*.lock
 run/full_pipeline_state.json
 run/pipeline_auto_run_state.json
 run/panel.env

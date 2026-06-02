@@ -13,20 +13,30 @@ from app.config import get_settings
 from app.routers.admin import router as admin_router
 from app.routers.control import router as control_router
 from app.routers.data import router as data_router
+from app.routers.fei_keywords import router as fei_keywords_router
+from app.routers.fei_keywords_us import router as fei_keywords_us_router
+from app.routers.fei_selection import router as fei_selection_router
+from app.routers.us_selection import router as us_selection_router
 from app.routers.logs import router as logs_router
 from app.routers.model import router as model_router
 from app.routers.overview import router as overview_router
 from app.routers.paper import router as paper_router
 from app.routers.status import router as status_router
 from app.services.auto_pipeline import start_auto_pipeline_scheduler, stop_auto_pipeline_scheduler
+from app.services.fei_db_sync import start_fei_db_sync_scheduler, stop_fei_db_sync_scheduler
+from app.services.us_selection_control import start_us_selection_scheduler, stop_us_selection_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     start_auto_pipeline_scheduler()
+    start_fei_db_sync_scheduler()
+    start_us_selection_scheduler()
     try:
         yield
     finally:
+        stop_us_selection_scheduler()
+        stop_fei_db_sync_scheduler()
         stop_auto_pipeline_scheduler()
 
 app = FastAPI(
@@ -95,6 +105,10 @@ async def restrict_api_clients(request: Request, call_next):
 app.include_router(status_router)
 app.include_router(logs_router)
 app.include_router(data_router)
+app.include_router(fei_keywords_router)
+app.include_router(fei_keywords_us_router)
+app.include_router(fei_selection_router)
+app.include_router(us_selection_router)
 app.include_router(admin_router)
 app.include_router(model_router)
 app.include_router(overview_router)
@@ -111,6 +125,9 @@ def root() -> dict[str, object]:
             "/api/status/workflow",
             "/api/status/pipeline",
             "/api/status/reference",
+            "/api/status/fei-db-sync",
+            "/api/status/fei-stock-attributes",
+            "/api/status/us-selection",
             "/api/logs/batch",
             "/api/logs/reference",
             "/api/data/summary",
@@ -120,9 +137,20 @@ def root() -> dict[str, object]:
             "/api/data/explorer/export",
             "/api/data/stocks",
             "/api/data/stock/{code}",
+            "/api/fei-keywords",
+            "/api/fei-keywords/favorites",
+            "PUT /api/fei-keywords/favorites",
+            "/api/fei-keywords-us",
+            "/api/fei-keywords-us/favorites",
+            "PUT /api/fei-keywords-us/favorites",
+            "/api/fei-selection",
+            "PUT /api/fei-selection/favorites",
+            "/api/fei-selection-us",
+            "PUT /api/fei-selection-us/favorites",
             "/api/admin/settings",
             "/api/model/latest",
             "/api/model/picks",
+            "/api/model/lobster-picks",
             "/api/overview/portfolio",
             "/api/overview/benchmark",
             "/api/overview/benchmark/refresh",
@@ -153,6 +181,12 @@ def root() -> dict[str, object]:
             "/api/control/paper/stop",
             "/api/control/reference/start",
             "/api/control/reference/stop",
+            "/api/control/fei-stock-attributes/start",
+            "/api/control/fei-stock-attributes/stop",
+            "/api/control/us-selection/start",
+            "/api/control/us-selection/stop",
+            "/api/control/us-selection/scheduler/start",
+            "/api/control/us-selection/scheduler/stop",
             "/api/control/admin/settings",
         ],
     }

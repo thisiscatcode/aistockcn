@@ -55,6 +55,12 @@ class Settings:
     pipeline_auto_run_time: str
     pipeline_auto_run_poll_seconds: int
     pipeline_auto_run_state_path: Path
+    us_selection_auto_run_enabled: bool
+    us_selection_auto_run_poll_seconds: int
+    us_selection_price_time: str
+    us_selection_average_time: str
+    us_selection_details_time: str
+    us_selection_universe_time: str
 
 
 def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -184,4 +190,10 @@ def get_settings() -> Settings:
         pipeline_auto_run_time=os.getenv("PIPELINE_AUTO_RUN_TIME", "18:00").strip() or "18:00",
         pipeline_auto_run_poll_seconds=max(_int_env("PIPELINE_AUTO_RUN_POLL_SECONDS", 60), 15),
         pipeline_auto_run_state_path=project_root / "run" / "pipeline_auto_run_state.json",
+        us_selection_auto_run_enabled=_bool_env("US_SELECTION_AUTO_RUN_ENABLED", False),
+        us_selection_auto_run_poll_seconds=max(_int_env("US_SELECTION_AUTO_RUN_POLL_SECONDS", 60), 15),
+        us_selection_price_time=os.getenv("US_SELECTION_PRICE_TIME", "16:31").strip() or "16:31",
+        us_selection_average_time=os.getenv("US_SELECTION_AVERAGE_TIME", "00:30").strip() or "00:30",
+        us_selection_details_time=os.getenv("US_SELECTION_DETAILS_TIME", "03:00").strip() or "03:00",
+        us_selection_universe_time=os.getenv("US_SELECTION_UNIVERSE_TIME", "06:00").strip() or "06:00",
     )

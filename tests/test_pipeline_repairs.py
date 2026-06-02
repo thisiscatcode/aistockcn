@@ -4,7 +4,7 @@ import sys
 import json
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -15,11 +15,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from batch_download_all_a import merge_existing_output
+import batch_download_all_a as batch_download
+from batch_download_all_a import mark_existing_outputs, merge_existing_output, process_code
 from backtest_walk_forward import annualized_return, estimate_rebalance_fees, max_drawdown, training_end_for_rebalance
 from build_inference_features import build_inference_frame
 from control_settings import is_investable_stock_name, is_st_stock_name, read_control_settings, write_control_settings
-from download_data import build_valuation_df, reference_status_path, write_reference_status
+from download_data import (
+    build_valuation_df,
+    is_investable_stock_name as is_universe_investable_stock_name,
+    reference_status_path,
+    write_reference_status,
+)
 from paper_trade_futu import (
     SyncConfig,
     build_plan,
@@ -34,6 +40,14 @@ from paper_trade_futu import (
     write_daily_snapshot,
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
+from scripts.import_daily_kline_to_postgres import UPSERT_SQL as KLINE_UPSERT_SQL, rows_from_kline
+from scripts.update_us_selection_data import shares_to_yi
+from scripts.import_stock_master_attributes import (
+    SHAREHOLDER_RESEARCH_UPSERT_SQL,
+    eastmoney_secucode,
+    parse_shareholder_research_rows,
+    parse_sina_concept_html,
+)
 from app.services import batch as batch_service
 from app.services import admin_settings as admin_settings_service
 from app.services import benchmark as benchmark_service
@@ -41,11 +55,241 @@ from app.services import model as model_service
 from app.services import model_profiles as model_profiles_service
 from app.services import paper as paper_service
 from app.services import paper_db as paper_db_service
+from app.services import pipeline_control as pipeline_control_service
 from app.services import source_readiness
+from app.services import us_selection_control as us_selection_control_service
+from app.services.fei_selection import SELECTION_SQL, STOCK_DETAIL_HISTORY_SQL, STOCK_DETAIL_SHAREHOLDER_SQL
 from app.services.log_translation import translate_log_line
+from app.services.us_selection_control import _parse_time
 
 
 class PipelineRepairTests(unittest.TestCase):
+    def test_sina_concept_parser_extracts_industry_and_concepts(self) -> None:
+        payload = """
+        <html><body>
+          <table class="comInfo1">
+            <tr><td class="ct" colspan="2">所属行业板块</td></tr>
+            <tr><td>板块名称</td><td>同行业个股</td></tr>
+            <tr><td>软件服务</td><td>demo</td></tr>
+            <tr><td>备注：此为申万行业分类</td></tr>
+          </table>
+          <table class="comInfo1">
+            <tr><td class="ct" colspan="2">所属概念板块</td></tr>
+            <tr><td>板块名称</td><td>相关个股</td></tr>
+            <tr><td><a>人工智能</a></td><td>demo</td></tr>
+            <tr><td>国产软件</td><td>demo</td></tr>
+          </table>
+        </body></html>
+        """
+
+        result = parse_sina_concept_html(payload)
+
+        self.assertFalse(result.blocked)
+        self.assertEqual(result.industry, ["软件服务"])
+        self.assertEqual(result.concepts, ["人工智能", "国产软件"])
+
+    def test_eastmoney_shareholder_secucode_format(self) -> None:
+        self.assertEqual(eastmoney_secucode("600584", "sh"), "600584.SH")
+        self.assertEqual(eastmoney_secucode("000001", "sz"), "000001.SZ")
+
+    def test_eastmoney_shareholder_rows_parse_fixture_and_cutoff(self) -> None:
+        rows = parse_shareholder_research_rows(
+            [
+                {
+                    "SECUCODE": "600584.SH",
+                    "SECURITY_CODE": "600584",
+                    "END_DATE": "2026-03-31 00:00:00",
+                    "HOLDER_TOTAL_NUM": 320364,
+                    "TOTAL_NUM_RATIO": -12.6652,
+                    "AVG_FREE_SHARES": 5585,
+                    "AVG_FREESHARES_RATIO": 14.501941541497,
+                    "HOLD_FOCUS": "非常分散",
+                },
+                {
+                    "SECUCODE": "600584.SH",
+                    "SECURITY_CODE": "600584",
+                    "END_DATE": "2023-12-31 00:00:00",
+                    "HOLDER_TOTAL_NUM": 230100,
+                    "TOTAL_NUM_RATIO": -1,
+                    "AVG_FREE_SHARES": 7775,
+                    "AVG_FREESHARES_RATIO": 1,
+                    "HOLD_FOCUS": "非常分散",
+                },
+                {
+                    "SECUCODE": "600584.SH",
+                    "SECURITY_CODE": "600584",
+                    "END_DATE": "2024-06-30 00:00:00",
+                    "HOLDER_TOTAL_NUM": 230100,
+                    "TOTAL_NUM_RATIO": -19.63,
+                    "AVG_FREE_SHARES": 7775,
+                    "AVG_FREESHARES_RATIO": 24.45,
+                    "HOLD_FOCUS": "非常分散",
+                },
+            ],
+            code="600584",
+            exchange="sh",
+            secucode="600584.SH",
+            start_date=date(2024, 1, 1),
+        )
+
+        self.assertEqual([row.report_date for row in rows], [date(2026, 3, 31), date(2024, 6, 30)])
+        self.assertEqual(rows[0].holder_total_num, 320364)
+        self.assertEqual(rows[0].total_num_ratio, -12.6652)
+        self.assertEqual(rows[0].avg_free_shares, 5585)
+        self.assertEqual(rows[0].avg_freeshares_ratio, 14.501941541497)
+        self.assertEqual(rows[0].hold_focus, "非常分散")
+
+    def test_shareholder_research_schema_and_upsert_are_idempotent(self) -> None:
+        schema = (ROOT / "scripts" / "create_stock_master.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists stock_shareholder_research", schema)
+        self.assertIn("primary key (report_date, code, exchange)", schema)
+        self.assertIn("stock_shareholder_research_code_date_idx", schema)
+        self.assertIn("on conflict (report_date, code, exchange) do update set", SHAREHOLDER_RESEARCH_UPSERT_SQL)
+
+    def test_daily_kline_import_rows_include_volume_and_amount(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "000001.parquet"
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-21",
+                        "code": "000001",
+                        "exchange": "sz",
+                        "close": 10.5,
+                        "volume": 123456,
+                        "amount": 6543210,
+                        "turnover": 1.23,
+                    }
+                ]
+            ).to_parquet(path, index=False)
+
+            rows = rows_from_kline(path)
+
+        self.assertEqual(rows, [(datetime(2026, 5, 21).date(), "000001", "sz", 10.5, 123456, 6543210, None, 1.23)])
+
+    def test_daily_kline_upsert_preserves_stcn_average_trade(self) -> None:
+        self.assertIn(
+            "average_trade = coalesce(excluded.average_trade, stock_daily_metrics.average_trade)",
+            KLINE_UPSERT_SQL,
+        )
+
+    def test_fei_selection_lobster_sql_uses_only_core_lobster_conditions_for_flag(self) -> None:
+        self.assertIn("p.volume_3 < p.volume_2", SELECTION_SQL)
+        self.assertIn("p.turnover_1 <= 10", SELECTION_SQL)
+        self.assertIn("p.close_3d_base", SELECTION_SQL)
+        self.assertNotIn("close_lobster_base", SELECTION_SQL)
+        self.assertIn("else true", SELECTION_SQL)
+        self.assertIn("where lobster_flg", SELECTION_SQL)
+        self.assertIn("p.amount_1 / (p.close * sm.float_shares)", SELECTION_SQL)
+        self.assertNotIn("is_active", SELECTION_SQL)
+        self.assertNotIn("startswith", SELECTION_SQL.lower())
+
+    def test_fei_selection_sql_requires_recent_stcn_and_turnover_coverage(self) -> None:
+        self.assertIn("count(average_trade) filter (where rn <= 4) as average_trade_latest4_count", SELECTION_SQL)
+        self.assertIn("count(turnover) filter (where rn <= 4) as turnover_latest4_count", SELECTION_SQL)
+        self.assertIn("s.average_trade_latest4_count > 0", SELECTION_SQL)
+        self.assertIn("s.turnover_latest4_count > 0", SELECTION_SQL)
+
+    def test_fei_selection_sql_exposes_legacy_signal_flags(self) -> None:
+        self.assertIn("max(average_trade) filter (where rn = 6) as average_trade_6", SELECTION_SQL)
+        self.assertIn("average_trade_over_pct", SELECTION_SQL)
+        self.assertIn("turnover_compare_pct", SELECTION_SQL)
+        self.assertIn("green_flg", SELECTION_SQL)
+        self.assertIn("yellow_flg", SELECTION_SQL)
+        self.assertIn("blue_flg", SELECTION_SQL)
+        self.assertIn("coalesce(s.average_trade_over_pct >= 30, false) as green_flg", SELECTION_SQL)
+        self.assertIn("coalesce(s.turnover_compare_pct >= 250, false) as yellow_flg", SELECTION_SQL)
+        self.assertIn("coalesce(s.turnover_compare_pct <= -40, false) as blue_flg", SELECTION_SQL)
+
+    def test_fei_selection_sql_exposes_latest_shareholder_count(self) -> None:
+        self.assertIn("shareholder_latest as", SELECTION_SQL)
+        self.assertIn("from stock_shareholder_research", SELECTION_SQL)
+        self.assertIn("holder_total_num as shareholder_total_num", SELECTION_SQL)
+        self.assertIn("s.shareholder_total_num", SELECTION_SQL)
+
+    def test_fei_stock_detail_history_sql_includes_volume(self) -> None:
+        self.assertIn("volume", STOCK_DETAIL_HISTORY_SQL)
+        self.assertIn("average_trade", STOCK_DETAIL_HISTORY_SQL)
+        self.assertIn("turnover", STOCK_DETAIL_HISTORY_SQL)
+
+    def test_fei_stock_detail_sql_includes_shareholder_research(self) -> None:
+        self.assertIn("from stock_shareholder_research", STOCK_DETAIL_SHAREHOLDER_SQL)
+        self.assertIn("holder_total_num", STOCK_DETAIL_SHAREHOLDER_SQL)
+        self.assertIn("avg_free_shares", STOCK_DETAIL_SHAREHOLDER_SQL)
+        self.assertIn("limit %s", STOCK_DETAIL_SHAREHOLDER_SQL)
+
+    def test_us_selection_schema_has_batch_tables_and_idempotent_guards(self) -> None:
+        schema = (ROOT / "scripts" / "create_us_selection.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists us_stock_master", schema)
+        self.assertIn("create table if not exists us_stock_daily_metrics", schema)
+        self.assertIn("create table if not exists us_selection_job_runs", schema)
+        self.assertIn("us_selection_job_runs_completed_once_idx", schema)
+        self.assertIn("primary key (trade_date, symbol)", schema)
+
+    def test_us_selection_helpers_match_legacy_units_and_schedule_parsing(self) -> None:
+        self.assertEqual(shares_to_yi("1.04亿"), 1.04)
+        self.assertEqual(shares_to_yi("6755.63万"), 0.675563)
+        self.assertEqual(_parse_time("17:10", "00:00"), (17, 10))
+        self.assertEqual(_parse_time("bad", "03:00"), (3, 0))
+
+    def test_us_selection_details_scheduler_keeps_catching_up_missing_shares(self) -> None:
+        settings = SimpleNamespace(
+            run_dir=Path("/tmp"),
+            us_selection_price_time="16:31",
+            us_selection_average_time="00:30",
+            us_selection_details_time="03:00",
+            us_selection_universe_time="06:00",
+        )
+        written_states: list[dict[str, object]] = []
+
+        def fake_start(mode: str, target_date: date | None, state_key: str, state: dict[str, object]) -> dict[str, object]:
+            return {
+                **state,
+                f"last_{state_key}": "2026-05-31",
+                "last_triggered_mode": mode,
+                "target_date": target_date.isoformat() if target_date else None,
+            }
+
+        with (
+            mock.patch.object(us_selection_control_service, "get_settings", return_value=settings),
+            mock.patch.object(
+                us_selection_control_service,
+                "_ny_now",
+                return_value=datetime(2026, 5, 31, 1, 0, tzinfo=timezone.utc),
+            ),
+            mock.patch.object(us_selection_control_service, "read_json", return_value={"last_details_local_date": "2026-05-31"}),
+            mock.patch.object(us_selection_control_service, "_us_details_missing_count", return_value=12),
+            mock.patch.object(us_selection_control_service, "_maybe_start_scheduled_lane", side_effect=fake_start) as start_mock,
+            mock.patch.object(us_selection_control_service, "_write_scheduler_state", side_effect=written_states.append),
+        ):
+            us_selection_control_service._maybe_start_us_selection_jobs()
+
+        start_mock.assert_called_once()
+        self.assertEqual(start_mock.call_args.args[:3], ("details", None, "details_local_date"))
+        self.assertEqual(written_states[-1]["details_missing_count"], 12)
+        self.assertEqual(written_states[-1]["last_triggered_mode"], "details")
+
+    def test_us_selection_details_scheduler_does_not_start_duplicate_details_container(self) -> None:
+        running_container = SimpleNamespace(name="aistockcn-us-selection-details-demo", status="running")
+
+        with (
+            mock.patch.object(us_selection_control_service, "_find_running_container", return_value=running_container),
+            mock.patch.object(us_selection_control_service, "start_us_selection") as start_mock,
+        ):
+            state = us_selection_control_service._maybe_start_scheduled_lane("details", None, "details_local_date", {})
+
+        start_mock.assert_not_called()
+        self.assertEqual(state["last_skip_reason"], "details_already_running")
+
+    def test_us_selection_price_lane_keeps_turnover_dependent_on_existing_shares(self) -> None:
+        source = (ROOT / "scripts" / "update_us_selection_data.py").read_text(encoding="utf-8")
+
+        self.assertIn("turnover = None", source)
+        self.assertIn("if volume is not None and shares_yi and shares_yi > 0:", source)
+        self.assertIn("turnover = round(volume / (shares_yi * 100000000) * 100, 2)", source)
+
     def test_paper_db_symbol_ledger_keeps_avg_and_realized_pnl_separate(self) -> None:
         fills = [
             {
@@ -98,6 +342,18 @@ class PipelineRepairTests(unittest.TestCase):
 
         self.assertFalse(result["healthy"])
         self.assertIn("PAPER_DB_URL", result["error"])
+
+    def test_full_pipeline_rewrites_docker_db_host_for_host_network(self) -> None:
+        self.assertEqual(
+            pipeline_control_service._host_network_database_url(
+                "postgresql://aistock_app:secret@postgres16:5432/aistock"
+            ),
+            "postgresql://aistock_app:secret@127.0.0.1:5432/aistock",
+        )
+        self.assertEqual(
+            pipeline_control_service._host_network_database_url("postgresql://user:secret@db.example:5432/aistock"),
+            "postgresql://user:secret@db.example:5432/aistock",
+        )
 
     def test_paper_db_daily_history_contains_actual_trades_and_positions(self) -> None:
         fills = [
@@ -266,6 +522,106 @@ class PipelineRepairTests(unittest.TestCase):
             self.assertEqual(float(merged.loc[0, "total_market_cap"]), 100.0)
             self.assertEqual(float(merged.loc[0, "total_shares"]), 10.0)
 
+    def test_batch_does_not_mark_short_history_current_by_max_date_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kline_dir = root / "daily_kline"
+            valuation_dir = root / "daily_valuation"
+            kline_dir.mkdir()
+            valuation_dir.mkdir()
+            short_history = pd.DataFrame(
+                [
+                    {"date": "2026-01-05", "code": "000001", "close": 10.0},
+                    {"date": "2026-05-22", "code": "000001", "close": 11.0},
+                ]
+            )
+            short_history.to_parquet(kline_dir / "000001.parquet", index=False)
+            short_history.to_parquet(valuation_dir / "000001.parquet", index=False)
+            state = {"done_codes": []}
+
+            mark_existing_outputs(
+                ["000001"],
+                state=state,
+                kline_dir=kline_dir,
+                valuation_dir=valuation_dir,
+                overwrite=False,
+                start_date="20230322",
+                target_trade_date="2026-05-22",
+            )
+
+        self.assertEqual(state["done_codes"], [])
+
+    def test_batch_marks_full_history_current_when_min_and_max_cover_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kline_dir = root / "daily_kline"
+            valuation_dir = root / "daily_valuation"
+            kline_dir.mkdir()
+            valuation_dir.mkdir()
+            full_history = pd.DataFrame(
+                [
+                    {"date": "2023-03-22", "code": "000001", "close": 10.0},
+                    {"date": "2026-05-22", "code": "000001", "close": 11.0},
+                ]
+            )
+            full_history.to_parquet(kline_dir / "000001.parquet", index=False)
+            full_history.to_parquet(valuation_dir / "000001.parquet", index=False)
+            state = {"done_codes": []}
+
+            mark_existing_outputs(
+                ["000001"],
+                state=state,
+                kline_dir=kline_dir,
+                valuation_dir=valuation_dir,
+                overwrite=False,
+                start_date="20230322",
+                target_trade_date="2026-05-22",
+            )
+
+        self.assertEqual(state["done_codes"], ["000001"])
+
+    def test_process_code_refetches_from_start_for_truncated_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            kline_dir = root / "daily_kline"
+            valuation_dir = root / "daily_valuation"
+            kline_dir.mkdir()
+            valuation_dir.mkdir()
+            existing = pd.DataFrame(
+                [
+                    {"date": "2026-01-05", "code": "000001", "close": 10.0},
+                    {"date": "2026-05-22", "code": "000001", "close": 11.0},
+                ]
+            )
+            existing.to_parquet(kline_dir / "000001.parquet", index=False)
+            existing.to_parquet(valuation_dir / "000001.parquet", index=False)
+            fresh = pd.DataFrame(
+                [
+                    {"date": "2023-03-22", "code": "000001", "close": 8.0},
+                    {"date": "2026-05-22", "code": "000001", "close": 11.0},
+                ]
+            )
+            args = SimpleNamespace(start_date="20230322", end_date="20260522", overwrite=False)
+
+            with (
+                mock.patch.object(batch_download, "download_baostock_daily_bundle", return_value=(fresh, None)) as download_mock,
+                mock.patch.object(batch_download, "build_kline_df", return_value=fresh),
+                mock.patch.object(batch_download, "build_valuation_df", return_value=(fresh, None)),
+            ):
+                ok, reason = process_code(
+                    "000001",
+                    exchange="sz",
+                    args=args,
+                    data_dir=root,
+                    kline_dir=kline_dir,
+                    valuation_dir=valuation_dir,
+                    target_trade_date="2026-05-22",
+                )
+
+        self.assertTrue(ok)
+        self.assertIsNone(reason)
+        self.assertEqual(download_mock.call_args.kwargs["start_date"], "20230322")
+
     def test_inference_keeps_rows_with_only_recoverable_reference_nulls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
@@ -326,9 +682,14 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertTrue(is_st_stock_name("ST金顶"))
         self.assertTrue(is_st_stock_name("S*ST测试"))
         self.assertFalse(is_st_stock_name("平安银行"))
+        self.assertFalse(is_investable_stock_name("退市观典", exclude_st=False))
         self.assertFalse(is_investable_stock_name("退市股退", exclude_st=False))
+        self.assertFalse(is_investable_stock_name("泽达退", exclude_st=False))
         self.assertFalse(is_investable_stock_name("ST金顶", exclude_st=True))
         self.assertTrue(is_investable_stock_name("ST金顶", exclude_st=False))
+        self.assertFalse(is_universe_investable_stock_name("退市观典"))
+        self.assertFalse(is_universe_investable_stock_name("泽达退"))
+        self.assertTrue(is_universe_investable_stock_name("ST金顶"))
 
     def test_inference_candidate_loading_excludes_st_when_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -393,6 +754,7 @@ class PipelineRepairTests(unittest.TestCase):
             scores_path = models_dir / "inference_scores_latest.parquet"
             pd.DataFrame(
                 [
+                    {"date": "2026-05-20", "code": "688287", "name": "退市观典", "industry": "Defense", "score": 1.0, "close": 0.45},
                     {"date": "2026-05-20", "code": "688496", "name": "*ST清越", "industry": "Display", "score": 0.99, "close": 1.5},
                     {"date": "2026-05-20", "code": "000001", "name": "平安银行", "industry": "Bank", "score": 0.8, "close": 10.0},
                 ]

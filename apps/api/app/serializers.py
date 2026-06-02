@@ -13,6 +13,12 @@ def to_jsonable(value: Any) -> Any:
         if pd.isna(value):
             return None
         return pd.Timestamp(value).isoformat()
+    if isinstance(value, list):
+        return [to_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): to_jsonable(item) for key, item in value.items()}
     if pd.isna(value):
         return None
     if hasattr(value, "item"):

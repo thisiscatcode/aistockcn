@@ -64,7 +64,8 @@ def is_st_stock_name(name: object) -> bool:
 
 
 def is_delisting_stock_name(name: object) -> bool:
-    return str(name or "").strip().endswith("退")
+    normalized = _normalized_stock_name(name)
+    return normalized.startswith("退市") or normalized.endswith("退")
 
 
 def is_investable_stock_name(name: object, *, exclude_st: bool = True) -> bool:

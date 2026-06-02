@@ -29,6 +29,7 @@ import argparse
 import json
 import signal
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,8 @@ from download_data import (
     write_reference_status,
     write_canonical_stock_lists,
 )
+
+COVERAGE_POLICY = "date_min_v1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,6 +99,15 @@ def utc_now_iso() -> str:
 class CodeProcessingTimeoutError(TimeoutError):
     """Raised when a single symbol exceeds the configured processing budget."""
     pass
+
+
+@dataclass(frozen=True)
+class ParquetCoverage:
+    """Minimal date coverage summary for one per-symbol parquet artifact."""
+
+    row_count: int
+    date_min: pd.Timestamp | None
+    date_max: pd.Timestamp | None
 
 
 def run_with_timeout(timeout_seconds: float, func: Any, *args: Any, **kwargs: Any) -> Any:
@@ -151,6 +163,48 @@ def latest_parquet_date(path: Path) -> pd.Timestamp | None:
     if df.empty or "date" not in df.columns:
         return None
     return _coerce_date(df["date"].max())
+
+
+def parquet_coverage(path: Path) -> ParquetCoverage:
+    """Read row count and date range from a parquet file, if possible."""
+    if not path.exists():
+        return ParquetCoverage(row_count=0, date_min=None, date_max=None)
+    try:
+        df = pd.read_parquet(path, columns=["date"])
+    except Exception:
+        return ParquetCoverage(row_count=0, date_min=None, date_max=None)
+    if df.empty or "date" not in df.columns:
+        return ParquetCoverage(row_count=int(len(df)), date_min=None, date_max=None)
+    dates = pd.to_datetime(df["date"], errors="coerce").dropna()
+    if dates.empty:
+        return ParquetCoverage(row_count=int(len(df)), date_min=None, date_max=None)
+    return ParquetCoverage(
+        row_count=int(len(df)),
+        date_min=_coerce_date(dates.min()),
+        date_max=_coerce_date(dates.max()),
+    )
+
+
+def coverage_starts_at_or_before(coverage: ParquetCoverage, start_date: str) -> bool:
+    """Return true when an artifact reaches back to the requested history start."""
+    start_ts = _coerce_date(start_date)
+    return coverage.row_count > 0 and start_ts is not None and coverage.date_min is not None and coverage.date_min <= start_ts
+
+
+def coverage_reaches_target(coverage: ParquetCoverage, target_trade_date: str) -> bool:
+    """Return true when an artifact reaches the target trade date."""
+    target_ts = _coerce_date(target_trade_date)
+    return coverage.row_count > 0 and target_ts is not None and coverage.date_max is not None and coverage.date_max >= target_ts
+
+
+def coverage_is_complete(coverage: ParquetCoverage, *, start_date: str, target_trade_date: str) -> bool:
+    """Return true when an artifact covers the requested batch window."""
+    return coverage_starts_at_or_before(coverage, start_date) and coverage_reaches_target(coverage, target_trade_date)
+
+
+def coverage_exception_applies(state: dict[str, Any], code: str) -> bool:
+    """Return true when a prior full-start fetch proved this symbol starts later."""
+    return str(state.get("coverage_policy") or "") == COVERAGE_POLICY and code in dict(state.get("coverage_start_exceptions") or {})
 
 
 def merge_existing_output(path: Path, fresh_df: pd.DataFrame) -> pd.DataFrame:
@@ -225,6 +279,12 @@ def load_state(state_path: Path, codes: list[str]) -> dict[str, Any]:
         "last_code": state.get("last_code", ""),
         "start_date": state.get("start_date"),
         "end_date": state.get("end_date"),
+        "coverage_policy": state.get("coverage_policy"),
+        "coverage_start_exceptions": {
+            code: details
+            for code, details in dict(state.get("coverage_start_exceptions") or {}).items()
+            if code in codes
+        },
     }
 
 
@@ -244,6 +304,7 @@ def mark_existing_outputs(
     kline_dir: Path,
     valuation_dir: Path,
     overwrite: bool,
+    start_date: str,
     target_trade_date: str,
 ) -> None:
     """Pre-mark symbols as done when both output files are already fresh.
@@ -254,19 +315,29 @@ def mark_existing_outputs(
     """
     if overwrite:
         return
-    target_trade_ts = _coerce_date(target_trade_date)
     done_set: set[str] = set()
     for code in codes:
         kline_path = kline_dir / f"{code}.parquet"
         valuation_path = valuation_dir / f"{code}.parquet"
         if not kline_path.exists() or not valuation_path.exists():
             continue
-        if target_trade_ts is None:
-            done_set.add(code)
-            continue
-        kline_max = latest_parquet_date(kline_path)
-        valuation_max = latest_parquet_date(valuation_path)
-        if kline_max is not None and valuation_max is not None and kline_max >= target_trade_ts and valuation_max >= target_trade_ts:
+        kline_coverage = parquet_coverage(kline_path)
+        valuation_coverage = parquet_coverage(valuation_path)
+        has_late_start_exception = coverage_exception_applies(state, code)
+        kline_complete = coverage_is_complete(
+            kline_coverage,
+            start_date=start_date,
+            target_trade_date=target_trade_date,
+        ) or (has_late_start_exception and coverage_reaches_target(kline_coverage, target_trade_date))
+        valuation_complete = coverage_is_complete(
+            valuation_coverage,
+            start_date=start_date,
+            target_trade_date=target_trade_date,
+        ) or (has_late_start_exception and coverage_reaches_target(valuation_coverage, target_trade_date))
+        if (
+            kline_complete
+            and valuation_complete
+        ):
             done_set.add(code)
     state["done_codes"] = sorted(done_set)
 
@@ -331,6 +402,7 @@ def process_code(
     kline_dir: Path,
     valuation_dir: Path,
     target_trade_date: str,
+    allow_late_start: bool = False,
 ) -> tuple[bool, str | None]:
     """Download, merge, and write all Step 1 artifacts for one symbol.
 
@@ -342,25 +414,31 @@ def process_code(
     """
     kline_path = kline_dir / f"{code}.parquet"
     valuation_path = valuation_dir / f"{code}.parquet"
-    target_trade_ts = _coerce_date(target_trade_date)
     download_start = args.start_date
     if not args.overwrite:
-        # If both existing files already reach the target trading date, we can
-        # skip this code entirely.
-        kline_max = latest_parquet_date(kline_path)
-        valuation_max = latest_parquet_date(valuation_path)
+        # If both existing files cover the full requested window, we can skip
+        # this code entirely. Checking only the newest date is not enough:
+        # a truncated file ending at the target date still needs backfilling.
+        kline_coverage = parquet_coverage(kline_path)
+        valuation_coverage = parquet_coverage(valuation_path)
+        kline_complete = coverage_is_complete(kline_coverage, start_date=args.start_date, target_trade_date=target_trade_date)
+        valuation_complete = coverage_is_complete(
+            valuation_coverage,
+            start_date=args.start_date,
+            target_trade_date=target_trade_date,
+        )
+        kline_has_required_start = allow_late_start or coverage_starts_at_or_before(kline_coverage, args.start_date)
+        valuation_has_required_start = allow_late_start or coverage_starts_at_or_before(valuation_coverage, args.start_date)
         if (
-            target_trade_ts is not None
-            and kline_max is not None
-            and valuation_max is not None
-            and kline_max >= target_trade_ts
-            and valuation_max >= target_trade_ts
+            kline_complete
+            and valuation_complete
         ):
             return True, None
-        # Otherwise, fall back to an incremental refresh. We use the oldest of
-        # the two newest dates so the slower dataset can catch up safely.
-        existing_dates = [ts for ts in [kline_max, valuation_max] if ts is not None]
-        if existing_dates:
+        # Otherwise, use incremental refresh only when both artifacts already
+        # reach back to the requested start. If either artifact is truncated at
+        # the front, re-fetch from args.start_date and merge it back.
+        existing_dates = [ts for ts in [kline_coverage.date_max, valuation_coverage.date_max] if ts is not None]
+        if kline_has_required_start and valuation_has_required_start and existing_dates:
             incremental_start = min(existing_dates).strftime("%Y%m%d")
             if incremental_start > download_start:
                 download_start = incremental_start
@@ -443,6 +521,9 @@ def run_batch(args: argparse.Namespace) -> int:
             state["failed_codes"] = {}
             state["attempts"] = {code: 0 for code in codes}
             state["last_code"] = ""
+            if previous_start_date != args.start_date:
+                state["coverage_start_exceptions"] = {}
+        state["coverage_policy"] = COVERAGE_POLICY
         state["start_date"] = args.start_date
         state["end_date"] = args.end_date
 
@@ -452,6 +533,7 @@ def run_batch(args: argparse.Namespace) -> int:
             kline_dir=kline_dir,
             valuation_dir=valuation_dir,
             overwrite=args.overwrite,
+            start_date=args.start_date,
             target_trade_date=trade_date,
         )
         if previous_end_date == args.end_date and len(state["done_codes"]) < previous_done_count:
@@ -507,12 +589,34 @@ def run_batch(args: argparse.Namespace) -> int:
                         kline_dir=kline_dir,
                         valuation_dir=valuation_dir,
                         target_trade_date=trade_date,
+                        allow_late_start=coverage_exception_applies(state, code),
                     )
                 except CodeProcessingTimeoutError as exc:
                     ok, reason = False, str(exc)
                 processed_since_login += 1
 
                 if ok:
+                    kline_coverage = parquet_coverage(kline_dir / f"{code}.parquet")
+                    valuation_coverage = parquet_coverage(valuation_dir / f"{code}.parquet")
+                    kline_complete = coverage_is_complete(
+                        kline_coverage,
+                        start_date=args.start_date,
+                        target_trade_date=trade_date,
+                    )
+                    valuation_complete = coverage_is_complete(
+                        valuation_coverage,
+                        start_date=args.start_date,
+                        target_trade_date=trade_date,
+                    )
+                    exceptions = dict(state.get("coverage_start_exceptions") or {})
+                    if kline_complete and valuation_complete:
+                        exceptions.pop(code, None)
+                    elif coverage_reaches_target(kline_coverage, trade_date) and coverage_reaches_target(valuation_coverage, trade_date):
+                        exceptions[code] = {
+                            "kline_date_min": str(kline_coverage.date_min.date()) if kline_coverage.date_min is not None else None,
+                            "valuation_date_min": str(valuation_coverage.date_min.date()) if valuation_coverage.date_min is not None else None,
+                        }
+                    state["coverage_start_exceptions"] = exceptions
                     if code not in state["done_codes"]:
                         state["done_codes"].append(code)
                         state["done_codes"] = sorted(set(normalize_codes(state["done_codes"])))
