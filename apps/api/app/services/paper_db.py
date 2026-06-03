@@ -382,7 +382,7 @@ def build_daily_position_history(
     fills: list[dict[str, Any]],
     *,
     market: str = "CN",
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> list[dict[str, Any]]:
     positions: dict[str, dict[str, Any]] = {}
     days: dict[str, dict[str, Any]] = {}
@@ -454,20 +454,47 @@ def build_daily_position_history(
             if abs(_num(row.get("quantity"))) > 1e-9
         ]
 
-    rows = [days[key] for key in sorted(days.keys(), reverse=True)[:limit]]
+    keys = sorted(days.keys(), reverse=True)
+    if limit is not None:
+        keys = keys[:limit]
+    rows = [days[key] for key in keys]
     for row in rows:
         row["fills_rows"] = len(row.get("fills") or [])
         row["positions_rows"] = len(row.get("positions") or [])
     return rows
 
 
-def get_paper_db_daily_history(*, limit: int = 20) -> dict[str, Any]:
+def _normalize_date_param(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
+
+
+def get_paper_db_daily_history(*, limit: int = 20, start_date: str | None = None, end_date: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     try:
+        normalized_start = _normalize_date_param(start_date)
+        normalized_end = _normalize_date_param(end_date)
+        if normalized_start and normalized_end and normalized_start > normalized_end:
+            return {"rows": 0, "daily": [], "error": "start_date must be before or equal to end_date"}
         with _connect(settings) as conn:
             fills = _fills(conn, settings, limit=None, ascending=True)
-        daily = build_daily_position_history(fills, market=settings.futu_gateway_market, limit=limit)
+        daily = build_daily_position_history(
+            fills,
+            market=settings.futu_gateway_market,
+            limit=None if normalized_start or normalized_end else limit,
+        )
+        if normalized_start or normalized_end:
+            daily = [
+                row
+                for row in daily
+                if (not normalized_start or str(row.get("trade_date") or "") >= normalized_start)
+                and (not normalized_end or str(row.get("trade_date") or "") <= normalized_end)
+            ][:limit]
         return {"rows": len(daily), "daily": _deep_jsonable(daily), "error": None}
+    except ValueError:
+        return {"rows": 0, "daily": [], "error": "invalid date"}
     except Exception as exc:
         return {"rows": 0, "daily": [], "error": str(exc)}
 
@@ -481,7 +508,7 @@ def get_paper_db_daily_detail(trade_date: str) -> dict[str, Any]:
     try:
         with _connect(settings) as conn:
             fills = _fills(conn, settings, limit=None, ascending=True)
-        daily = build_daily_position_history(fills, market=settings.futu_gateway_market, limit=10000)
+        daily = build_daily_position_history(fills, market=settings.futu_gateway_market, limit=None)
         day = next((row for row in daily if row.get("trade_date") == normalized_date), None)
         return {"trade_date": normalized_date, "day": _deep_jsonable(day) if day else None, "error": None}
     except Exception as exc:

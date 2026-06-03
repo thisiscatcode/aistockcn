@@ -1511,8 +1511,32 @@ select {
 
 .overview-calendar-toolbar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.calendar-nav-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 850;
+  line-height: 1;
+  text-decoration: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.calendar-nav-button:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.14);
+  transform: translateY(-1px);
 }
 
 .overview-summary-layout .pnl-calendar {
@@ -3370,6 +3394,7 @@ select {
 .shell-dark .sparkline-card,
 .shell-dark .daily-activity-day,
 .shell-dark .pnl-calendar-day,
+.shell-dark .calendar-nav-button,
 .shell-dark .workflow-step-card,
 .shell-dark .catalog-panel,
 .shell-dark .pipeline-info-row,
@@ -3547,6 +3572,7 @@ select {
 .shell-dark .dataset-card:hover,
 .shell-dark .checkbox-chip:hover,
 .shell-dark .chip-link:hover,
+.shell-dark .calendar-nav-button:hover,
 .shell-dark .pnl-calendar-day-link:hover {
   border-color: rgba(0, 229, 255, 0.4);
   box-shadow: 0 12px 40px rgba(0, 229, 255, 0.1);

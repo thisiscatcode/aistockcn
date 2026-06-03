@@ -5,10 +5,10 @@ import { DataTable } from "@/components/table";
 import {
   type PaperPerformanceRow,
   getPaperHistory,
+  getPaperHoldings,
   getPaperOrders,
   getPaperOverview,
   getPaperPerformance,
-  getPaperPositions,
   getPaperStatus,
   getPaperTargets,
 } from "@/lib/api";
@@ -410,13 +410,18 @@ export default async function PaperPage({
   const user = await requireAuth();
   const copy = getMessages(user.locale);
   const paperLiveTimeoutMs = 3200;
-  const [status, overviewResult, targets, positions, orders, history, performance] = await Promise.all([
+  const [status, overviewResult, targets, holdings, orders, history, performance] = await Promise.all([
     getPaperStatus(),
     getPaperOverview(paperLiveTimeoutMs).catch((error) => ({ error })),
     getPaperTargets(60),
-    getPaperPositions(120, paperLiveTimeoutMs).catch((error) => ({
-      rows: 0,
+    getPaperHoldings(120, 120, paperLiveTimeoutMs).catch((error) => ({
+      positions_rows: 0,
+      raw_positions_rows: 0,
       positions: [],
+      orders_rows: 0,
+      orders: [],
+      summary: {},
+      balance: [],
       error: error instanceof Error ? error.message : "Live positions unavailable",
     })),
     getPaperOrders(120, paperLiveTimeoutMs).catch((error) => ({
@@ -439,7 +444,7 @@ export default async function PaperPage({
   const planSummary = asRecord(state.plan_summary);
   const priceLimitErrorLabel = "price outside CN daily limit band";
   const recentOrders = orders.orders as DashboardRow[];
-  const livePositions = (positions.positions as DashboardRow[]).filter(hasOpenPosition);
+  const livePositions = (holdings.positions as DashboardRow[]).filter(hasOpenPosition);
   const rawHistory = history.history as DashboardRow[];
   const performanceRows = performance.snapshots;
   const portfolioMarketValue =
@@ -540,7 +545,7 @@ export default async function PaperPage({
         score: target.score ?? null,
         action: target.action ?? (asNumber(position.quantity) ? "HOLD" : null),
         target_qty: target.target_qty ?? 0,
-        current_qty: position.quantity ?? target.current_qty ?? 0,
+        current_qty: position.quantity ?? 0,
         delta_qty: target.delta_qty ?? null,
         buy_order_qty: target.buy_order_qty ?? null,
         sell_order_qty: target.sell_order_qty ?? null,
@@ -795,12 +800,12 @@ export default async function PaperPage({
 
       <Panel title="Holdings vs Targets" aside={<span className="pill">{formatNumber(holdingsRows.length, user.locale)} rows</span>}>
         <p className="table-note">
-          Merge live positions, target quantities, current market value, and the latest order state into one table so you can compare what the strategy wants against what the paper account currently holds.
+          Merge real-time broker positions, target quantities, current market value, and the latest order state into one table so you can compare what the strategy wants against what the paper account currently holds.
         </p>
         <DataTable
           rows={holdingsRows}
           columns={holdingsColumns}
-          emptyLabel={positions.error ? "Live positions are refreshing." : copy.common.noRows}
+          emptyLabel={holdings.error ? "Real-time broker positions are refreshing." : copy.common.noRows}
           locale={user.locale}
           pageSize={25}
         />

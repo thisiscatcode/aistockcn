@@ -65,6 +65,100 @@ from app.services.us_selection_control import _parse_time
 
 
 class PipelineRepairTests(unittest.TestCase):
+    @staticmethod
+    def _paper_sync_config(scores_path: Path, state_dir: Path, *, force: bool = False) -> SyncConfig:
+        return SyncConfig(
+            scores_path=scores_path,
+            state_dir=state_dir,
+            gateway_base_url="http://127.0.0.1:8080",
+            market="CN",
+            agent_id="agent",
+            agent_key="key",
+            agent_id_header="X-Agent-Id",
+            agent_key_header="X-Agent-Key",
+            account_id=None,
+            top_k=1,
+            min_score=0.5,
+            lot_size=100,
+            cash_buffer_pct=0.0,
+            budget_total=None,
+            max_buy_order_qty=1000,
+            max_sell_order_qty=1000,
+            cancel_open_orders=True,
+            sync_existing_orders=True,
+            force=force,
+            dry_run=False,
+        )
+
+    @staticmethod
+    def _write_scores(path: Path, dates: list[str], *, profile_name: str = "short_5d", label_horizon: int = 5) -> None:
+        pd.DataFrame(
+            [
+                {
+                    "date": trade_date,
+                    "code": "000001",
+                    "exchange": "SZ",
+                    "name": "Ping An Bank",
+                    "industry": "Bank",
+                    "score": 0.9,
+                    "close": 10.0,
+                }
+                for trade_date in dates
+            ]
+        ).to_parquet(path, index=False)
+        (path.parent / "training_metadata.json").write_text(
+            json.dumps({"profile_name": profile_name, "label_horizon": label_horizon}),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _pending_plan() -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "signal_date": "2026-05-20",
+                    "rank": 1,
+                    "code": "000001",
+                    "score": 0.9,
+                    "target_qty": 100,
+                    "current_qty": 0,
+                    "delta_qty": 100,
+                    "sell_order_qty": 0,
+                    "buy_order_qty": 100,
+                    "estimated_order_notional": 1000.0,
+                    "estimated_order_fee": 1.0,
+                    "current_market_value": 0.0,
+                    "action": "BUY",
+                }
+            ]
+        )
+
+    @staticmethod
+    def _noop_gateway_class():
+        class NoopGateway:
+            def __init__(self, config: SyncConfig) -> None:
+                self.config = config
+
+            def health(self) -> dict[str, object]:
+                return {"status": "ok"}
+
+            def sync_agent(self) -> None:
+                return None
+
+            def get_agent_positions(self) -> list[dict[str, object]]:
+                return []
+
+            def get_agent_orders(self) -> list[dict[str, object]]:
+                return []
+
+            def get_balance(self) -> list[dict[str, object]]:
+                return [{"cash": 1000.0, "power": 1000.0, "total_assets": 1000.0}]
+
+            def get_agent_summary(self) -> dict[str, object]:
+                return {"total_assets": 1000.0, "total_pnl": 0.0}
+
+        return NoopGateway
+
     def test_sina_concept_parser_extracts_industry_and_concepts(self) -> None:
         payload = """
         <html><body>
@@ -1370,6 +1464,191 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertIn("already been attempted", state["last_message"])
         self.assertFalse(history_path.exists())
         execute.assert_not_called()
+
+    def test_paper_sync_waits_for_5d_rebalance_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            self._write_scores(scores_path, ["2026-05-26"])
+            signature = score_file_signature(scores_path)
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "last_applied_signal_date": "2026-05-20",
+                        "rebalance_observed_signal_dates": ["2026-05-21", "2026-05-22", "2026-05-25"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = self._paper_sync_config(scores_path, state_dir)
+
+            with mock.patch("paper_trade_futu.GatewayClient", self._noop_gateway_class()):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(self._pending_plan(), {"buy_order_count": 1, "sell_order_count": 0}),
+                ):
+                    with mock.patch("paper_trade_futu.execute_plan") as execute:
+                        code, state = sync_once(config)
+
+            history_path = state_dir / "sync_history.jsonl"
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "noop")
+        self.assertFalse(state["rebalance_due"])
+        self.assertEqual(state["rebalance_every"], 5)
+        self.assertEqual(state["rebalance_wait_count"], 4)
+        self.assertEqual(
+            state["rebalance_observed_signal_dates"],
+            ["2026-05-21", "2026-05-22", "2026-05-25", "2026-05-26"],
+        )
+        self.assertEqual(state["last_applied_signal_date"], "2026-05-20")
+        self.assertEqual(state["last_score_signature"], signature)
+        self.assertIn("not due", state["last_message"])
+        self.assertFalse(history_path.exists())
+        execute.assert_not_called()
+
+    def test_paper_sync_trades_on_5d_rebalance_window(self) -> None:
+        execution_rows = self._pending_plan().assign(
+            sent_order_id=None,
+            sent_status=None,
+            sent_price=None,
+            sent_reference_price=None,
+            sent_error=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            self._write_scores(scores_path, ["2026-05-27"])
+            (state_dir / "state.json").write_text(
+                json.dumps(
+                    {
+                        "last_applied_signal_date": "2026-05-20",
+                        "rebalance_observed_signal_dates": ["2026-05-21", "2026-05-22", "2026-05-25", "2026-05-26"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = self._paper_sync_config(scores_path, state_dir)
+
+            with mock.patch("paper_trade_futu.GatewayClient", self._noop_gateway_class()):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(self._pending_plan(), {"buy_order_count": 1, "sell_order_count": 0}),
+                ):
+                    with mock.patch(
+                        "paper_trade_futu.execute_plan",
+                        return_value={
+                            "execution_rows": execution_rows,
+                            "cancelled_orders": [],
+                            "placed_orders": [{"order_id": "order-1"}],
+                            "skipped_orders": [],
+                            "execution_skipped": False,
+                        },
+                    ) as execute:
+                        code, state = sync_once(config)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "success")
+        self.assertTrue(state["rebalance_due"])
+        self.assertEqual(state["rebalance_wait_count"], 5)
+        self.assertEqual(state["rebalance_observed_signal_dates"], [])
+        self.assertEqual(state["last_applied_signal_date"], "2026-05-27")
+        execute.assert_called_once()
+
+    def test_paper_sync_1d_profile_trades_each_new_score_date(self) -> None:
+        execution_rows = self._pending_plan().assign(
+            sent_order_id=None,
+            sent_status=None,
+            sent_price=None,
+            sent_reference_price=None,
+            sent_error=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            self._write_scores(
+                scores_path,
+                ["2026-05-20", "2026-05-21"],
+                profile_name="short_1d",
+                label_horizon=1,
+            )
+            (state_dir / "state.json").write_text(
+                json.dumps({"last_applied_signal_date": "2026-05-20"}),
+                encoding="utf-8",
+            )
+            config = self._paper_sync_config(scores_path, state_dir)
+
+            with mock.patch("paper_trade_futu.GatewayClient", self._noop_gateway_class()):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(self._pending_plan(), {"buy_order_count": 1, "sell_order_count": 0}),
+                ):
+                    with mock.patch(
+                        "paper_trade_futu.execute_plan",
+                        return_value={
+                            "execution_rows": execution_rows,
+                            "cancelled_orders": [],
+                            "placed_orders": [{"order_id": "order-1"}],
+                            "skipped_orders": [],
+                            "execution_skipped": False,
+                        },
+                    ) as execute:
+                        code, state = sync_once(config)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "success")
+        self.assertEqual(state["rebalance_every"], 1)
+        self.assertTrue(state["rebalance_due"])
+        execute.assert_called_once()
+
+    def test_paper_sync_force_overrides_rebalance_wait(self) -> None:
+        execution_rows = self._pending_plan().assign(
+            sent_order_id=None,
+            sent_status=None,
+            sent_price=None,
+            sent_reference_price=None,
+            sent_error=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scores_path = root / "scores.parquet"
+            state_dir = root / "state"
+            state_dir.mkdir()
+            self._write_scores(scores_path, ["2026-05-20", "2026-05-21"])
+            (state_dir / "state.json").write_text(
+                json.dumps({"last_applied_signal_date": "2026-05-20"}),
+                encoding="utf-8",
+            )
+            config = self._paper_sync_config(scores_path, state_dir, force=True)
+
+            with mock.patch("paper_trade_futu.GatewayClient", self._noop_gateway_class()):
+                with mock.patch(
+                    "paper_trade_futu.build_plan",
+                    return_value=(self._pending_plan(), {"buy_order_count": 1, "sell_order_count": 0}),
+                ):
+                    with mock.patch(
+                        "paper_trade_futu.execute_plan",
+                        return_value={
+                            "execution_rows": execution_rows,
+                            "cancelled_orders": [],
+                            "placed_orders": [{"order_id": "order-1"}],
+                            "skipped_orders": [],
+                            "execution_skipped": False,
+                        },
+                    ) as execute:
+                        code, state = sync_once(config)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(state["last_status"], "success")
+        self.assertTrue(state["rebalance_due"])
+        self.assertEqual(state["rebalance_wait_count"], 1)
+        execute.assert_called_once()
 
     def test_transaction_fee_model_matches_a_share_rules(self) -> None:
         self.assertAlmostEqual(transaction_fee("BUY", 10_000.0), 20.4, places=6)

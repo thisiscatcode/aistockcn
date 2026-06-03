@@ -684,8 +684,11 @@ export function getPaperDbHoldings(positionLimit = 500, orderLimit = 200, timeou
   return fetchJson<PaperHoldings>(`/api/paper/db/holdings?position_limit=${positionLimit}&order_limit=${orderLimit}`, { timeoutMs });
 }
 
-export function getPaperDbDailyHistory(limit = 20, timeoutMs?: number) {
-  return fetchJson<PaperDailyHistory>(`/api/paper/db/daily-history?limit=${limit}`, { timeoutMs });
+export function getPaperDbDailyHistory(limit = 20, timeoutMs?: number, startDate?: string, endDate?: string) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (startDate) query.set("start_date", startDate);
+  if (endDate) query.set("end_date", endDate);
+  return fetchJson<PaperDailyHistory>(`/api/paper/db/daily-history?${query.toString()}`, { timeoutMs });
 }
 
 export function getPaperDbDailyDetail(tradeDate: string, timeoutMs?: number) {

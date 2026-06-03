@@ -1,17 +1,31 @@
 {
   "default_profile": "short_5d",
+  "active_profile": "short_1d",
   "profiles": [
     {
-      "name": "short_5d",
-      "label": "5D Short",
-      "label_horizon": 5,
-      "label_threshold": 0.02,
+      "name": "short_1d",
+      "label": "1D Short",
+      "label_horizon": 1,
+      "label_threshold": 0.01,
       "valid_days": 60,
       "score_threshold": 0.5,
       "score_top_k": 20,
       "backtest_min_train_days": 252,
-      "backtest_retrain_every": 20,
-      "backtest_rebalance_every": 5,
+      "backtest_retrain_every": 10,
+      "backtest_rebalance_every": 1,
+      "backtest_top_k": 5
+    },
+    {
+      "name": "short_2d",
+      "label": "2D Short",
+      "label_horizon": 2,
+      "label_threshold": 0.0125,
+      "valid_days": 60,
+      "score_threshold": 0.5,
+      "score_top_k": 20,
+      "backtest_min_train_days": 252,
+      "backtest_retrain_every": 13,
+      "backtest_rebalance_every": 2,
       "backtest_top_k": 5
     },
     {
@@ -28,16 +42,29 @@
       "backtest_top_k": 5
     },
     {
-      "name": "short_1d",
-      "label": "1D Short",
-      "label_horizon": 1,
-      "label_threshold": 0.01,
+      "name": "short_4d",
+      "label": "4D Short",
+      "label_horizon": 4,
+      "label_threshold": 0.0175,
       "valid_days": 60,
       "score_threshold": 0.5,
       "score_top_k": 20,
       "backtest_min_train_days": 252,
-      "backtest_retrain_every": 10,
-      "backtest_rebalance_every": 1,
+      "backtest_retrain_every": 18,
+      "backtest_rebalance_every": 4,
+      "backtest_top_k": 5
+    },
+    {
+      "name": "short_5d",
+      "label": "5D Short",
+      "label_horizon": 5,
+      "label_threshold": 0.02,
+      "valid_days": 60,
+      "score_threshold": 0.5,
+      "score_top_k": 20,
+      "backtest_min_train_days": 252,
+      "backtest_retrain_every": 20,
+      "backtest_rebalance_every": 5,
       "backtest_top_k": 5
     }
   ]

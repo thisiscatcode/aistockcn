@@ -51,8 +51,12 @@ def paper_db_holdings(
 
 
 @router.get("/db/daily-history")
-def paper_db_daily_history(limit: int = Query(default=20, ge=1, le=120)) -> dict[str, object]:
-    return get_paper_db_daily_history(limit=limit)
+def paper_db_daily_history(
+    limit: int = Query(default=20, ge=1, le=120),
+    start_date: str | None = Query(default=None, description="Optional start date, YYYY-MM-DD."),
+    end_date: str | None = Query(default=None, description="Optional end date, YYYY-MM-DD."),
+) -> dict[str, object]:
+    return get_paper_db_daily_history(limit=limit, start_date=start_date, end_date=end_date)
 
 
 @router.get("/db/daily-history/{trade_date}")

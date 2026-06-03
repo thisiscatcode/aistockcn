@@ -329,6 +329,119 @@ def quant_dir_for_scores_path(path: Path) -> Path:
     return resolved.parent.parent
 
 
+def _positive_int(value: Any, default: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 1)
+
+
+def _active_training_metadata_path(scores_path: Path) -> Path:
+    return Path(scores_path).parent / "training_metadata.json"
+
+
+def _model_profile_catalog_path() -> Path:
+    return Path("run") / "model_profiles.json"
+
+
+def active_rebalance_profile(scores_path: Path) -> dict[str, Any]:
+    metadata = read_json(_active_training_metadata_path(scores_path))
+    profile_name = str(metadata.get("profile_name") or "").strip()
+    label_horizon = _positive_int(metadata.get("label_horizon"), 1)
+    catalog = read_json(_model_profile_catalog_path())
+    profiles = catalog.get("profiles") if isinstance(catalog.get("profiles"), list) else []
+
+    if not profile_name:
+        profile_name = str(catalog.get("active_profile") or catalog.get("default_profile") or "").strip()
+
+    for profile in profiles:
+        if isinstance(profile, dict) and str(profile.get("name") or "").strip() == profile_name:
+            return {
+                "profile_name": profile_name,
+                "profile_label": str(profile.get("label") or profile_name),
+                "rebalance_every": _positive_int(profile.get("backtest_rebalance_every"), label_horizon),
+                "label_horizon": _positive_int(profile.get("label_horizon"), label_horizon),
+            }
+
+    return {
+        "profile_name": profile_name or "unknown",
+        "profile_label": profile_name or "unknown",
+        "rebalance_every": label_horizon,
+        "label_horizon": label_horizon,
+    }
+
+
+def score_trading_dates(scores_path: Path) -> list[str]:
+    try:
+        scores = pd.read_parquet(scores_path, columns=["date"])
+    except Exception:
+        return []
+    dates = pd.to_datetime(scores["date"], errors="coerce").dropna()
+    if dates.empty:
+        return []
+    return sorted({str(pd.Timestamp(value).date()) for value in dates})
+
+
+def rebalance_wait_count(trading_dates: list[str], *, last_applied_signal_date: str | None, signal_date: str) -> int:
+    normalized_last = normalize_date_text(last_applied_signal_date)
+    normalized_signal = normalize_date_text(signal_date) or signal_date
+    if not normalized_last:
+        return 0
+    return sum(1 for trade_date in trading_dates if normalized_last < trade_date <= normalized_signal)
+
+
+def rebalance_observed_signal_dates(
+    *,
+    state: dict[str, Any],
+    trading_dates: list[str],
+    last_applied_signal_date: str | None,
+    signal_date: str,
+) -> list[str]:
+    normalized_last = normalize_date_text(last_applied_signal_date)
+    normalized_signal = normalize_date_text(signal_date) or signal_date
+    if not normalized_last:
+        return []
+    raw_observed = state.get("rebalance_observed_signal_dates")
+    observed_values = raw_observed if isinstance(raw_observed, list) else []
+    candidates = [*observed_values, *trading_dates, normalized_signal]
+    normalized_dates = {
+        normalized
+        for value in candidates
+        if (normalized := normalize_date_text(value)) and normalized_last < normalized <= normalized_signal
+    }
+    return sorted(normalized_dates)
+
+
+def rebalance_decision(
+    *,
+    scores_path: Path,
+    state: dict[str, Any],
+    signal_date: str,
+    force: bool = False,
+) -> dict[str, Any]:
+    profile = active_rebalance_profile(scores_path)
+    rebalance_every = _positive_int(profile.get("rebalance_every"), 1)
+    trading_dates = score_trading_dates(scores_path)
+    last_applied_signal_date = normalize_date_text(state.get("last_applied_signal_date"))
+    observed_dates = rebalance_observed_signal_dates(
+        state=state,
+        trading_dates=trading_dates,
+        last_applied_signal_date=last_applied_signal_date,
+        signal_date=signal_date,
+    )
+    wait_count = len(observed_dates)
+    due = bool(force or rebalance_every <= 1 or not last_applied_signal_date or wait_count >= rebalance_every)
+    return {
+        **profile,
+        "rebalance_every": rebalance_every,
+        "rebalance_due": due,
+        "rebalance_wait_count": wait_count,
+        "rebalance_observed_signal_dates": observed_dates,
+        "last_applied_signal_date": last_applied_signal_date,
+    }
+
+
 def load_stock_name_lookup(quant_dir: Path) -> dict[str, str]:
     for candidate in [quant_dir / "stock_list.parquet", quant_dir / "stock_registry.parquet"]:
         if not candidate.exists():
@@ -1216,6 +1329,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             positions=positions,
             balance_metrics=balance_metrics,
         )
+        rebalance = rebalance_decision(
+            scores_path=config.scores_path,
+            state=state,
+            signal_date=signal_date,
+            force=config.force,
+        )
+        plan_summary = {**plan_summary, **rebalance}
 
         if not config.force and previous_signature == signature:
             has_pending_actions = bool(plan_summary.get("buy_order_count")) or bool(plan_summary.get("sell_order_count"))
@@ -1284,6 +1404,11 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     live_summary=live_summary,
                     balance_metrics=balance_metrics,
                     plan_summary=plan_summary,
+                    rebalance_profile_name=rebalance["profile_name"],
+                    rebalance_every=rebalance["rebalance_every"],
+                    rebalance_due=rebalance["rebalance_due"],
+                    rebalance_wait_count=rebalance["rebalance_wait_count"],
+                    rebalance_observed_signal_dates=rebalance["rebalance_observed_signal_dates"],
                     active_order_count=len(active_orders),
                     position_count=len(positions),
                     cancelled_order_ids=[],
@@ -1291,6 +1416,75 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     skipped_symbols=[],
                 )
                 return 0, updated
+
+        if not rebalance["rebalance_due"]:
+            safe_write_daily_snapshot(
+                paths,
+                balance_metrics=balance_metrics,
+                live_summary=live_summary,
+                positions=list(positions.values()),
+                orders=orders,
+            )
+            message = (
+                f"score snapshot {signal_date} is not due for "
+                f"{rebalance['profile_label']} rebalance every {rebalance['rebalance_every']} trading score dates"
+            )
+            result = {
+                "status": "noop",
+                "message": message,
+                "score_signal_date": signal_date,
+                "last_score_signature": signature,
+                "gateway_healthy": health_ok,
+                "balance_metrics": balance_metrics,
+                "plan_summary": plan_summary,
+                "live_summary": live_summary,
+                "active_order_count": len(active_orders),
+                "position_count": len(positions),
+                "cancelled_order_ids": [],
+                "placed_order_ids": [],
+                "skipped_symbols": [],
+                "cancelled_orders": [],
+                "placed_orders": [],
+                "skipped_orders": [],
+            }
+            updated = update_state(
+                paths,
+                strategy="futu_gateway_auto_paper_trading",
+                market=config.market,
+                agent_id=config.agent_id,
+                gateway_base_url=config.gateway_base_url,
+                config_snapshot={
+                    "top_k": config.top_k,
+                    "min_score": config.min_score,
+                    "lot_size": config.lot_size,
+                    "cash_buffer_pct": config.cash_buffer_pct,
+                    "budget_total": config.budget_total,
+                    "max_buy_order_qty": config.max_buy_order_qty,
+                    "max_sell_order_qty": config.max_sell_order_qty,
+                },
+                last_attempt_at=now_iso(),
+                last_status="noop",
+                last_message=message,
+                score_signal_date=signal_date,
+                last_score_signature=signature,
+                last_error=None,
+                last_traceback=None,
+                gateway_healthy=health_ok,
+                live_summary=live_summary,
+                balance_metrics=balance_metrics,
+                plan_summary=plan_summary,
+                rebalance_profile_name=rebalance["profile_name"],
+                rebalance_every=rebalance["rebalance_every"],
+                rebalance_due=False,
+                rebalance_wait_count=rebalance["rebalance_wait_count"],
+                rebalance_observed_signal_dates=rebalance["rebalance_observed_signal_dates"],
+                active_order_count=len(active_orders),
+                position_count=len(positions),
+                cancelled_order_ids=[],
+                placed_order_ids=[],
+                skipped_symbols=[],
+            )
+            return 0, updated
 
         if config.dry_run:
             persist_targets(paths, plan)
@@ -1346,6 +1540,11 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 live_summary=live_summary,
                 balance_metrics=balance_metrics,
                 plan_summary=plan_summary,
+                rebalance_profile_name=rebalance["profile_name"],
+                rebalance_every=rebalance["rebalance_every"],
+                rebalance_due=rebalance["rebalance_due"],
+                rebalance_wait_count=rebalance["rebalance_wait_count"],
+                rebalance_observed_signal_dates=rebalance["rebalance_observed_signal_dates"],
                 active_order_count=len(active_orders),
                 position_count=len(positions),
             )
@@ -1412,6 +1611,11 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 live_summary=live_summary,
                 balance_metrics=balance_metrics,
                 plan_summary=result["plan_summary"],
+                rebalance_profile_name=rebalance["profile_name"],
+                rebalance_every=rebalance["rebalance_every"],
+                rebalance_due=rebalance["rebalance_due"],
+                rebalance_wait_count=rebalance["rebalance_wait_count"],
+                rebalance_observed_signal_dates=rebalance["rebalance_observed_signal_dates"],
                 active_order_count=len(active_orders),
                 position_count=len(positions),
                 cancelled_order_ids=[],
@@ -1502,6 +1706,11 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             live_summary=live_summary,
             balance_metrics=balance_metrics,
             plan_summary=plan_summary,
+            rebalance_profile_name=rebalance["profile_name"],
+            rebalance_every=rebalance["rebalance_every"],
+            rebalance_due=rebalance["rebalance_due"],
+            rebalance_wait_count=rebalance["rebalance_wait_count"],
+            rebalance_observed_signal_dates=[],
             active_order_count=result["active_order_count"],
             position_count=len(positions),
             cancelled_order_ids=result["cancelled_order_ids"],

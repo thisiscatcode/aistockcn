@@ -1,7 +1,7 @@
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
 import { Panel } from "@/components/cards";
-import { getPaperDbDailyHistory, getPaperDbHoldings, getPaperTargets, getPortfolioOverview, type OverviewTopPick } from "@/lib/api";
+import { getPaperDbDailyHistory, getPaperHoldings, getPaperTargets, getPortfolioOverview, type OverviewTopPick } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
 import type { PanelLocale } from "@/lib/i18n";
@@ -99,7 +99,37 @@ function monthTitle(monthDate: Date, locale: string) {
   }).format(monthDate);
 }
 
-function calendarCells(dailyRows: DashboardRow[]) {
+function parseMonthParam(value: string | undefined) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(value ?? "").trim());
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (!Number.isInteger(year) || monthIndex < 0 || monthIndex > 11) {
+    return null;
+  }
+  return new Date(Date.UTC(year, monthIndex, 1));
+}
+
+function addMonths(monthDate: Date, offset: number) {
+  return new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + offset, 1));
+}
+
+function monthKey(monthDate: Date) {
+  return monthDate.toISOString().slice(0, 7);
+}
+
+function monthDateRange(monthDate: Date) {
+  const startDate = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1));
+  const endDate = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth() + 1, 0));
+  return {
+    startDate: startDate.toISOString().slice(0, 10),
+    endDate: endDate.toISOString().slice(0, 10)
+  };
+}
+
+function calendarCells(dailyRows: DashboardRow[], selectedMonthDate?: Date | null) {
   const pnlByDate = new Map<string, DashboardRow>();
   for (const row of dailyRows) {
     const key = dateKey(row.trade_date);
@@ -108,7 +138,7 @@ function calendarCells(dailyRows: DashboardRow[]) {
     }
   }
   const latestDateKey = Array.from(pnlByDate.keys()).sort().at(-1);
-  const base = latestDateKey ? new Date(`${latestDateKey}T00:00:00Z`) : new Date();
+  const base = selectedMonthDate ?? (latestDateKey ? new Date(`${latestDateKey}T00:00:00Z`) : new Date());
   const monthStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1));
   const monthEnd = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 0));
   const cells: Array<{
@@ -158,18 +188,28 @@ function calendarCells(dailyRows: DashboardRow[]) {
 
 function PnlCalendar({
   dailyRows,
+  monthDate,
   locale
 }: {
   dailyRows: DashboardRow[];
+  monthDate?: Date | null;
   locale: PanelLocale;
 }) {
-  const pnlCalendar = calendarCells(dailyRows);
+  const pnlCalendar = calendarCells(dailyRows, monthDate);
+  const previousMonth = addMonths(pnlCalendar.monthDate, -1);
+  const nextMonth = addMonths(pnlCalendar.monthDate, 1);
   const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
   return (
     <section className="panel overview-calendar-panel" aria-label="P/L Calendar">
       <div className="overview-calendar-toolbar">
+        <a className="calendar-nav-button" href={`/overview?month=${monthKey(previousMonth)}`} aria-label={`Previous month, ${monthTitle(previousMonth, locale)}`}>
+          &lt;
+        </a>
         <span className="pill">{monthTitle(pnlCalendar.monthDate, locale)}</span>
+        <a className="calendar-nav-button" href={`/overview?month=${monthKey(nextMonth)}`} aria-label={`Next month, ${monthTitle(nextMonth, locale)}`}>
+          &gt;
+        </a>
       </div>
       <div className="pnl-calendar">
         <div className="pnl-calendar-weekdays">
@@ -318,13 +358,20 @@ const plannedOrderColumns = [
   { key: "error", label: "Note" }
 ];
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ month?: string }>;
+}) {
   const user = await requireAuth();
+  const params = (await searchParams) ?? {};
+  const requestedMonthDate = parseMonthParam(params.month);
+  const requestedMonthRange = requestedMonthDate ? monthDateRange(requestedMonthDate) : null;
   const name = displayName(user.username);
   const [overview, dailyHistory, holdingsSnapshot, targets] = await Promise.all([
     getPortfolioOverview(),
-    getPaperDbDailyHistory(20, 5000).catch(() => ({ rows: 0, daily: [] })),
-    getPaperDbHoldings(1000, 300, 5000).catch(() => ({ positions: [], positions_rows: 0, raw_positions_rows: 0 })),
+    getPaperDbDailyHistory(120, 5000, requestedMonthRange?.startDate, requestedMonthRange?.endDate).catch(() => ({ rows: 0, daily: [] })),
+    getPaperHoldings(1000, 300, 5000).catch(() => ({ positions: [], positions_rows: 0, raw_positions_rows: 0 })),
     getPaperTargets(200).catch(() => ({ rows: 0, targets: [] }))
   ]);
   const dailyRows = dailyHistory.daily as DashboardRow[];
@@ -349,7 +396,7 @@ export default async function OverviewPage() {
       ) : null}
 
       <section className="overview-summary-layout" aria-label="Portfolio summary">
-        <PnlCalendar dailyRows={dailyRows} locale={user.locale} />
+        <PnlCalendar dailyRows={dailyRows} monthDate={requestedMonthDate} locale={user.locale} />
 
         <div className="overview-kpi-grid overview-kpi-stack" aria-label="Portfolio key performance indicators">
           <KpiCard
