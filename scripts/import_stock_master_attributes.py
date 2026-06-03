@@ -924,7 +924,8 @@ def main() -> int:
         try:
             with conn.cursor() as cur:
                 cur.execute(schema_sql)
-                cur.execute(DELETE_OLD_SHAREHOLDER_RESEARCH_SQL, [shareholder_start_date])
+                if not args.skip_eps:
+                    cur.execute(DELETE_OLD_SHAREHOLDER_RESEARCH_SQL, [shareholder_start_date])
                 cur.executemany(
                     SHARE_UPDATE_SQL,
                     [

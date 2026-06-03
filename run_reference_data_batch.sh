@@ -14,6 +14,22 @@ SLEEP_SECONDS="${SLEEP_SECONDS:-0.2}"
 LIMIT="${LIMIT:-0}"
 SKIP_INDUSTRY="${SKIP_INDUSTRY:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+PANEL_ENV_FILE="$ROOT_DIR/run/panel.env"
+
+read_panel_env_value() {
+  local key="$1"
+  if [[ ! -f "$PANEL_ENV_FILE" ]]; then
+    return 0
+  fi
+  awk -v key="$key" '
+    BEGIN { prefix = key "=" }
+    index($0, prefix) == 1 { value = substr($0, length(prefix) + 1) }
+    END { print value }
+  ' "$PANEL_ENV_FILE" | tr -d '\r'
+}
+
+PAPER_DB_URL_VALUE="${PAPER_DB_URL:-$(read_panel_env_value PAPER_DB_URL)}"
+APP_DB_URL_VALUE="${APP_DB_URL:-$(read_panel_env_value APP_DB_URL)}"
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/reference_data_${TIMESTAMP}.log"
@@ -22,7 +38,19 @@ LOGGER_PID_FILE="$PID_DIR/reference_data_logger.pid"
 CONTAINER_NAME="aistockcn-reference-data-${TIMESTAMP}"
 
 ARGS=(
-  "run" "-d" "--name" "$CONTAINER_NAME" "--entrypoint" "python" "data-prep" "refresh_reference_data.py"
+  "run" "-d" "--name" "$CONTAINER_NAME" "--entrypoint" "python"
+)
+
+if [[ -n "$PAPER_DB_URL_VALUE" ]]; then
+  ARGS+=("-e" "PAPER_DB_URL=$PAPER_DB_URL_VALUE")
+fi
+
+if [[ -n "$APP_DB_URL_VALUE" ]]; then
+  ARGS+=("-e" "APP_DB_URL=$APP_DB_URL_VALUE")
+fi
+
+ARGS+=(
+  "data-prep" "refresh_reference_data.py"
   "--start-date" "$START_DATE"
   "--end-date" "$END_DATE"
   "--sleep" "$SLEEP_SECONDS"

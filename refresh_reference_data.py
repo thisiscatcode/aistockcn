@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import download_data as dl
+from repair_valuation_reference_fields import repair_one
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,6 +115,65 @@ def update_industry_tables(data_dir: Path, industry_updates: list[dict[str, Any]
         registry_df = dl.pd.read_parquet(registry_path)
         registry_df = dl.apply_industry_updates(registry_df, updates_df)
         registry_df.to_parquet(registry_path, index=False)
+
+
+def publish_daily_valuation_reference(data_dir: Path) -> dict[str, int]:
+    valuation_paths = sorted((data_dir / "daily_valuation").glob("*.parquet"))
+    changed_files = 0
+    changed_rows = 0
+    for idx, valuation_path in enumerate(valuation_paths, start=1):
+        changed, rows = repair_one(data_dir, valuation_path, overwrite_existing=True)
+        if changed:
+            changed_files += 1
+            changed_rows += rows
+        if idx % 500 == 0:
+            print(
+                f"Published reference values into daily valuation: checked {idx}/{len(valuation_paths)}, "
+                f"changed_files={changed_files}, changed_rows={changed_rows}",
+                flush=True,
+            )
+    return {
+        "checked_files": len(valuation_paths),
+        "changed_files": changed_files,
+        "changed_rows": changed_rows,
+    }
+
+
+def sync_stock_master_attributes(data_dir: Path) -> None:
+    database_url = os.getenv("APP_DB_URL") or os.getenv("PAPER_DB_URL")
+    if not database_url:
+        raise RuntimeError("APP_DB_URL or PAPER_DB_URL is required to sync stock_master after reference refresh.")
+
+    root_dir = Path(__file__).resolve().parent
+    command = [
+        sys.executable,
+        str(root_dir / "scripts" / "import_stock_master_attributes.py"),
+        "--valuation-dir",
+        str(data_dir / "daily_valuation"),
+        "--stock-list",
+        str(data_dir / dl.STOCK_LIST_FILENAME),
+        "--database-url",
+        database_url,
+        "--skip-eps",
+        "--status-file",
+        "run/reference_stock_master_sync_status.json",
+        "--checkpoint-file",
+        "run/reference_stock_master_sync_checkpoint.json",
+    ]
+    completed = subprocess.run(command, check=False, cwd=root_dir)
+    if completed.returncode != 0:
+        raise RuntimeError(f"stock_master sync failed with exit code {completed.returncode}.")
+
+
+def publish_reference_outputs(data_dir: Path) -> dict[str, Any]:
+    print("Publishing reference data into daily valuation parquet files...", flush=True)
+    valuation_summary = publish_daily_valuation_reference(data_dir)
+    print("Syncing reference-derived stock_master attributes...", flush=True)
+    sync_stock_master_attributes(data_dir)
+    return {
+        "daily_valuation": valuation_summary,
+        "stock_master_synced": True,
+    }
 
 
 def needs_reference_refresh(*, data_dir: Path, code: str, target_trade_date: str, overwrite: bool) -> bool:
@@ -207,6 +270,13 @@ def main() -> int:
             target_trade_date=trade_date,
             batch_state=state,
         )
+        publish_error = None
+        publish_summary: dict[str, Any] | None = None
+        try:
+            publish_summary = publish_reference_outputs(data_dir)
+        except Exception as exc:
+            publish_error = str(exc)
+            print(f"Reference publish failed: {publish_error}", flush=True)
 
         summary = {
             "finished": True,
@@ -215,8 +285,12 @@ def main() -> int:
             "failed_codes": len(state["failed_codes"]),
             "state_file": str(state_path),
             "reference_status": str(status_path),
+            "publish": publish_summary,
+            "publish_error": publish_error,
         }
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        if publish_error:
+            return 3
         return 0 if not state["failed_codes"] else 2
     finally:
         if needs_baostock:

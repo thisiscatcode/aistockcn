@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ REFERENCE_PID_FILE = "reference_data.pid"
 REFERENCE_LOG_PREFIX = "reference_data"
 REFERENCE_CONTAINER_PREFIX = "aistockcn-reference-data-"
 DATA_PREP_IMAGE = "aistockcn-data-prep:latest"
+REFERENCE_NETWORK = os.getenv("PAPER_DB_NETWORK", "elearn_default")
 
 
 def _now_iso() -> str:
@@ -167,6 +169,9 @@ def start_reference_batch() -> dict[str, Any]:
     client = _docker_client()
     if client is None:
         raise BatchControlError("docker_unavailable", "Docker socket is unavailable from the API container.", status_code=503)
+    settings = get_settings()
+    if not settings.paper_db_url and not os.getenv("APP_DB_URL"):
+        raise BatchControlError("database_unavailable", "APP_DB_URL or PAPER_DB_URL is not configured.", status_code=503)
     try:
         client.images.get(DATA_PREP_IMAGE)
     except ImageNotFound as exc:
@@ -174,7 +179,6 @@ def start_reference_batch() -> dict[str, Any]:
     except DockerException as exc:
         raise BatchControlError("docker_unavailable", "Unable to inspect Docker images.", status_code=503) from exc
 
-    settings = get_settings()
     settings.run_dir.mkdir(parents=True, exist_ok=True)
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -182,6 +186,13 @@ def start_reference_batch() -> dict[str, Any]:
     container_name = f"{REFERENCE_CONTAINER_PREFIX}{timestamp}"
     log_file = settings.logs_dir / f"{REFERENCE_LOG_PREFIX}_{timestamp}.log"
     command = _reference_command()
+    environment = {
+        "TZ": "UTC",
+        "PAPER_DB_URL": settings.paper_db_url or "",
+    }
+    app_db_url = os.getenv("APP_DB_URL")
+    if app_db_url:
+        environment["APP_DB_URL"] = app_db_url
 
     try:
         container = client.containers.run(
@@ -191,7 +202,8 @@ def start_reference_batch() -> dict[str, Any]:
             detach=True,
             entrypoint="python",
             working_dir="/app",
-            environment={"TZ": "UTC"},
+            environment=environment,
+            network=REFERENCE_NETWORK,
             volumes={str(settings.host_project_root): {"bind": "/app", "mode": "rw"}},
         )
     except DockerException as exc:

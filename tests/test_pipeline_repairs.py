@@ -26,6 +26,7 @@ from download_data import (
     reference_status_path,
     write_reference_status,
 )
+from repair_valuation_reference_fields import repair_one
 from paper_trade_futu import (
     SyncConfig,
     build_plan,
@@ -437,6 +438,50 @@ class PipelineRepairTests(unittest.TestCase):
             self.assertEqual(valuation_df["float_shares"].tolist(), [8.0, 8.0])
             self.assertEqual(valuation_df["total_market_cap"].tolist(), [210.0, 220.0])
             self.assertEqual(valuation_df["float_market_cap"].tolist(), [168.0, 176.0])
+
+    def test_reference_repair_overwrites_stale_non_null_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            reference_dir = data_dir / "reference" / "valuation_reference"
+            valuation_dir = data_dir / "daily_valuation"
+            reference_dir.mkdir(parents=True)
+            valuation_dir.mkdir(parents=True)
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-21",
+                        "code": "000001",
+                        "total_market_cap": 200.0,
+                        "float_market_cap": 100.0,
+                        "total_shares": 20.0,
+                        "float_shares": 10.0,
+                    }
+                ]
+            ).to_parquet(reference_dir / "000001.parquet", index=False)
+            valuation_path = valuation_dir / "000001.parquet"
+            pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-22",
+                        "code": "000001",
+                        "close": 3.0,
+                        "total_market_cap": 54.0,
+                        "float_market_cap": 21.0,
+                        "total_shares": 18.0,
+                        "float_shares": 7.0,
+                    }
+                ]
+            ).to_parquet(valuation_path, index=False)
+
+            changed, rows = repair_one(data_dir, valuation_path, overwrite_existing=True)
+            repaired = pd.read_parquet(valuation_path)
+
+        self.assertTrue(changed)
+        self.assertEqual(rows, 1)
+        self.assertEqual(repaired["total_shares"].tolist(), [20.0])
+        self.assertEqual(repaired["float_shares"].tolist(), [10.0])
+        self.assertEqual(repaired["total_market_cap"].tolist(), [60.0])
+        self.assertEqual(repaired["float_market_cap"].tolist(), [30.0])
 
     def test_reference_status_allows_recent_slow_reference_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

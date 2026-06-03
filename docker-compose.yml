@@ -11,6 +11,9 @@ services:
       - ./:/app
     environment:
       TZ: UTC
+    networks:
+      - default
+      - paper-db
     command: []
 
   panel-api:
