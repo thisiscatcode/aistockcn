@@ -33,10 +33,13 @@ function formatSignedNumber(value: number | null) {
 }
 
 function fillDisplayRow(row: DashboardRow) {
+  const symbol = normalizeSymbol(row.symbol);
+  const name = String(row.name ?? row.stock_name ?? row.security_name ?? "").trim();
   return {
     created_at: row.created_at ?? null,
     broker_order_id: row.broker_order_id ?? null,
-    symbol: normalizeSymbol(row.symbol),
+    symbol,
+    symbol_detail: name || undefined,
     symbol_href: paperStockUrl(row.symbol),
     side: String(row.side ?? "").toUpperCase(),
     quantity: row.quantity ?? null,

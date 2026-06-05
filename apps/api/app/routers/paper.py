@@ -22,6 +22,7 @@ from app.services.paper_db import (
     get_paper_db_orders,
     get_paper_db_stock,
     get_paper_db_stock_ledger,
+    get_paper_db_stock_selection_history,
 )
 
 router = APIRouter(prefix="/api/paper", tags=["paper"])
@@ -94,6 +95,11 @@ def paper_db_stock(symbol: str) -> dict[str, object]:
 @router.get("/db/stocks/{symbol}/ledger")
 def paper_db_stock_ledger(symbol: str, limit: int = Query(default=1000, ge=1, le=5000)) -> dict[str, object]:
     return get_paper_db_stock_ledger(symbol, limit=limit)
+
+
+@router.get("/db/stocks/{symbol}/selection-history")
+def paper_db_stock_selection_history(symbol: str) -> dict[str, object]:
+    return get_paper_db_stock_selection_history(symbol)
 
 
 @router.get("/holdings")

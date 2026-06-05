@@ -5,7 +5,7 @@ import { getPaperDbDailyHistory, getPaperHoldings, getPaperTargets, getPortfolio
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
 import type { PanelLocale } from "@/lib/i18n";
-import { positionColumns, positionDisplayRow } from "@/app/holdings/position-table";
+import { normalizeSymbol, paperStockUrl, positionColumns, positionDisplayRow } from "@/app/holdings/position-table";
 
 export const dynamic = "force-dynamic";
 
@@ -322,9 +322,13 @@ function hasPlannedOrder(row: DashboardRow) {
 function plannedOrderRows(rows: DashboardRow[]) {
   return rows.filter(hasPlannedOrder).map((row) => {
     const side = plannedOrderSide(row);
+    const code = normalizeSymbol(row.code ?? row.symbol);
+    const name = String(row.name ?? row.stock_name ?? "").trim();
     return {
       rank: row.rank ?? null,
-      code: row.code ?? row.symbol ?? null,
+      code,
+      code_detail: name || undefined,
+      code_href: paperStockUrl(code),
       name: row.name ?? null,
       side,
       order_qty: side === "SELL" ? row.sell_order_qty ?? row.delta_qty : row.buy_order_qty ?? row.delta_qty,
@@ -450,9 +454,19 @@ export default async function OverviewPage({
               </tr>
             </thead>
             <tbody>
-              {overview.top_picks.map((pick: OverviewTopPick, index) => (
+              {overview.top_picks.map((pick: OverviewTopPick, index) => {
+                const code = normalizeSymbol(pick.code);
+                return (
                 <tr key={`${pick.code ?? "row"}-${index}`}>
-                  <td><strong>{pick.code ?? "—"}</strong></td>
+                  <td>
+                    {code ? (
+                      <a className="data-table-link" href={paperStockUrl(code)}>
+                        <strong>{code}</strong>
+                      </a>
+                    ) : (
+                      <strong>—</strong>
+                    )}
+                  </td>
                   <td>{pick.name ?? "—"}</td>
                   <td>
                     <span className={`signal-badge ${signalTone(pick.signal_type)}`}>
@@ -469,7 +483,8 @@ export default async function OverviewPage({
                   </td>
                   <td>{formatWeight(pick.recommended_weight, user.locale)}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {overview.top_picks.length ? null : <p className="empty-state portfolio-empty-state">No real AI picks or target rows are available yet.</p>}

@@ -21,6 +21,7 @@ from app.routers.logs import router as logs_router
 from app.routers.model import router as model_router
 from app.routers.overview import router as overview_router
 from app.routers.paper import router as paper_router
+from app.routers.pre_explosion import router as pre_explosion_router
 from app.routers.status import router as status_router
 from app.services.auto_pipeline import start_auto_pipeline_scheduler, stop_auto_pipeline_scheduler
 from app.services.fei_db_sync import start_fei_db_sync_scheduler, stop_fei_db_sync_scheduler
@@ -114,6 +115,7 @@ app.include_router(model_router)
 app.include_router(overview_router)
 app.include_router(paper_router)
 app.include_router(control_router)
+app.include_router(pre_explosion_router)
 
 
 @app.get("/")
@@ -145,6 +147,7 @@ def root() -> dict[str, object]:
             "PUT /api/fei-keywords-us/favorites",
             "/api/fei-selection",
             "PUT /api/fei-selection/favorites",
+            "/api/pre-explosion",
             "/api/fei-selection-us",
             "PUT /api/fei-selection-us/favorites",
             "/api/admin/settings",

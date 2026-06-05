@@ -172,14 +172,14 @@ def get_settings() -> Settings:
         paper_trading_top_k=max(_int_env("PAPER_TRADING_TOP_K", 5), 1),
         paper_trading_min_score=_float_env("PAPER_TRADING_MIN_SCORE", 0.5),
         paper_trading_lot_size=max(_int_env("PAPER_TRADING_LOT_SIZE", 100), 1),
-        paper_trading_cash_buffer_pct=max(min(_float_env("PAPER_TRADING_CASH_BUFFER_PCT", 0.02), 0.95), 0.0),
+        paper_trading_cash_buffer_pct=max(min(_float_env("PAPER_TRADING_CASH_BUFFER_PCT", 0.05), 0.95), 0.0),
         paper_trading_buy_limit_bps=max(_float_env("PAPER_TRADING_BUY_LIMIT_BPS", 50.0), 0.0),
         paper_trading_sell_limit_bps=max(_float_env("PAPER_TRADING_SELL_LIMIT_BPS", 50.0), 0.0),
         paper_trading_budget_total=_optional_float_env("PAPER_TRADING_BUDGET_TOTAL"),
         paper_trading_interval_seconds=max(_int_env("PAPER_TRADING_INTERVAL_SECONDS", 300), 30),
         paper_trading_max_buy_order_qty=max(
-            _int_env("PAPER_TRADING_MAX_BUY_ORDER_QTY", _int_env("PAPER_TRADING_MAX_ORDER_QTY", 1000)),
-            1,
+            _int_env("PAPER_TRADING_MAX_BUY_ORDER_QTY", _int_env("PAPER_TRADING_MAX_ORDER_QTY", 0)),
+            0,
         ),
         paper_trading_max_sell_order_qty=max(
             _int_env("PAPER_TRADING_MAX_SELL_ORDER_QTY", _int_env("PAPER_TRADING_MAX_ORDER_QTY", 1000)),

@@ -440,9 +440,22 @@ export type PaperStockDetail = {
 
 export type PaperStockLedger = {
   symbol: string;
+  display_symbol?: string | null;
+  name?: string | null;
   rows: number;
   ledger: Array<Record<string, unknown>>;
   daily: Array<Record<string, unknown>>;
+  error?: string | null;
+};
+
+export type PaperStockSelectionHistory = {
+  symbol: string;
+  display_symbol?: string | null;
+  name?: string | null;
+  rows: number;
+  latest_event?: Record<string, unknown> | null;
+  events: Array<Record<string, unknown>>;
+  latest_score?: Record<string, unknown> | null;
   error?: string | null;
 };
 
@@ -747,6 +760,10 @@ export function getPaperDbStock(symbol: string, timeoutMs?: number) {
 
 export function getPaperDbStockLedger(symbol: string, limit = 1000, timeoutMs?: number) {
   return fetchJson<PaperStockLedger>(`/api/paper/db/stocks/${encodeURIComponent(symbol)}/ledger?limit=${limit}`, { timeoutMs });
+}
+
+export function getPaperDbStockSelectionHistory(symbol: string, timeoutMs?: number) {
+  return fetchJson<PaperStockSelectionHistory>(`/api/paper/db/stocks/${encodeURIComponent(symbol)}/selection-history`, { timeoutMs });
 }
 
 export function getPaperDailyHistory(limit = 20, timeoutMs?: number) {

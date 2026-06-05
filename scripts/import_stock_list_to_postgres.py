@@ -65,10 +65,10 @@ insert into stock_master (
 )
 on conflict (code, exchange) do update set
   name = excluded.name,
-  industry_code = excluded.industry_code,
-  industry_name = excluded.industry_name,
-  industry_short_name = excluded.industry_short_name,
-  industry_classification = excluded.industry_classification,
+  industry_code = coalesce(excluded.industry_code, stock_master.industry_code),
+  industry_name = coalesce(excluded.industry_name, stock_master.industry_name),
+  industry_short_name = coalesce(excluded.industry_short_name, stock_master.industry_short_name),
+  industry_classification = coalesce(excluded.industry_classification, stock_master.industry_classification),
   update_date = excluded.update_date,
   trade_date = excluded.trade_date,
   universe = excluded.universe,

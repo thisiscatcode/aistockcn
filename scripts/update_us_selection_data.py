@@ -97,7 +97,7 @@ def parse_date(value: str | None) -> date | None:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
     tmp_path.replace(path)
 
@@ -600,6 +600,7 @@ def update_prices(conn: Any, args: argparse.Namespace, status_path: Path, log_fi
         sleep_seconds=args.price_batch_sleep_seconds,
         worker=lambda symbol: update_one_price(conn, symbol, target_date, api_key),
         target_date=target_date,
+        checkpoint_path=Path(args.checkpoint_file),
     )
 
 
@@ -650,6 +651,7 @@ def update_average_trade(conn: Any, args: argparse.Namespace, status_path: Path,
         sleep_seconds=args.massive_batch_sleep_seconds,
         worker=lambda symbol: update_one_average(conn, symbol, target_date, api_key),
         target_date=target_date,
+        checkpoint_path=Path(args.checkpoint_file),
     )
 
 
@@ -715,6 +717,7 @@ def update_details(conn: Any, args: argparse.Namespace, status_path: Path, log_f
         sleep_seconds=args.details_sleep_seconds,
         worker=lambda symbol: update_one_detail(conn, symbol, api_key=api_key or None, log_file=log_file),
         target_date=None,
+        checkpoint_path=Path(args.checkpoint_file),
     )
 
 
@@ -823,6 +826,7 @@ def process_symbol_batches(
     sleep_seconds: float,
     worker: Any,
     target_date: date | None,
+    checkpoint_path: Path,
 ) -> dict[str, Any]:
     done = 0
     failed = 0
@@ -857,7 +861,7 @@ def process_symbol_batches(
             append_log(log_file, last_error)
 
         write_json(
-            Path(CHECKPOINT_DEFAULT),
+            checkpoint_path,
             {
                 "updated_at": now_iso(),
                 "stage": stage,

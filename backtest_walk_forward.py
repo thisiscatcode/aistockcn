@@ -16,13 +16,28 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from train_lightgbm import build_category_mappings, build_feature_frame, choose_feature_columns, compute_metrics, load_frame
+from execution_model import (
+    DEFAULT_EXECUTION_MODEL,
+    REALISTIC_BACKTEST_METHOD_VERSION,
+    ExecutionModel,
+    buy_liquidity_skip_reason,
+    execution_model_snapshot,
+    liquidity_cap_notional,
+    near_price_limit,
+    previous_close_from_row,
+    slippage_price,
+    to_float,
+)
 from trading_fees import DEFAULT_FEE_MODEL, FeeModel, transaction_fee
 
 
 DEFAULT_TRAIN_PATH = "quant_data/ml_features_ready.parquet"
 DEFAULT_OUTPUT_DIR = "quant_data/backtests"
-BACKTEST_METHOD_VERSION = "purged_label_horizon_costs_v2"
+BACKTEST_METHOD_VERSION = REALISTIC_BACKTEST_METHOD_VERSION
 DEFAULT_BACKTEST_INITIAL_CAPITAL = 1_000_000.0
+DEFAULT_BACKTEST_CASH_BUFFER_PCT = 0.05
+DEFAULT_BACKTEST_LOT_SIZE = 100
+DEFAULT_BACKTEST_MAX_BUY_ORDER_QTY = 0
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,6 +54,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--label-horizon", type=int, default=0, help="Optional label horizon metadata for this run.")
     parser.add_argument("--label-threshold", type=float, default=0.0, help="Optional label threshold metadata for this run.")
     parser.add_argument("--initial-capital", type=float, default=DEFAULT_BACKTEST_INITIAL_CAPITAL, help="RMB capital base used to estimate fixed trading fees.")
+    parser.add_argument("--budget-total", type=float, default=None, help="Optional RMB budget cap for realistic execution simulation.")
+    parser.add_argument("--cash-buffer-pct", type=float, default=DEFAULT_BACKTEST_CASH_BUFFER_PCT)
+    parser.add_argument("--lot-size", type=int, default=DEFAULT_BACKTEST_LOT_SIZE)
+    parser.add_argument("--max-buy-order-qty", type=int, default=DEFAULT_BACKTEST_MAX_BUY_ORDER_QTY, help="Optional max buy quantity per order. 0 disables the cap.")
     parser.add_argument("--commission-rate", type=float, default=DEFAULT_FEE_MODEL.commission_rate)
     parser.add_argument("--min-commission", type=float, default=DEFAULT_FEE_MODEL.min_commission)
     parser.add_argument("--platform-fee", type=float, default=DEFAULT_FEE_MODEL.platform_fee)
@@ -57,6 +76,7 @@ def build_model_params(*, scale_pos_weight: float) -> dict[str, object]:
         "num_threads": 1,
         "random_state": 42,
         "scale_pos_weight": scale_pos_weight,
+        "verbosity": -1,
     }
 
 
@@ -124,6 +144,65 @@ def estimate_rebalance_fees(
     }
 
 
+def round_lot(quantity: int, lot_size: int) -> int:
+    lots = max(int(quantity), 0) // max(int(lot_size), 1)
+    return lots * max(int(lot_size), 1)
+
+
+def affordable_lot_quantity(*, cash: float, price: float, lot_size: int, fee_model: FeeModel) -> int:
+    if cash <= 0 or price <= 0:
+        return 0
+    lot = max(int(lot_size), 1)
+    low = 0
+    high = int(cash / price) // lot
+    affordable = 0
+    while low <= high:
+        mid = (low + high) // 2
+        quantity = mid * lot
+        notional = quantity * price
+        total_cost = notional + transaction_fee("BUY", notional, fee_model)
+        if total_cost <= cash:
+            affordable = quantity
+            low = mid + 1
+        else:
+            high = mid - 1
+    return affordable
+
+
+def apply_optional_quantity_cap(quantity: int, max_quantity: int | None) -> int:
+    normalized = int(max(quantity, 0))
+    if normalized <= 0:
+        return 0
+    cap = int(max_quantity or 0)
+    if cap <= 0:
+        return normalized
+    return min(normalized, cap)
+
+
+def row_price(row: dict[str, object] | None, *, column: str, fallback: float = 0.0) -> float:
+    if not row:
+        return fallback
+    value = to_float(row.get(column))
+    return value if value > 0 else fallback
+
+
+def mark_to_market(
+    *,
+    cash: float,
+    positions: dict[str, int],
+    rows_by_code: dict[str, dict[str, object]],
+    fallback_prices: dict[str, float],
+    price_column: str,
+) -> float:
+    total = float(cash)
+    for symbol, quantity in positions.items():
+        if quantity <= 0:
+            continue
+        price = row_price(rows_by_code.get(symbol), column=price_column, fallback=fallback_prices.get(symbol, 0.0))
+        total += int(quantity) * max(price, 0.0)
+    return float(total)
+
+
 class IncrementalParquetWriter:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -155,6 +234,11 @@ def main() -> int:
         sell_stamp_duty_rate=max(float(args.sell_stamp_duty_rate), 0.0),
     )
     initial_capital = max(float(args.initial_capital), 1.0)
+    budget_total = max(float(args.budget_total), 1.0) if args.budget_total is not None else None
+    cash_buffer_pct = max(min(float(args.cash_buffer_pct), 0.95), 0.0)
+    lot_size = max(int(args.lot_size), 1)
+    max_buy_order_qty = max(int(args.max_buy_order_qty), 0)
+    execution_model: ExecutionModel = DEFAULT_EXECUTION_MODEL
     train_path = Path(args.train_path)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -177,9 +261,18 @@ def main() -> int:
     meta_cols = [col for col in ["date", "code", "name", "industry"] if col in df.columns]
     prediction_cols = meta_cols + ["label", "future_return", "score"]
     trade_cols = ["rebalance_date"] + [col for col in ["code", "name", "industry"] if col in df.columns] + [
+        "action",
         "score",
+        "execution_date",
+        "execution_price",
+        "execution_quantity",
+        "execution_notional",
+        "execution_fee",
+        "skip_reason",
         "future_return",
         "label",
+        "amount",
+        "liquidity_cap_notional",
         "estimated_buy_notional",
         "estimated_buy_fee",
     ]
@@ -208,14 +301,28 @@ def main() -> int:
 
     model: lgb.Booster | None = None
     rebalance_counter = 0
-    equity_value = 1.0
-    previous_symbols: set[str] = set()
+    cash = budget_total if budget_total is not None else initial_capital
+    starting_capital = cash
+    positions: dict[str, int] = {}
+    fallback_prices: dict[str, float] = {}
+    previous_equity = cash
     total_fee_paid = 0.0
     try:
         for rebalance_date in rebalance_dates:
+            rebalance_position = unique_dates.get_loc(rebalance_date)
+            if isinstance(rebalance_position, slice) or not isinstance(rebalance_position, (int, np.integer)):
+                continue
+            execution_position = int(rebalance_position) + 1
+            if execution_position >= len(unique_dates):
+                continue
+            execution_date = unique_dates[execution_position]
             test_start = int(date_values.searchsorted(rebalance_date, side="left"))
             test_end = int(date_values.searchsorted(rebalance_date, side="right"))
+            execution_start = int(date_values.searchsorted(execution_date, side="left"))
+            execution_end = int(date_values.searchsorted(execution_date, side="right"))
             if test_start <= 0 or test_end <= test_start:
+                continue
+            if execution_start <= 0 or execution_end <= execution_start:
                 continue
 
             if model is None or rebalance_counter % args.retrain_every == 0:
@@ -269,45 +376,268 @@ def main() -> int:
             metric_score_chunks.append(score_values.copy())
 
             picks = scored.nlargest(args.top_k, "score").copy()
-            portfolio_return_gross = float(picks["future_return"].mean()) if not picks.empty else 0.0
-            next_symbols = set(picks["code"].astype(str)) if "code" in picks.columns else set()
-            portfolio_value_before_fees = equity_value * initial_capital
-            fee_estimate = estimate_rebalance_fees(
-                previous_symbols=previous_symbols,
-                next_symbols=next_symbols,
-                portfolio_value=portfolio_value_before_fees,
-                fee_model=fee_model,
+            execution_slice = df.iloc[execution_start:execution_end]
+            execution_rows_by_code = {str(row["code"]): row for row in execution_slice.to_dict(orient="records")}
+            signal_rows_by_code = {str(row["code"]): row for row in test_slice.to_dict(orient="records")}
+            pre_trade_equity = mark_to_market(
+                cash=cash,
+                positions=positions,
+                rows_by_code=execution_rows_by_code,
+                fallback_prices=fallback_prices,
+                price_column="open",
             )
-            trading_fee = float(fee_estimate["total_fee"])
-            total_fee_paid += trading_fee
-            fee_return = trading_fee / portfolio_value_before_fees if portfolio_value_before_fees > 0 else 0.0
-            portfolio_return_net = (1.0 - fee_return) * (1.0 + portfolio_return_gross) - 1.0
-            equity_value *= 1.0 + portfolio_return_net
+            capital_base = min(pre_trade_equity, budget_total) if budget_total is not None else pre_trade_equity
+            investable_capital = max(capital_base * (1.0 - cash_buffer_pct), 0.0)
+            target_count = int(len(picks))
+            target_value = investable_capital / target_count if target_count else 0.0
+            target_qty_by_symbol: dict[str, int] = {}
+            trade_rows: list[dict[str, object]] = []
+            buy_fee = 0.0
+            sell_fee = 0.0
+            buy_count = 0
+            sell_count = 0
+            skip_count = 0
+
+            for _, pick in picks.iterrows():
+                symbol = str(pick.get("code"))
+                execution_row = execution_rows_by_code.get(symbol)
+                buy_base_price = row_price(execution_row, column="open")
+                buy_price = slippage_price(buy_base_price, "BUY", execution_model)
+                desired_quantity = round_lot(int(target_value / buy_price) if buy_price > 0 else 0, lot_size)
+                target_qty_by_symbol[symbol] = apply_optional_quantity_cap(desired_quantity, max_buy_order_qty)
+
+            for symbol in sorted(list(positions)):
+                current_qty = int(positions.get(symbol, 0))
+                desired_qty = int(target_qty_by_symbol.get(symbol, 0))
+                sell_qty = max(current_qty - desired_qty, 0)
+                if sell_qty <= 0:
+                    continue
+                execution_row = execution_rows_by_code.get(symbol)
+                sell_base_price = row_price(execution_row, column="open", fallback=fallback_prices.get(symbol, 0.0))
+                sell_price = slippage_price(sell_base_price, "SELL", execution_model)
+                skip_reason = None
+                if execution_row is None or sell_price <= 0:
+                    skip_reason = "SKIP_NO_REFERENCE_DATA"
+                elif near_price_limit(
+                    side="SELL",
+                    price=sell_base_price,
+                    previous_close=previous_close_from_row(execution_row),
+                    symbol=symbol,
+                    name=execution_row.get("name"),
+                    model=execution_model,
+                ):
+                    skip_reason = "SKIP_LIMIT_DOWN"
+                if skip_reason is not None:
+                    skip_count += 1
+                    trade_rows.append(
+                        {
+                            "rebalance_date": rebalance_date,
+                            "execution_date": execution_date,
+                            "code": symbol,
+                            "name": execution_row.get("name") if execution_row else None,
+                            "industry": execution_row.get("industry") if execution_row else None,
+                            "action": "SELL",
+                            "score": None,
+                            "execution_price": sell_price,
+                            "execution_quantity": 0,
+                            "execution_notional": 0.0,
+                            "execution_fee": 0.0,
+                            "skip_reason": skip_reason,
+                            "future_return": None,
+                            "label": None,
+                            "amount": execution_row.get("amount") if execution_row else None,
+                            "liquidity_cap_notional": liquidity_cap_notional(execution_row.get("amount"), execution_model) if execution_row else None,
+                            "estimated_buy_notional": 0.0,
+                            "estimated_buy_fee": 0.0,
+                        }
+                    )
+                    continue
+                notional = sell_qty * sell_price
+                fee = transaction_fee("SELL", notional, fee_model)
+                cash += max(notional - fee, 0.0)
+                positions[symbol] = current_qty - sell_qty
+                if positions[symbol] <= 0:
+                    positions.pop(symbol, None)
+                fallback_prices[symbol] = sell_price
+                sell_fee += fee
+                sell_count += 1
+                total_fee_paid += fee
+                trade_rows.append(
+                    {
+                        "rebalance_date": rebalance_date,
+                        "execution_date": execution_date,
+                        "code": symbol,
+                        "name": execution_row.get("name") if execution_row else None,
+                        "industry": execution_row.get("industry") if execution_row else None,
+                        "action": "SELL",
+                        "score": None,
+                        "execution_price": sell_price,
+                        "execution_quantity": sell_qty,
+                        "execution_notional": notional,
+                        "execution_fee": fee,
+                        "skip_reason": None,
+                        "future_return": None,
+                        "label": None,
+                        "amount": execution_row.get("amount") if execution_row else None,
+                        "liquidity_cap_notional": liquidity_cap_notional(execution_row.get("amount"), execution_model) if execution_row else None,
+                        "estimated_buy_notional": 0.0,
+                        "estimated_buy_fee": 0.0,
+                    }
+                )
+
+            for _, pick in picks.iterrows():
+                symbol = str(pick.get("code"))
+                desired_qty = int(target_qty_by_symbol.get(symbol, 0))
+                current_qty = int(positions.get(symbol, 0))
+                buy_qty = apply_optional_quantity_cap(max(desired_qty - current_qty, 0), max_buy_order_qty)
+                if buy_qty <= 0:
+                    continue
+                execution_row = execution_rows_by_code.get(symbol)
+                signal_row = signal_rows_by_code.get(symbol, {})
+                buy_base_price = row_price(execution_row, column="open")
+                buy_price = slippage_price(buy_base_price, "BUY", execution_model)
+                buy_qty = round_lot(buy_qty, lot_size)
+                notional = buy_qty * buy_price
+                skip_reason = None
+                if execution_row is None or buy_price <= 0:
+                    skip_reason = "SKIP_NO_REFERENCE_DATA"
+                elif near_price_limit(
+                    side="BUY",
+                    price=buy_base_price,
+                    previous_close=previous_close_from_row(execution_row),
+                    symbol=symbol,
+                    name=pick.get("name"),
+                    model=execution_model,
+                ):
+                    skip_reason = "SKIP_LIMIT_UP"
+                else:
+                    skip_reason = buy_liquidity_skip_reason(
+                        amount=signal_row.get("amount"),
+                        order_notional=notional,
+                        model=execution_model,
+                    )
+                if skip_reason is None:
+                    affordable_qty = affordable_lot_quantity(cash=cash, price=buy_price, lot_size=lot_size, fee_model=fee_model)
+                    buy_qty = min(buy_qty, affordable_qty)
+                    notional = buy_qty * buy_price
+                    if buy_qty <= 0:
+                        skip_reason = "SKIP_NO_CASH"
+                if skip_reason is not None:
+                    skip_count += 1
+                    trade_rows.append(
+                        {
+                            "rebalance_date": rebalance_date,
+                            "execution_date": execution_date,
+                            "code": symbol,
+                            "name": pick.get("name"),
+                            "industry": pick.get("industry"),
+                            "action": "BUY",
+                            "score": pick.get("score"),
+                            "execution_price": buy_price,
+                            "execution_quantity": 0,
+                            "execution_notional": 0.0,
+                            "execution_fee": 0.0,
+                            "skip_reason": skip_reason,
+                            "future_return": pick.get("future_return"),
+                            "label": pick.get("label"),
+                            "amount": signal_row.get("amount"),
+                            "liquidity_cap_notional": liquidity_cap_notional(signal_row.get("amount"), execution_model),
+                            "estimated_buy_notional": notional,
+                            "estimated_buy_fee": transaction_fee("BUY", notional, fee_model) if notional > 0 else 0.0,
+                        }
+                    )
+                    continue
+                fee = transaction_fee("BUY", notional, fee_model)
+                cash -= notional + fee
+                positions[symbol] = current_qty + buy_qty
+                fallback_prices[symbol] = buy_price
+                buy_fee += fee
+                buy_count += 1
+                total_fee_paid += fee
+                trade_rows.append(
+                    {
+                        "rebalance_date": rebalance_date,
+                        "execution_date": execution_date,
+                        "code": symbol,
+                        "name": pick.get("name"),
+                        "industry": pick.get("industry"),
+                        "action": "BUY",
+                        "score": pick.get("score"),
+                        "execution_price": buy_price,
+                        "execution_quantity": buy_qty,
+                        "execution_notional": notional,
+                        "execution_fee": fee,
+                        "skip_reason": None,
+                        "future_return": pick.get("future_return"),
+                        "label": pick.get("label"),
+                        "amount": signal_row.get("amount"),
+                        "liquidity_cap_notional": liquidity_cap_notional(signal_row.get("amount"), execution_model),
+                        "estimated_buy_notional": notional,
+                        "estimated_buy_fee": fee,
+                    }
+                )
+
+            end_equity_actual = mark_to_market(
+                cash=cash,
+                positions=positions,
+                rows_by_code=execution_rows_by_code,
+                fallback_prices=fallback_prices,
+                price_column="close",
+            )
+            for symbol, row in execution_rows_by_code.items():
+                close_price = row_price(row, column="close")
+                if close_price > 0:
+                    fallback_prices[symbol] = close_price
+            portfolio_return_net = end_equity_actual / previous_equity - 1.0 if previous_equity > 0 else 0.0
+            trading_fee = buy_fee + sell_fee
+            fee_return = trading_fee / max(pre_trade_equity, 1.0)
+            gross_return = portfolio_return_net + fee_return
+            previous_equity = end_equity_actual
 
             equity_rows.append(
                 {
                     "rebalance_date": rebalance_date,
+                    "execution_date": execution_date,
                     "portfolio_return": portfolio_return_net,
-                    "gross_portfolio_return": portfolio_return_gross,
+                    "gross_portfolio_return": gross_return,
                     "fee_return": fee_return,
                     "trading_fee": trading_fee,
-                    "buy_fee": float(fee_estimate["buy_fee"]),
-                    "sell_fee": float(fee_estimate["sell_fee"]),
-                    "buy_count": int(fee_estimate["buy_count"]),
-                    "sell_count": int(fee_estimate["sell_count"]),
-                    "equity": equity_value,
+                    "buy_fee": buy_fee,
+                    "sell_fee": sell_fee,
+                    "buy_count": buy_count,
+                    "sell_count": sell_count,
+                    "cash": cash,
+                    "market_value": max(end_equity_actual - cash, 0.0),
+                    "equity": end_equity_actual / starting_capital,
+                    "equity_value": end_equity_actual,
                     "num_picks": int(len(picks)),
+                    "skip_count": skip_count,
+                    "position_count": int(sum(1 for quantity in positions.values() if quantity > 0)),
                 }
             )
 
-            if not picks.empty:
-                picks.insert(0, "rebalance_date", rebalance_date)
-                new_symbols = next_symbols - previous_symbols
-                buy_notional = portfolio_value_before_fees / max(len(next_symbols), 1)
-                picks["estimated_buy_notional"] = picks["code"].astype(str).apply(lambda code: buy_notional if code in new_symbols else 0.0)
-                picks["estimated_buy_fee"] = picks["estimated_buy_notional"].apply(lambda value: transaction_fee("BUY", value, fee_model))
-                trade_log_writer.write(picks.loc[:, trade_cols].copy())
-            previous_symbols = next_symbols
+            if trade_rows:
+                trade_df = pd.DataFrame(trade_rows).loc[:, trade_cols].copy()
+                for column in ["code", "name", "industry", "action", "skip_reason"]:
+                    if column in trade_df.columns:
+                        trade_df[column] = trade_df[column].fillna("").astype("string")
+                for column in [
+                    "score",
+                    "execution_price",
+                    "execution_notional",
+                    "execution_fee",
+                    "future_return",
+                    "label",
+                    "amount",
+                    "liquidity_cap_notional",
+                    "estimated_buy_notional",
+                    "estimated_buy_fee",
+                ]:
+                    if column in trade_df.columns:
+                        trade_df[column] = pd.to_numeric(trade_df[column], errors="coerce").astype("float64")
+                if "execution_quantity" in trade_df.columns:
+                    trade_df["execution_quantity"] = pd.to_numeric(trade_df["execution_quantity"], errors="coerce").fillna(0).astype("int64")
+                trade_log_writer.write(trade_df)
 
             rebalance_counter += 1
             del test_slice
@@ -344,9 +674,15 @@ def main() -> int:
         "label_threshold": args.label_threshold if args.label_threshold > 0 else None,
         "method_version": BACKTEST_METHOD_VERSION,
         "purge_days": int(max(args.label_horizon, 0)),
-        "execution_assumption": "Research-only close-to-close return simulation with label-horizon purge; includes estimated A-share transaction fees, excludes slippage, limit-up/limit-down fill constraints, and liquidity constraints.",
+        "execution_assumption": "Realistic T+1 open-proxy execution simulation with conservative slippage, fees, target-value lot sizing, cash buffer, optional max buy quantity cap, liquidity caps, and price-limit skip rules.",
         "train_path": str(train_path),
         "initial_capital": initial_capital,
+        "starting_capital": starting_capital,
+        "budget_total": budget_total,
+        "cash_buffer_pct": cash_buffer_pct,
+        "lot_size": lot_size,
+        "max_buy_order_qty": max_buy_order_qty,
+        "execution_model": execution_model_snapshot(execution_model),
         "fee_model": {
             "commission_rate": fee_model.commission_rate,
             "min_commission": fee_model.min_commission,
@@ -370,6 +706,9 @@ def main() -> int:
         "portfolio_avg_gross_return": float(equity_df["gross_portfolio_return"].mean()),
         "total_trading_fee": total_fee_paid,
         "avg_fee_return": float(equity_df["fee_return"].mean()),
+        "total_skip_count": int(equity_df.get("skip_count", pd.Series(dtype="int64")).sum()),
+        "final_cash": float(equity_df["cash"].iloc[-1]) if "cash" in equity_df.columns else None,
+        "final_market_value": float(equity_df["market_value"].iloc[-1]) if "market_value" in equity_df.columns else None,
         "portfolio_std_return": float(equity_df["portfolio_return"].std(ddof=0)),
         "backtest_start": str(pd.to_datetime(equity_df["rebalance_date"].min()).date()),
         "backtest_end": str(pd.to_datetime(equity_df["rebalance_date"].max()).date()),

@@ -139,12 +139,28 @@ def publish_daily_valuation_reference(data_dir: Path) -> dict[str, int]:
     }
 
 
-def sync_stock_master_attributes(data_dir: Path) -> None:
+def upsert_stock_master(data_dir: Path, *, database_url: str) -> None:
+    root_dir = Path(__file__).resolve().parent
+    command = [
+        sys.executable,
+        str(root_dir / "scripts" / "import_stock_list_to_postgres.py"),
+        "--stock-list",
+        str(data_dir / dl.STOCK_LIST_FILENAME),
+        "--database-url",
+        database_url,
+    ]
+    completed = subprocess.run(command, check=False, cwd=root_dir)
+    if completed.returncode != 0:
+        raise RuntimeError(f"stock_master stock-list upsert failed with exit code {completed.returncode}.")
+
+
+def run_fei_stock_attributes(data_dir: Path) -> None:
     database_url = os.getenv("APP_DB_URL") or os.getenv("PAPER_DB_URL")
     if not database_url:
-        raise RuntimeError("APP_DB_URL or PAPER_DB_URL is required to sync stock_master after reference refresh.")
+        raise RuntimeError("APP_DB_URL or PAPER_DB_URL is required to run Fei stock attributes after reference refresh.")
 
     root_dir = Path(__file__).resolve().parent
+    upsert_stock_master(data_dir, database_url=database_url)
     command = [
         sys.executable,
         str(root_dir / "scripts" / "import_stock_master_attributes.py"),
@@ -154,25 +170,27 @@ def sync_stock_master_attributes(data_dir: Path) -> None:
         str(data_dir / dl.STOCK_LIST_FILENAME),
         "--database-url",
         database_url,
-        "--skip-eps",
+        "--sleep",
+        os.getenv("FEI_STOCK_ATTRIBUTES_SLEEP", "3"),
         "--status-file",
-        "run/reference_stock_master_sync_status.json",
+        "run/fei_stock_attributes_status.json",
         "--checkpoint-file",
-        "run/reference_stock_master_sync_checkpoint.json",
+        "run/fei_stock_attributes_checkpoint.json",
     ]
     completed = subprocess.run(command, check=False, cwd=root_dir)
     if completed.returncode != 0:
-        raise RuntimeError(f"stock_master sync failed with exit code {completed.returncode}.")
+        raise RuntimeError(f"Fei stock attributes failed with exit code {completed.returncode}.")
 
 
 def publish_reference_outputs(data_dir: Path) -> dict[str, Any]:
     print("Publishing reference data into daily valuation parquet files...", flush=True)
     valuation_summary = publish_daily_valuation_reference(data_dir)
-    print("Syncing reference-derived stock_master attributes...", flush=True)
-    sync_stock_master_attributes(data_dir)
+    print("Running full Fei stock attributes sync...", flush=True)
+    run_fei_stock_attributes(data_dir)
     return {
         "daily_valuation": valuation_summary,
-        "stock_master_synced": True,
+        "stock_master_upserted": True,
+        "fei_stock_attributes_synced": True,
     }
 
 

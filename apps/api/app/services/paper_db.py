@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterator
+
+import pandas as pd
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json, to_jsonable
-from app.services.paper import _enrich_position_metadata
+from app.services.paper import _enrich_position_metadata, _stock_name_lookup
 
 try:
     import psycopg
@@ -49,6 +53,31 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _stock_meta(symbol: Any, settings: Settings) -> dict[str, str]:
+    normalized = _normalize_symbol(symbol)
+    if not normalized:
+        return {}
+    return _stock_name_lookup(settings).get(normalized, {})
+
+
+def _enrich_symbol_rows(rows: list[dict[str, Any]], settings: Settings) -> list[dict[str, Any]]:
+    lookup = _stock_name_lookup(settings)
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        symbol = _normalize_symbol(row.get("symbol") or row.get("code"))
+        meta = lookup.get(symbol, {})
+        enriched.append(
+            {
+                **row,
+                "symbol": symbol or row.get("symbol"),
+                "display_symbol": meta.get("display_symbol") or row.get("display_symbol") or _display_symbol(symbol, row.get("market") or settings.futu_gateway_market),
+                "name": row.get("name") or row.get("stock_name") or meta.get("name") or None,
+                "exchange": row.get("exchange") or meta.get("exchange") or row.get("market"),
+            }
+        )
+    return enriched
 
 
 def _deep_jsonable(value: Any) -> Any:
@@ -205,6 +234,7 @@ def get_paper_db_orders(
                 """,
                 params,
             )
+        rows = _enrich_symbol_rows(rows, settings)
         return {"rows": len(rows), "orders": records_to_json(rows), "error": None}
     except Exception as exc:
         return {"rows": 0, "orders": [], "error": str(exc)}
@@ -222,6 +252,7 @@ def get_paper_db_fills(
     try:
         with _connect(settings) as conn:
             rows = _fills(conn, settings, symbol=symbol, side=side, start_date=start_date, end_date=end_date, limit=limit)
+        rows = _enrich_symbol_rows(rows, settings)
         return {"rows": len(rows), "fills": records_to_json(rows), "error": None}
     except Exception as exc:
         return {"rows": 0, "fills": [], "error": str(exc)}
@@ -336,6 +367,358 @@ def build_symbol_ledger(fills: list[dict[str, Any]]) -> tuple[list[dict[str, Any
 
     daily_rows = sorted(daily.values(), key=lambda row: str(row.get("trade_date") or ""), reverse=True)
     return ledger, daily_rows
+
+
+def _safe_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    value = json.loads(text)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict):
+                    rows.append(value)
+    except OSError:
+        return []
+    return rows
+
+
+def _date_key(value: Any) -> str:
+    if value in (None, "", "NaT"):
+        return ""
+    try:
+        parsed = pd.to_datetime(value, errors="coerce")
+    except (TypeError, ValueError):
+        return str(value)[:10]
+    if pd.isna(parsed):
+        return str(value)[:10]
+    return str(pd.Timestamp(parsed).date())
+
+
+def _symbol_orders(row: dict[str, Any], symbol: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    placed = [order for order in row.get("placed_orders") or [] if _normalize_symbol(order.get("symbol")) == symbol]
+    skipped = [order for order in row.get("skipped_orders") or [] if _normalize_symbol(order.get("symbol")) == symbol]
+    cancelled = [order for order in row.get("cancelled_orders") or [] if _normalize_symbol(order.get("symbol")) == symbol]
+    return placed, skipped, cancelled
+
+
+def _target_snapshot_by_symbol(row: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows = row.get("target_snapshot")
+    if not isinstance(rows, list):
+        return {}
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        symbol = _normalize_symbol(item.get("code") or item.get("symbol"))
+        if symbol and symbol not in by_symbol:
+            by_symbol[symbol] = item
+    return by_symbol
+
+
+def _format_metric(value: Any, *, percent: bool = False) -> str | None:
+    number = _num(value)
+    if number == 0 and value in (None, "", "NaN"):
+        return None
+    if percent:
+        return f"{number * 100:.2f}%"
+    return f"{number:.4g}"
+
+
+def _snapshot_reason(snapshot: dict[str, Any], plan: dict[str, Any], rank: int | None) -> str:
+    parts = [
+        f"Included in paper target snapshot at rank {rank or snapshot.get('rank')} for {plan.get('profile_label') or plan.get('profile_name') or 'active model'}."
+    ]
+    score = _format_metric(snapshot.get("score"))
+    close = _format_metric(snapshot.get("close"))
+    if score:
+        parts.append(f"Model score {score}.")
+    if close:
+        parts.append(f"Signal close {close}.")
+    metric_bits: list[str] = []
+    for key, label, percent in [
+        ("bias_20", "20D bias", True),
+        ("pct_chg_5d", "5D change", True),
+        ("pct_chg_20d", "20D change", True),
+        ("close_to_high_20d", "distance to 20D high", True),
+        ("close_to_low_20d", "distance from 20D low", True),
+        ("turnover", "turnover", False),
+        ("turnover_ma5", "5D turnover avg", False),
+        ("amount", "amount", False),
+        ("pe_ttm", "PE TTM", False),
+        ("pb", "PB", False),
+    ]:
+        formatted = _format_metric(snapshot.get(key), percent=percent)
+        if formatted:
+            metric_bits.append(f"{label} {formatted}")
+    if metric_bits:
+        parts.append("Key stored features: " + "; ".join(metric_bits[:8]) + ".")
+    action = str(snapshot.get("action") or "").strip()
+    if action:
+        parts.append(f"Planner action {action}.")
+    return " ".join(parts)
+
+
+def _signal_snapshots(settings: Settings) -> list[dict[str, Any]]:
+    by_signal_date: dict[str, dict[str, Any]] = {}
+    for row in _safe_jsonl_rows(settings.paper_trading_history_path):
+        signal_date = _date_key(row.get("score_signal_date"))
+        plan = row.get("plan_summary") if isinstance(row.get("plan_summary"), dict) else None
+        if not signal_date or not plan:
+            continue
+        current = by_signal_date.get(signal_date)
+        if current is None:
+            by_signal_date[signal_date] = row
+            continue
+        current_orders = len(current.get("placed_orders") or []) + len(current.get("skipped_orders") or [])
+        row_orders = len(row.get("placed_orders") or []) + len(row.get("skipped_orders") or [])
+        current_success = str(current.get("status") or "").lower() == "success"
+        row_success = str(row.get("status") or "").lower() == "success"
+        if (row_success and not current_success) or (row_success == current_success and row_orders > current_orders):
+            by_signal_date[signal_date] = row
+    return [by_signal_date[key] for key in sorted(by_signal_date)]
+
+
+def _signal_snapshots_from_db(settings: Settings) -> list[dict[str, Any]]:
+    with _connect(settings) as conn:
+        rows = _query_rows(
+            conn,
+            """
+            with latest_runs as (
+              select
+                r.*,
+                row_number() over (
+                  partition by r.agent_id, r.market, r.score_signal_date
+                  order by r.recorded_at desc, r.id desc
+                ) as rn
+              from paper_rebalance_runs r
+              where r.agent_id = %s
+                and r.market = %s
+                and r.score_signal_date is not null
+            )
+            select
+              r.id,
+              r.score_signal_date::text as score_signal_date,
+              r.recorded_at,
+              r.status,
+              r.message,
+              r.plan_summary,
+              r.placed_orders,
+              r.skipped_orders,
+              r.cancelled_orders,
+              coalesce(
+                jsonb_agg(
+                  jsonb_build_object(
+                    'signal_date', t.score_signal_date::text,
+                    'rank', t.rank,
+                    'code', t.code,
+                    'exchange', t.exchange,
+                    'name', t.name,
+                    'industry', t.industry,
+                    'score', t.score,
+                    'open', t.open,
+                    'close', t.close,
+                    'amount', t.amount,
+                    'pct_chg', t.pct_chg,
+                    'pct_chg_5d', t.pct_chg_5d,
+                    'pct_chg_20d', t.pct_chg_20d,
+                    'turnover', t.turnover,
+                    'turnover_ma5', t.turnover_ma5,
+                    'volume_ma5', t.volume_ma5,
+                    'volatility_20d', t.volatility_20d,
+                    'bias_20', t.bias_20,
+                    'close_to_high_20d', t.close_to_high_20d,
+                    'close_to_low_20d', t.close_to_low_20d,
+                    'float_market_cap', t.float_market_cap,
+                    'pe_ttm', t.pe_ttm,
+                    'pb', t.pb,
+                    'target_weight', t.target_weight,
+                    'target_qty', t.target_qty,
+                    'current_qty', t.current_qty,
+                    'delta_qty', t.delta_qty,
+                    'buy_order_qty', t.buy_order_qty,
+                    'sell_order_qty', t.sell_order_qty,
+                    'action', t.action,
+                    'reason', t.reason,
+                    'estimated_order_notional', t.estimated_order_notional,
+                    'estimated_order_fee', t.estimated_order_fee,
+                    'sent_order_id', t.sent_order_id,
+                    'sent_status', t.sent_status,
+                    'sent_price', t.sent_price,
+                    'sent_error', t.sent_error
+                  )
+                  order by t.rank nulls last, t.score desc nulls last, t.code
+                ) filter (where t.id is not null),
+                '[]'::jsonb
+              ) as target_snapshot
+            from latest_runs r
+            left join paper_rebalance_targets t on t.run_id = r.id
+            where r.rn = 1
+            group by
+              r.id, r.score_signal_date, r.recorded_at, r.status, r.message,
+              r.plan_summary, r.placed_orders, r.skipped_orders, r.cancelled_orders
+            order by r.score_signal_date asc, r.recorded_at asc
+            """,
+            [settings.futu_gateway_agent_id, settings.futu_gateway_market],
+        )
+    return records_to_json(rows)
+
+
+def _selection_signal_snapshots(settings: Settings) -> tuple[list[dict[str, Any]], str, str | None]:
+    try:
+        snapshots = _signal_snapshots_from_db(settings)
+        if snapshots:
+            return snapshots, "postgres", None
+    except Exception as exc:
+        fallback = _signal_snapshots(settings)
+        return fallback, "jsonl_fallback", str(exc)
+    return _signal_snapshots(settings), "jsonl_fallback", None
+
+
+def _latest_score_row(symbol: str, settings: Settings) -> dict[str, Any] | None:
+    path = settings.models_dir / "inference_scores_latest.parquet"
+    if not path.exists():
+        return None
+    try:
+        frame = pd.read_parquet(path)
+    except Exception:
+        return None
+    if frame.empty or "code" not in frame.columns:
+        return None
+    frame = frame.copy()
+    frame["code"] = frame["code"].astype(str).str.zfill(6)
+    rows = frame[frame["code"].eq(symbol)]
+    if rows.empty:
+        return None
+    row = rows.sort_values("date").tail(1).to_dict(orient="records")[0]
+    return records_to_json([row])[0]
+
+
+def get_paper_db_stock_selection_history(symbol: str) -> dict[str, Any]:
+    settings = get_settings()
+    normalized_symbol = _normalize_symbol(symbol)
+    meta = _stock_meta(normalized_symbol, settings)
+    snapshots, source, source_error = _selection_signal_snapshots(settings)
+    latest_score = _latest_score_row(normalized_symbol, settings)
+    events: list[dict[str, Any]] = []
+    previous_on_list = False
+    streak = 0
+    last_rank: int | None = None
+    last_listed_date: str | None = None
+
+    for row in snapshots:
+        signal_date = _date_key(row.get("score_signal_date"))
+        plan = row.get("plan_summary") if isinstance(row.get("plan_summary"), dict) else {}
+        snapshot_by_symbol = _target_snapshot_by_symbol(row)
+        symbol_snapshot = snapshot_by_symbol.get(normalized_symbol)
+        targets = [_normalize_symbol(item) for item in plan.get("target_symbols") or []]
+        on_list = normalized_symbol in targets
+        rank = int(_num(symbol_snapshot.get("rank"))) if symbol_snapshot and _num(symbol_snapshot.get("rank")) > 0 else targets.index(normalized_symbol) + 1 if on_list else None
+        placed, skipped, cancelled = _symbol_orders(row, normalized_symbol)
+        orders = placed + skipped + cancelled
+        order_sides = sorted({str(order.get("side") or "").upper() for order in orders if str(order.get("side") or "").strip()})
+
+        if on_list:
+            streak = streak + 1 if previous_on_list else 1
+            event_type = "STILL_LISTED" if previous_on_list else "LISTED"
+            if symbol_snapshot:
+                reason = _snapshot_reason(symbol_snapshot, plan, rank)
+            else:
+                reason = (
+                    f"Included in paper target_symbols at rank {rank} for "
+                    f"{plan.get('profile_label') or plan.get('profile_name') or 'active model'}."
+                )
+            if not symbol_snapshot and latest_score and _date_key(latest_score.get("date")) == signal_date:
+                reason += f" Latest stored score {latest_score.get('score')} at close {latest_score.get('close')}."
+            elif not symbol_snapshot and "score" not in row:
+                reason += " Historical per-feature model reasons were not persisted for this date."
+            events.append(
+                {
+                    "signal_date": signal_date,
+                    "recorded_at": row.get("recorded_at"),
+                    "event": event_type,
+                    "event_label": "首次/重新上榜" if event_type == "LISTED" else "連續上榜",
+                    "status": "ON_LIST",
+                    "rank": rank,
+                    "previous_rank": last_rank,
+                    "streak": streak,
+                    "target_count": plan.get("target_count"),
+                    "profile_name": plan.get("profile_name"),
+                    "profile_label": plan.get("profile_label"),
+                    "rebalance_due": plan.get("rebalance_due"),
+                    "buy_order_count": plan.get("buy_order_count"),
+                    "sell_order_count": plan.get("sell_order_count"),
+                    "order_sides": order_sides,
+                    "placed_orders": records_to_json(placed),
+                    "skipped_orders": records_to_json(skipped),
+                    "target_snapshot": records_to_json([symbol_snapshot])[0] if symbol_snapshot else None,
+                    "score": (symbol_snapshot or {}).get("score"),
+                    "close": (symbol_snapshot or {}).get("close"),
+                    "bias_20": (symbol_snapshot or {}).get("bias_20"),
+                    "pct_chg_5d": (symbol_snapshot or {}).get("pct_chg_5d"),
+                    "pct_chg_20d": (symbol_snapshot or {}).get("pct_chg_20d"),
+                    "reason": reason,
+                    "target_symbols": targets,
+                }
+            )
+            last_rank = rank
+            last_listed_date = signal_date
+        elif previous_on_list:
+            streak = 0
+            reason = "Dropped because this signal date's paper target_symbols no longer included the stock."
+            if order_sides:
+                reason += f" Related paper order side(s): {', '.join(order_sides)}."
+            else:
+                reason += " No symbol-specific order was recorded in sync history for the drop event."
+            events.append(
+                {
+                    "signal_date": signal_date,
+                    "recorded_at": row.get("recorded_at"),
+                    "event": "DROPPED",
+                    "event_label": "下榜",
+                    "status": "OFF_LIST",
+                    "rank": None,
+                    "previous_rank": last_rank,
+                    "streak": 0,
+                    "last_listed_date": last_listed_date,
+                    "target_count": plan.get("target_count"),
+                    "profile_name": plan.get("profile_name"),
+                    "profile_label": plan.get("profile_label"),
+                    "rebalance_due": plan.get("rebalance_due"),
+                    "buy_order_count": plan.get("buy_order_count"),
+                    "sell_order_count": plan.get("sell_order_count"),
+                    "order_sides": order_sides,
+                    "placed_orders": records_to_json(placed),
+                    "skipped_orders": records_to_json(skipped),
+                    "target_snapshot": None,
+                    "reason": reason,
+                    "target_symbols": targets,
+                }
+            )
+            last_rank = None
+
+        previous_on_list = on_list
+
+    latest_event = events[-1] if events else None
+    return {
+        "symbol": normalized_symbol,
+        "display_symbol": meta.get("display_symbol") or _display_symbol(normalized_symbol, settings.futu_gateway_market),
+        "name": meta.get("name") or None,
+        "rows": len(events),
+        "latest_event": latest_event,
+        "events": records_to_json(list(reversed(events))),
+        "latest_score": latest_score,
+        "source": source,
+        "source_error": source_error,
+        "error": None,
+    }
 
 
 def _trade_date(fill: dict[str, Any]) -> str:
@@ -582,17 +965,20 @@ def get_paper_db_stock(symbol: str) -> dict[str, Any]:
         with _connect(settings) as conn:
             positions = [row for row in _position_rows(conn, settings, include_closed=True) if row.get("symbol") == normalized_symbol]
             position = positions[0] if positions else None
-            fills = _fills(conn, settings, symbol=normalized_symbol, limit=None, ascending=True)
+            fills = _enrich_symbol_rows(_fills(conn, settings, symbol=normalized_symbol, limit=None, ascending=True), settings)
             ledger, daily = build_symbol_ledger(fills)
             orders = get_paper_db_orders(symbol=normalized_symbol, limit=200)["orders"]
         latest = ledger[-1] if ledger else {}
+        meta = _stock_meta(normalized_symbol, settings)
         realized_pnl = _num(position.get("realized_pnl")) if position else _num(latest.get("cumulative_realized_pnl"))
         unrealized_pnl = _num(position.get("unrealized_pnl")) if position else 0.0
         quantity = _num(position.get("quantity")) if position else _num(latest.get("position_quantity_after"))
         avg_cost = _num(position.get("avg_cost")) if position else _num(latest.get("avg_cost_after"))
         summary = {
             "symbol": normalized_symbol,
-            "display_symbol": _display_symbol(normalized_symbol, settings.futu_gateway_market),
+            "display_symbol": meta.get("display_symbol") or _display_symbol(normalized_symbol, settings.futu_gateway_market),
+            "name": (position or {}).get("name") or meta.get("name") or None,
+            "exchange": (position or {}).get("exchange") or meta.get("exchange") or settings.futu_gateway_market,
             "quantity": quantity,
             "avg_cost": avg_cost,
             "diluted_cost": _diluted_cost(avg_cost, realized_pnl, quantity),
@@ -630,11 +1016,14 @@ def get_paper_db_stock_ledger(symbol: str, *, limit: int = 1000) -> dict[str, An
     normalized_symbol = _normalize_symbol(symbol)
     try:
         with _connect(settings) as conn:
-            fills = _fills(conn, settings, symbol=normalized_symbol, limit=None, ascending=True)
+            fills = _enrich_symbol_rows(_fills(conn, settings, symbol=normalized_symbol, limit=None, ascending=True), settings)
         ledger, daily = build_symbol_ledger(fills)
         visible = list(reversed(ledger))[:limit]
+        meta = _stock_meta(normalized_symbol, settings)
         return {
             "symbol": normalized_symbol,
+            "display_symbol": meta.get("display_symbol") or _display_symbol(normalized_symbol, settings.futu_gateway_market),
+            "name": meta.get("name") or None,
             "rows": len(ledger),
             "ledger": records_to_json(visible),
             "daily": records_to_json(daily),

@@ -139,7 +139,7 @@ def _write_log_stub(path: Path, lines: list[str]) -> None:
 
 def _redact_command_args(command: list[str]) -> list[str]:
     redacted: list[str] = []
-    secret_flags = {"--agent-key"}
+    secret_flags = {"--agent-key", "--paper-db-url"}
     skip_next = False
     for value in command:
         if skip_next:
@@ -182,6 +182,40 @@ def _paper_daemon_network() -> str | None:
     if "aistockcn_default" in network_names:
         return "aistockcn_default"
     return None
+
+
+def _paper_db_network() -> str | None:
+    configured = os.getenv("PAPER_DB_NETWORK", "").strip()
+    candidates = [configured] if configured else []
+    candidates.extend(["elearn_default", "aistockcn_paper-db"])
+    client = _docker_client()
+    if client is None:
+        return None
+    try:
+        network_names = {network.name for network in client.networks.list()}
+    except DockerException:
+        return None
+    for name in candidates:
+        if name and name in network_names:
+            return name
+    return None
+
+
+def _connect_container_to_network(container: Any, network_name: str | None) -> None:
+    if not network_name:
+        return
+    client = _docker_client()
+    if client is None:
+        return
+    try:
+        container.reload()
+        networks = container.attrs.get("NetworkSettings", {}).get("Networks", {})
+        if network_name in networks:
+            return
+        network = client.networks.get(network_name)
+        network.connect(container)
+    except DockerException:
+        return
 
 
 def _paper_command() -> list[str]:
@@ -254,15 +288,19 @@ def start_paper_trading_daemon() -> dict[str, Any]:
     log_file = settings.logs_dir / f"{PAPER_TRADING_LOG_PREFIX}_{timestamp}.log"
     command = _paper_command()
     network_name = _paper_daemon_network()
+    paper_db_network = _paper_db_network() if settings.paper_db_url else None
 
     try:
+        environment = {"TZ": "UTC"}
+        if settings.paper_db_url:
+            environment["PAPER_DB_URL"] = settings.paper_db_url
         container_kwargs: dict[str, Any] = {
             "command": command,
             "name": container_name,
             "detach": True,
             "entrypoint": "python",
             "working_dir": "/app",
-            "environment": {"TZ": "UTC"},
+            "environment": environment,
             "restart_policy": {"Name": "unless-stopped"},
             "volumes": {str(settings.host_project_root): {"bind": "/app", "mode": "rw"}},
         }
@@ -273,6 +311,7 @@ def start_paper_trading_daemon() -> dict[str, Any]:
             DATA_PREP_IMAGE,
             **container_kwargs,
         )
+        _connect_container_to_network(container, paper_db_network)
     except DockerException as exc:
         raise BatchControlError("start_failed", f"Failed to start paper-trading daemon: {exc}", status_code=500) from exc
 

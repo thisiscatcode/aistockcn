@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 import traceback
@@ -20,10 +21,28 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+try:
+    import psycopg
+    from psycopg.types.json import Jsonb
+except Exception:  # pragma: no cover - optional runtime dependency for DB persistence
+    psycopg = None
+    Jsonb = None
+
 from control_settings import (
     exclude_st_from_model_candidates,
     filter_model_candidate_rows,
     is_st_stock_name,
+)
+from execution_model import (
+    DEFAULT_EXECUTION_MODEL,
+    ExecutionModel,
+    buy_liquidity_skip_reason,
+    execution_model_snapshot,
+    execution_model_with_limit_bps,
+    liquidity_cap_notional,
+    marketable_limit_price,
+    near_price_limit,
+    previous_close_from_row,
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 
@@ -40,7 +59,7 @@ DEFAULT_AGENT_KEY_HEADER = "X-Agent-Key"
 DEFAULT_TOP_K = 5
 DEFAULT_MIN_SCORE = 0.5
 DEFAULT_LOT_SIZE = 100
-DEFAULT_CASH_BUFFER_PCT = 0.02
+DEFAULT_CASH_BUFFER_PCT = 0.05
 DEFAULT_MAX_ORDER_QTY = 1000
 ORDER_ATTEMPT_INTERVAL_SECONDS = 2.2
 SINA_QUOTE_URL = "https://hq.sinajs.cn/list={code}"
@@ -50,8 +69,6 @@ ACTIVE_TRADING_WINDOWS = (
     (dt_time(9, 35, 0), dt_time(11, 30, 0)),
     (dt_time(13, 0, 0), dt_time(14, 55, 0)),
 )
-MARKETABLE_BUY_MULTIPLIER = 1.01
-MARKETABLE_SELL_MULTIPLIER = 0.99
 
 TERMINAL_ORDER_STATUSES = {
     "CANCELLED",
@@ -211,11 +228,12 @@ def build_reference_price(base_price: float) -> float:
     return round_price(base_price)
 
 
-def build_marketable_limit_price(latest_price: float, side: str) -> float:
-    if latest_price <= 0:
-        return 0.0
-    multiplier = MARKETABLE_BUY_MULTIPLIER if side == "BUY" else MARKETABLE_SELL_MULTIPLIER
-    return round_price(latest_price * multiplier)
+def build_marketable_limit_price(
+    latest_price: float,
+    side: str,
+    execution_model: ExecutionModel = DEFAULT_EXECUTION_MODEL,
+) -> float:
+    return marketable_limit_price(latest_price, side, execution_model)
 
 
 def is_price_limit_error(message: str) -> bool:
@@ -491,6 +509,8 @@ class SyncConfig:
     sync_existing_orders: bool
     force: bool
     dry_run: bool
+    paper_db_url: str | None = None
+    execution_model: ExecutionModel = DEFAULT_EXECUTION_MODEL
 
 
 class GatewayError(RuntimeError):
@@ -599,8 +619,35 @@ class GatewayClient:
 
 
 def load_latest_scores(config: SyncConfig) -> tuple[pd.DataFrame, str, str]:
-    columns = ["date", "code", "exchange", "name", "industry", "score", "close"]
-    scores = pd.read_parquet(config.scores_path, columns=columns)
+    columns = [
+        "date",
+        "code",
+        "exchange",
+        "name",
+        "industry",
+        "score",
+        "open",
+        "close",
+        "amount",
+        "pct_chg",
+        "pct_chg_5d",
+        "pct_chg_20d",
+        "change",
+        "turnover",
+        "turnover_ma5",
+        "volume_ma5",
+        "volatility_20d",
+        "bias_20",
+        "close_to_high_20d",
+        "close_to_low_20d",
+        "float_market_cap",
+        "pe_ttm",
+        "pb",
+    ]
+    try:
+        scores = pd.read_parquet(config.scores_path, columns=columns)
+    except Exception:
+        scores = pd.read_parquet(config.scores_path)
     if scores.empty:
         raise RuntimeError("inference_scores_latest.parquet is empty")
     scores["date"] = pd.to_datetime(scores["date"], errors="coerce")
@@ -853,6 +900,16 @@ def compute_order_quantity(
     return lots * max(lot_size, 1)
 
 
+def apply_optional_quantity_cap(quantity: int, max_quantity: int | None) -> int:
+    normalized = int(max(quantity, 0))
+    if normalized <= 0:
+        return 0
+    cap = int(max_quantity or 0)
+    if cap <= 0:
+        return normalized
+    return min(normalized, cap)
+
+
 def estimate_order_fee(side: str, quantity: int, price: float) -> float:
     return transaction_fee(side, max(int(quantity), 0) * max(float(price), 0.0), DEFAULT_FEE_MODEL)
 
@@ -904,10 +961,13 @@ def build_plan(
         current = positions.get(symbol, {})
         current_qty = int(round(to_float(current.get("quantity"))))
         close_price = to_float(row["close"])
+        reference_amount = to_float(row.get("amount"))
+        previous_close = previous_close_from_row(row.to_dict())
         buy_price = build_reference_price(close_price)
         sell_price = build_reference_price(close_price)
         theoretical_qty = int(target_value / buy_price) if buy_price > 0 else 0
         target_qty = compute_order_quantity(side="BUY", raw_quantity=theoretical_qty, lot_size=config.lot_size)
+        liquidity_cap = liquidity_cap_notional(reference_amount, config.execution_model)
         plan_rows.append(
             {
                 "signal_date": normalize_date_text(row["date"]),
@@ -918,6 +978,24 @@ def build_plan(
                 "industry": str(row.get("industry") or ""),
                 "score": to_float(row.get("score")),
                 "close": close_price,
+                "open": to_float(row.get("open")),
+                "amount": reference_amount,
+                "pct_chg": to_float(row.get("pct_chg")),
+                "pct_chg_5d": to_float(row.get("pct_chg_5d")),
+                "pct_chg_20d": to_float(row.get("pct_chg_20d")),
+                "change": to_float(row.get("change")),
+                "turnover": to_float(row.get("turnover")),
+                "turnover_ma5": to_float(row.get("turnover_ma5")),
+                "volume_ma5": to_float(row.get("volume_ma5")),
+                "volatility_20d": to_float(row.get("volatility_20d")),
+                "bias_20": to_float(row.get("bias_20")),
+                "close_to_high_20d": to_float(row.get("close_to_high_20d")),
+                "close_to_low_20d": to_float(row.get("close_to_low_20d")),
+                "float_market_cap": to_float(row.get("float_market_cap")),
+                "pe_ttm": to_float(row.get("pe_ttm")),
+                "pb": to_float(row.get("pb")),
+                "previous_close": previous_close,
+                "liquidity_cap_notional": liquidity_cap,
                 "buy_limit_price": buy_price,
                 "sell_limit_price": sell_price,
                 "target_weight": 1.0 / target_count if target_count else 0.0,
@@ -953,6 +1031,24 @@ def build_plan(
                 "industry": "",
                 "score": None,
                 "close": base_price,
+                "open": None,
+                "amount": None,
+                "pct_chg": None,
+                "pct_chg_5d": None,
+                "pct_chg_20d": None,
+                "change": None,
+                "turnover": None,
+                "turnover_ma5": None,
+                "volume_ma5": None,
+                "volatility_20d": None,
+                "bias_20": None,
+                "close_to_high_20d": None,
+                "close_to_low_20d": None,
+                "float_market_cap": None,
+                "pe_ttm": None,
+                "pb": None,
+                "previous_close": None,
+                "liquidity_cap_notional": None,
                 "buy_limit_price": build_reference_price(base_price),
                 "sell_limit_price": build_reference_price(base_price),
                 "target_weight": 0.0,
@@ -1033,15 +1129,35 @@ def build_plan(
             price=price,
             lot_size=config.lot_size,
         )
-        actual_qty = min(buy_qty, affordable_qty, config.max_buy_order_qty)
+        actual_qty = min(apply_optional_quantity_cap(buy_qty, config.max_buy_order_qty), affordable_qty)
         if actual_qty <= 0:
             plan.at[index, "buy_order_qty"] = 0
             plan.at[index, "estimated_order_notional"] = 0.0
             plan.at[index, "estimated_order_fee"] = 0.0
             plan.at[index, "action"] = "SKIP_NO_CASH"
             continue
-        plan.at[index, "buy_order_qty"] = actual_qty
         order_notional = actual_qty * price
+        skip_reason = buy_liquidity_skip_reason(
+            amount=row.get("amount"),
+            order_notional=order_notional,
+            model=config.execution_model,
+        )
+        if skip_reason is None and near_price_limit(
+            side="BUY",
+            price=price,
+            previous_close=to_float(row.get("previous_close")),
+            symbol=row.get("code"),
+            name=row.get("name"),
+            model=config.execution_model,
+        ):
+            skip_reason = "SKIP_LIMIT_UP"
+        if skip_reason is not None:
+            plan.at[index, "buy_order_qty"] = 0
+            plan.at[index, "estimated_order_notional"] = 0.0
+            plan.at[index, "estimated_order_fee"] = 0.0
+            plan.at[index, "action"] = skip_reason
+            continue
+        plan.at[index, "buy_order_qty"] = actual_qty
         order_fee = transaction_fee("BUY", order_notional, DEFAULT_FEE_MODEL)
         plan.at[index, "estimated_order_notional"] = order_notional
         plan.at[index, "estimated_order_fee"] = order_fee
@@ -1072,6 +1188,7 @@ def build_plan(
             "tiny_fee_rate": DEFAULT_FEE_MODEL.tiny_fee_rate,
             "sell_stamp_duty_rate": DEFAULT_FEE_MODEL.sell_stamp_duty_rate,
         },
+        "execution_model": execution_model_snapshot(config.execution_model),
         "buy_capacity": buy_capacity(
             config,
             balance_metrics=balance_metrics,
@@ -1096,7 +1213,25 @@ def persist_targets(paths: dict[str, Path], plan: pd.DataFrame) -> None:
         "name",
         "industry",
         "score",
+        "open",
         "close",
+        "amount",
+        "pct_chg",
+        "pct_chg_5d",
+        "pct_chg_20d",
+        "change",
+        "turnover",
+        "turnover_ma5",
+        "volume_ma5",
+        "volatility_20d",
+        "bias_20",
+        "close_to_high_20d",
+        "close_to_low_20d",
+        "float_market_cap",
+        "pe_ttm",
+        "pb",
+        "previous_close",
+        "liquidity_cap_notional",
         "buy_limit_price",
         "sell_limit_price",
         "target_weight",
@@ -1146,6 +1281,371 @@ def persist_targets(paths: dict[str, Path], plan: pd.DataFrame) -> None:
         paths["targets"],
         index=False,
     )
+
+
+def target_snapshot_rows(plan: pd.DataFrame) -> list[dict[str, Any]]:
+    if plan.empty:
+        return []
+    columns = [
+        "signal_date",
+        "rank",
+        "code",
+        "exchange",
+        "name",
+        "industry",
+        "score",
+        "close",
+        "open",
+        "amount",
+        "pct_chg",
+        "pct_chg_5d",
+        "pct_chg_20d",
+        "turnover",
+        "turnover_ma5",
+        "volume_ma5",
+        "volatility_20d",
+        "bias_20",
+        "close_to_high_20d",
+        "close_to_low_20d",
+        "float_market_cap",
+        "pe_ttm",
+        "pb",
+        "target_weight",
+        "target_qty",
+        "current_qty",
+        "delta_qty",
+        "buy_order_qty",
+        "sell_order_qty",
+        "action",
+        "reason",
+        "estimated_order_notional",
+        "estimated_order_fee",
+        "sent_order_id",
+        "sent_status",
+        "sent_price",
+        "sent_error",
+    ]
+    available = [column for column in columns if column in plan.columns]
+    snapshot = plan.copy()
+    if "rank" in snapshot.columns:
+        ranked = pd.to_numeric(snapshot["rank"], errors="coerce").notna()
+        actionable = pd.Series(False, index=snapshot.index)
+        for column in ["current_qty", "delta_qty", "buy_order_qty", "sell_order_qty"]:
+            if column in snapshot.columns:
+                actionable |= pd.to_numeric(snapshot[column], errors="coerce").fillna(0).abs() > 0
+        snapshot = snapshot[ranked | actionable]
+    if not snapshot.empty:
+        snapshot = snapshot.sort_values(["rank", "score"], ascending=[True, False], na_position="last")
+    return json.loads(json.dumps(snapshot[available].to_dict(orient="records"), ensure_ascii=False, default=json_default))
+
+
+def db_jsonable(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (datetime, pd.Timestamp)):
+        if pd.isna(value):
+            return None
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): db_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [db_jsonable(item) for item in value]
+    if hasattr(value, "item"):
+        try:
+            return db_jsonable(value.item())
+        except Exception:
+            return str(value)
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def db_jsonb(value: Any) -> Any:
+    return Jsonb(db_jsonable(value)) if Jsonb is not None else json.dumps(db_jsonable(value), ensure_ascii=False)
+
+
+def db_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def db_float(value: Any) -> float | None:
+    if value in (None, "", "NaN", "nan"):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def db_int(value: Any) -> int | None:
+    number = db_float(value)
+    return int(number) if number is not None else None
+
+
+def ensure_paper_history_schema(conn: Any) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            create table if not exists paper_rebalance_runs (
+              id bigserial primary key,
+              agent_id text not null,
+              market text not null,
+              score_signal_date date,
+              recorded_at timestamptz not null,
+              status text,
+              message text,
+              last_score_signature text,
+              gateway_healthy boolean,
+              profile_name text,
+              profile_label text,
+              rebalance_every integer,
+              rebalance_due boolean,
+              rebalance_wait_count integer,
+              plan_summary jsonb not null default '{}'::jsonb,
+              balance_metrics jsonb not null default '{}'::jsonb,
+              live_summary jsonb not null default '{}'::jsonb,
+              active_order_count integer,
+              position_count integer,
+              placed_order_ids text[] not null default '{}',
+              cancelled_order_ids text[] not null default '{}',
+              skipped_symbols text[] not null default '{}',
+              placed_orders jsonb not null default '[]'::jsonb,
+              cancelled_orders jsonb not null default '[]'::jsonb,
+              skipped_orders jsonb not null default '[]'::jsonb,
+              created_at timestamptz not null default now()
+            )
+            """
+        )
+        cur.execute(
+            """
+            create table if not exists paper_rebalance_targets (
+              id bigserial primary key,
+              run_id bigint not null references paper_rebalance_runs(id) on delete cascade,
+              agent_id text not null,
+              market text not null,
+              score_signal_date date,
+              recorded_at timestamptz not null,
+              code text not null,
+              exchange text,
+              name text,
+              industry text,
+              rank integer,
+              score double precision,
+              open double precision,
+              close double precision,
+              amount double precision,
+              pct_chg double precision,
+              pct_chg_5d double precision,
+              pct_chg_20d double precision,
+              turnover double precision,
+              turnover_ma5 double precision,
+              volume_ma5 double precision,
+              volatility_20d double precision,
+              bias_20 double precision,
+              close_to_high_20d double precision,
+              close_to_low_20d double precision,
+              float_market_cap double precision,
+              pe_ttm double precision,
+              pb double precision,
+              target_weight double precision,
+              target_qty integer,
+              current_qty integer,
+              delta_qty integer,
+              buy_order_qty integer,
+              sell_order_qty integer,
+              action text,
+              reason text,
+              estimated_order_notional double precision,
+              estimated_order_fee double precision,
+              sent_order_id text,
+              sent_status text,
+              sent_price double precision,
+              sent_error text,
+              target_snapshot jsonb not null default '{}'::jsonb,
+              created_at timestamptz not null default now()
+            )
+            """
+        )
+        cur.execute(
+            "create index if not exists idx_paper_rebalance_runs_agent_date "
+            "on paper_rebalance_runs(agent_id, market, score_signal_date desc, recorded_at desc)"
+        )
+        cur.execute(
+            "create index if not exists idx_paper_rebalance_targets_symbol_date "
+            "on paper_rebalance_targets(agent_id, market, code, score_signal_date desc, rank)"
+        )
+        cur.execute(
+            "create index if not exists idx_paper_rebalance_targets_run_rank "
+            "on paper_rebalance_targets(run_id, rank)"
+        )
+
+
+def persist_rebalance_result_to_db(config: SyncConfig, result: dict[str, Any]) -> None:
+    if not config.paper_db_url:
+        return
+    if psycopg is None or Jsonb is None:
+        print("PAPER_DB_URL is configured but psycopg is unavailable; skipping DB persistence", file=sys.stderr, flush=True)
+        return
+
+    plan = result.get("plan_summary") if isinstance(result.get("plan_summary"), dict) else {}
+    recorded_at = result.get("recorded_at") or now_iso()
+    score_signal_date = normalize_date_text(result.get("score_signal_date"))
+    with psycopg.connect(config.paper_db_url, connect_timeout=5) as conn:
+        ensure_paper_history_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into paper_rebalance_runs (
+                  agent_id, market, score_signal_date, recorded_at, status, message,
+                  last_score_signature, gateway_healthy, profile_name, profile_label,
+                  rebalance_every, rebalance_due, rebalance_wait_count,
+                  plan_summary, balance_metrics, live_summary,
+                  active_order_count, position_count,
+                  placed_order_ids, cancelled_order_ids, skipped_symbols,
+                  placed_orders, cancelled_orders, skipped_orders
+                )
+                values (
+                  %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s,
+                  %s, %s, %s,
+                  %s, %s, %s,
+                  %s, %s,
+                  %s, %s, %s,
+                  %s, %s, %s
+                )
+                returning id
+                """,
+                [
+                    config.agent_id,
+                    config.market,
+                    score_signal_date,
+                    recorded_at,
+                    db_text(result.get("status")),
+                    db_text(result.get("message")),
+                    db_text(result.get("last_score_signature")),
+                    bool(result.get("gateway_healthy")) if result.get("gateway_healthy") is not None else None,
+                    db_text(plan.get("profile_name")),
+                    db_text(plan.get("profile_label")),
+                    db_int(plan.get("rebalance_every")),
+                    bool(plan.get("rebalance_due")) if plan.get("rebalance_due") is not None else None,
+                    db_int(plan.get("rebalance_wait_count")),
+                    db_jsonb(plan),
+                    db_jsonb(result.get("balance_metrics") or {}),
+                    db_jsonb(result.get("live_summary") or {}),
+                    db_int(result.get("active_order_count")),
+                    db_int(result.get("position_count")),
+                    [str(item) for item in result.get("placed_order_ids") or [] if str(item)],
+                    [str(item) for item in result.get("cancelled_order_ids") or [] if str(item)],
+                    [str(item) for item in result.get("skipped_symbols") or [] if str(item)],
+                    db_jsonb(result.get("placed_orders") or []),
+                    db_jsonb(result.get("cancelled_orders") or []),
+                    db_jsonb(result.get("skipped_orders") or []),
+                ],
+            )
+            run_id = cur.fetchone()[0]
+            for target in result.get("target_snapshot") or []:
+                if not isinstance(target, dict):
+                    continue
+                code = normalize_symbol(target.get("code") or target.get("symbol"))
+                if not code:
+                    continue
+                cur.execute(
+                    """
+                    insert into paper_rebalance_targets (
+                      run_id, agent_id, market, score_signal_date, recorded_at,
+                      code, exchange, name, industry, rank, score, open, close, amount,
+                      pct_chg, pct_chg_5d, pct_chg_20d, turnover, turnover_ma5,
+                      volume_ma5, volatility_20d, bias_20, close_to_high_20d,
+                      close_to_low_20d, float_market_cap, pe_ttm, pb,
+                      target_weight, target_qty, current_qty, delta_qty, buy_order_qty,
+                      sell_order_qty, action, reason, estimated_order_notional,
+                      estimated_order_fee, sent_order_id, sent_status, sent_price,
+                      sent_error, target_snapshot
+                    )
+                    values (
+                      %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s,
+                      %s, %s, %s, %s,
+                      %s, %s, %s, %s, %s,
+                      %s, %s, %s, %s,
+                      %s, %s, %s, %s,
+                      %s, %s
+                    )
+                    """,
+                    [
+                        run_id,
+                        config.agent_id,
+                        config.market,
+                        score_signal_date,
+                        recorded_at,
+                        code,
+                        db_text(target.get("exchange")),
+                        db_text(target.get("name")),
+                        db_text(target.get("industry")),
+                        db_int(target.get("rank")),
+                        db_float(target.get("score")),
+                        db_float(target.get("open")),
+                        db_float(target.get("close")),
+                        db_float(target.get("amount")),
+                        db_float(target.get("pct_chg")),
+                        db_float(target.get("pct_chg_5d")),
+                        db_float(target.get("pct_chg_20d")),
+                        db_float(target.get("turnover")),
+                        db_float(target.get("turnover_ma5")),
+                        db_float(target.get("volume_ma5")),
+                        db_float(target.get("volatility_20d")),
+                        db_float(target.get("bias_20")),
+                        db_float(target.get("close_to_high_20d")),
+                        db_float(target.get("close_to_low_20d")),
+                        db_float(target.get("float_market_cap")),
+                        db_float(target.get("pe_ttm")),
+                        db_float(target.get("pb")),
+                        db_float(target.get("target_weight")),
+                        db_int(target.get("target_qty")),
+                        db_int(target.get("current_qty")),
+                        db_int(target.get("delta_qty")),
+                        db_int(target.get("buy_order_qty")),
+                        db_int(target.get("sell_order_qty")),
+                        db_text(target.get("action")),
+                        db_text(target.get("reason")),
+                        db_float(target.get("estimated_order_notional")),
+                        db_float(target.get("estimated_order_fee")),
+                        db_text(target.get("sent_order_id")),
+                        db_text(target.get("sent_status")),
+                        db_float(target.get("sent_price")),
+                        db_text(target.get("sent_error")),
+                        db_jsonb(target),
+                    ],
+                )
+        conn.commit()
+
+
+def record_sync_history(
+    paths: dict[str, Path],
+    config: SyncConfig,
+    result: dict[str, Any],
+    *,
+    append_legacy_jsonl: bool,
+) -> dict[str, Any]:
+    payload = {**result, "recorded_at": result.get("recorded_at") or now_iso()}
+    try:
+        persist_rebalance_result_to_db(config, payload)
+    except Exception as exc:
+        print(f"failed to persist paper rebalance history to DB: {exc}", file=sys.stderr, flush=True)
+    if append_legacy_jsonl:
+        append_jsonl(paths["history"], payload)
+    return payload
 
 
 def execute_plan(
@@ -1200,11 +1700,11 @@ def execute_plan(
             if quantity <= 0:
                 continue
             max_order_qty = config.max_sell_order_qty if side == "SELL" else config.max_buy_order_qty
-            quantity = min(quantity, max_order_qty)
+            quantity = apply_optional_quantity_cap(quantity, max_order_qty)
             symbol = str(row["code"])
             try:
                 latest_price = get_sina_latest_price(symbol, row.get("exchange"))
-                price = build_marketable_limit_price(latest_price, side)
+                price = build_marketable_limit_price(latest_price, side, config.execution_model)
             except GatewayError as exc:
                 last_error = str(exc)
                 execution_rows.at[index, "sent_status"] = "SKIPPED_NO_LIVE_PRICE"
@@ -1234,6 +1734,51 @@ def execute_plan(
                     }
                 )
                 continue
+            reference_previous_close = to_float(row.get("previous_close"))
+            if near_price_limit(
+                side=side,
+                price=latest_price,
+                previous_close=reference_previous_close,
+                symbol=symbol,
+                name=row.get("name"),
+                model=config.execution_model,
+            ):
+                skip_reason = "SKIP_LIMIT_UP" if side == "BUY" else "SKIP_LIMIT_DOWN"
+                execution_rows.at[index, "sent_status"] = skip_reason
+                execution_rows.at[index, "sent_reference_price"] = round_price(latest_price)
+                execution_rows.at[index, "sent_price"] = price
+                execution_rows.at[index, "action"] = skip_reason
+                skipped_orders.append(
+                    {
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": quantity,
+                        "attempted_prices": [price],
+                        "error": skip_reason,
+                    }
+                )
+                continue
+            if side == "BUY":
+                skip_reason = buy_liquidity_skip_reason(
+                    amount=row.get("amount"),
+                    order_notional=quantity * price,
+                    model=config.execution_model,
+                )
+                if skip_reason is not None:
+                    execution_rows.at[index, "sent_status"] = skip_reason
+                    execution_rows.at[index, "sent_reference_price"] = round_price(latest_price)
+                    execution_rows.at[index, "sent_price"] = price
+                    execution_rows.at[index, "action"] = skip_reason
+                    skipped_orders.append(
+                        {
+                            "symbol": symbol,
+                            "side": side,
+                            "quantity": quantity,
+                            "attempted_prices": [price],
+                            "error": skip_reason,
+                        }
+                    )
+                    continue
             execution_rows.at[index, "sent_reference_price"] = round_price(latest_price)
             remark = f"aistock sig={signal_date} r={row['rank'] or '-'}"
             last_error: str | None = None
@@ -1336,6 +1881,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             force=config.force,
         )
         plan_summary = {**plan_summary, **rebalance}
+        planned_target_snapshot = target_snapshot_rows(plan)
 
         if not config.force and previous_signature == signature:
             has_pending_actions = bool(plan_summary.get("buy_order_count")) or bool(plan_summary.get("sell_order_count"))
@@ -1377,6 +1923,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "cancelled_orders": [],
                     "placed_orders": [],
                     "skipped_orders": [],
+                    "target_snapshot": planned_target_snapshot,
                 }
                 updated = update_state(
                     paths,
@@ -1392,6 +1939,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                         "budget_total": config.budget_total,
                         "max_buy_order_qty": config.max_buy_order_qty,
                         "max_sell_order_qty": config.max_sell_order_qty,
+                        "execution_model": execution_model_snapshot(config.execution_model),
                     },
                     last_attempt_at=now_iso(),
                     last_status="noop",
@@ -1414,7 +1962,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     cancelled_order_ids=[],
                     placed_order_ids=[],
                     skipped_symbols=[],
+                    target_snapshot=planned_target_snapshot,
                 )
+                record_sync_history(paths, config, summary, append_legacy_jsonl=False)
                 return 0, updated
 
         if not rebalance["rebalance_due"]:
@@ -1446,6 +1996,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "cancelled_orders": [],
                 "placed_orders": [],
                 "skipped_orders": [],
+                "target_snapshot": planned_target_snapshot,
             }
             updated = update_state(
                 paths,
@@ -1461,6 +2012,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "budget_total": config.budget_total,
                     "max_buy_order_qty": config.max_buy_order_qty,
                     "max_sell_order_qty": config.max_sell_order_qty,
+                    "execution_model": execution_model_snapshot(config.execution_model),
                 },
                 last_attempt_at=now_iso(),
                 last_status="noop",
@@ -1483,7 +2035,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 cancelled_order_ids=[],
                 placed_order_ids=[],
                 skipped_symbols=[],
+                target_snapshot=planned_target_snapshot,
             )
+            record_sync_history(paths, config, result, append_legacy_jsonl=False)
             return 0, updated
 
         if config.dry_run:
@@ -1512,6 +2066,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "cancelled_orders": [],
                 "placed_orders": [],
                 "skipped_orders": [],
+                "target_snapshot": planned_target_snapshot,
             }
             updated = update_state(
                 paths,
@@ -1527,6 +2082,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "budget_total": config.budget_total,
                     "max_buy_order_qty": config.max_buy_order_qty,
                     "max_sell_order_qty": config.max_sell_order_qty,
+                    "execution_model": execution_model_snapshot(config.execution_model),
                 },
                 last_attempt_at=now_iso(),
                 last_status="dry_run",
@@ -1547,7 +2103,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 rebalance_observed_signal_dates=rebalance["rebalance_observed_signal_dates"],
                 active_order_count=len(active_orders),
                 position_count=len(positions),
+                target_snapshot=planned_target_snapshot,
             )
+            record_sync_history(paths, config, result, append_legacy_jsonl=False)
             return 0, updated
 
         execution = execute_plan(
@@ -1559,6 +2117,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         )
         execution_rows = execution["execution_rows"]
         persist_targets(paths, execution_rows)
+        executed_target_snapshot = target_snapshot_rows(execution_rows)
 
         if execution.get("execution_skipped"):
             safe_write_daily_snapshot(
@@ -1585,6 +2144,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "cancelled_orders": [],
                 "placed_orders": [],
                 "skipped_orders": [],
+                "target_snapshot": executed_target_snapshot,
             }
             updated = update_state(
                 paths,
@@ -1600,6 +2160,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                     "budget_total": config.budget_total,
                     "max_buy_order_qty": config.max_buy_order_qty,
                     "max_sell_order_qty": config.max_sell_order_qty,
+                    "execution_model": execution_model_snapshot(config.execution_model),
                 },
                 last_attempt_at=now_iso(),
                 last_status="noop",
@@ -1621,8 +2182,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 cancelled_order_ids=[],
                 placed_order_ids=[],
                 skipped_symbols=[],
+                target_snapshot=executed_target_snapshot,
             )
-            append_jsonl(paths["history"], {**result, "recorded_at": now_iso()})
+            record_sync_history(paths, config, result, append_legacy_jsonl=True)
             return 0, updated
 
         try:
@@ -1677,6 +2239,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             "cancelled_orders": [snapshot_order_event(item) for item in execution["cancelled_orders"] if item],
             "placed_orders": [snapshot_order_event(item) for item in execution["placed_orders"] if item],
             "skipped_orders": [snapshot_skipped_order(item) for item in execution["skipped_orders"] if item],
+            "target_snapshot": executed_target_snapshot,
         }
         updated = update_state(
             paths,
@@ -1692,6 +2255,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 "budget_total": config.budget_total,
                 "max_buy_order_qty": config.max_buy_order_qty,
                 "max_sell_order_qty": config.max_sell_order_qty,
+                "execution_model": execution_model_snapshot(config.execution_model),
             },
             last_attempt_at=now_iso(),
             last_success_at=now_iso(),
@@ -1716,8 +2280,9 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             cancelled_order_ids=result["cancelled_order_ids"],
             placed_order_ids=result["placed_order_ids"],
             skipped_symbols=result["skipped_symbols"],
+            target_snapshot=executed_target_snapshot,
         )
-        append_jsonl(paths["history"], {**result, "recorded_at": now_iso()})
+        record_sync_history(paths, config, result, append_legacy_jsonl=True)
         return 0, updated
     except Exception as exc:
         message = str(exc)
@@ -1734,14 +2299,15 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             last_error=message,
             last_traceback=traceback.format_exc(limit=20),
         )
-        append_jsonl(
-            paths["history"],
+        record_sync_history(
+            paths,
+            config,
             {
                 "status": "error",
                 "message": message,
                 "score_signal_date": last_signal_date,
-                "recorded_at": now_iso(),
             },
+            append_legacy_jsonl=True,
         )
         print(message, file=sys.stderr, flush=True)
         return 1, failure
@@ -1768,6 +2334,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-order-qty", type=int, default=DEFAULT_MAX_ORDER_QTY)
     parser.add_argument("--max-buy-order-qty", type=int, default=None)
     parser.add_argument("--max-sell-order-qty", type=int, default=None)
+    parser.add_argument("--paper-db-url", default=os.getenv("PAPER_DB_URL"))
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-cancel-open-orders", action="store_true")
@@ -1776,6 +2343,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_config(args: argparse.Namespace) -> SyncConfig:
+    execution_model = execution_model_with_limit_bps(
+        buy_limit_bps=args.buy_limit_bps,
+        sell_limit_bps=args.sell_limit_bps,
+    )
     return SyncConfig(
         scores_path=Path(args.scores_path),
         state_dir=Path(args.state_dir),
@@ -1791,12 +2362,14 @@ def build_config(args: argparse.Namespace) -> SyncConfig:
         lot_size=max(int(args.lot_size), 1),
         cash_buffer_pct=max(min(float(args.cash_buffer_pct), 0.95), 0.0),
         budget_total=float(args.budget_total) if args.budget_total is not None else None,
-        max_buy_order_qty=max(int(args.max_buy_order_qty if args.max_buy_order_qty is not None else args.max_order_qty), 1),
+        max_buy_order_qty=max(int(args.max_buy_order_qty if args.max_buy_order_qty is not None else args.max_order_qty), 0),
         max_sell_order_qty=max(int(args.max_sell_order_qty if args.max_sell_order_qty is not None else args.max_order_qty), 1),
         cancel_open_orders=not bool(args.no_cancel_open_orders),
         sync_existing_orders=not bool(args.no_sync_existing_orders),
         force=bool(args.force),
         dry_run=bool(args.dry_run),
+        paper_db_url=(str(getattr(args, "paper_db_url", None) or os.getenv("PAPER_DB_URL") or "").strip() or None),
+        execution_model=execution_model,
     )
 
 

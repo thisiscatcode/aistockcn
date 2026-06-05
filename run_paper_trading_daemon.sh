@@ -51,7 +51,15 @@ LOGGER_PID_FILE="$PID_DIR/paper_trading_daemon_logger.pid"
 CONTAINER_NAME="aistockcn-paper-trading-daemon-${TIMESTAMP}"
 
 ARGS=(
-  "run" "-d" "--name" "$CONTAINER_NAME" "--entrypoint" "python" "data-prep" "paper_trade_daemon.py"
+  "run" "-d" "--name" "$CONTAINER_NAME"
+)
+
+if [[ -n "${PAPER_DB_URL:-}" ]]; then
+  ARGS+=("-e" "PAPER_DB_URL=$PAPER_DB_URL")
+fi
+
+ARGS+=(
+  "--entrypoint" "python" "data-prep" "paper_trade_daemon.py"
   "--scores-path" "quant_data/models/inference_scores_latest.parquet"
   "--state-dir" "quant_data/paper_trading"
   "--gateway-base-url" "$GATEWAY_BASE_URL"

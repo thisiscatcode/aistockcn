@@ -201,8 +201,9 @@ export default async function ModelsPage({
   const cagr = numberValue(backtest.portfolio_cagr);
   const maxDrawdown = numberValue(backtest.portfolio_max_drawdown);
   const winRate = numberValue(backtest.portfolio_win_rate);
-  const isTrustedBacktest = backtest.is_trustworthy === true;
+  const isRealisticBacktest = backtest.is_realistic_execution === true;
   const backtestTrustWarning = String(backtest.trust_warning ?? "");
+  const executionModel = (backtest.execution_model ?? {}) as TableRow;
   const equityCurve = Array.isArray(overview.backtest_equity_curve)
     ? overview.backtest_equity_curve as TableRow[]
     : [];
@@ -210,11 +211,11 @@ export default async function ModelsPage({
   const featureImportanceEmptyLabel = `No saved feature importance artifact exists for ${currentProfile}.`;
   const formattedBacktestRuns = backtestRuns.map((run) => ({
     ...run,
-    portfolio_total_return: run.is_trustworthy ? formatPercent(run.portfolio_total_return, user.locale) : "Untrusted",
-    portfolio_cagr: run.is_trustworthy ? formatPercent(run.portfolio_cagr, user.locale) : "Untrusted",
-    portfolio_max_drawdown: run.is_trustworthy ? formatPercent(run.portfolio_max_drawdown, user.locale) : "Untrusted",
-    portfolio_win_rate: run.is_trustworthy ? formatPercent(run.portfolio_win_rate, user.locale) : "Untrusted",
-    is_trustworthy: run.is_trustworthy ? "Trusted" : "Legacy"
+    portfolio_total_return: run.is_realistic_execution ? formatPercent(run.portfolio_total_return, user.locale) : "Research Only",
+    portfolio_cagr: run.is_realistic_execution ? formatPercent(run.portfolio_cagr, user.locale) : "Research Only",
+    portfolio_max_drawdown: run.is_realistic_execution ? formatPercent(run.portfolio_max_drawdown, user.locale) : "Research Only",
+    portfolio_win_rate: run.is_realistic_execution ? formatPercent(run.portfolio_win_rate, user.locale) : "Research Only",
+    method_label: String(run.method_label ?? (run.is_realistic_execution ? "Realistic Execution" : "Research Only"))
   }));
 
   return (
@@ -264,33 +265,42 @@ export default async function ModelsPage({
         <Panel title={copy.models.backtestSnapshot} aside={<span className={`pill ${hasBacktestSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
           {hasBacktestSnapshot ? (
             <div className="model-backtest-stack">
-              {!isTrustedBacktest ? (
+              {!isRealisticBacktest ? (
                 <p className="banner banner-error">
-                  {backtestTrustWarning || "Legacy backtest artifact. Rerun this profile before using these performance numbers."}
+                  {backtestTrustWarning || "Research-only backtest artifact. Rerun this profile before comparing live-trading performance."}
                 </p>
               ) : null}
+              {isRealisticBacktest ? (
+                <div className="status-meta">
+                  <span>Method: {String(backtest.method_label ?? "Realistic Execution")}</span>
+                  <span>Slippage: {formatNumber(executionModel.backtest_slippage_bps as number | undefined, user.locale)} bps</span>
+                  <span>Liquidity cap: {formatMetric(executionModel.max_order_participation_rate, user.locale)} of previous amount</span>
+                  <span>Min buy amount: {formatNumber(executionModel.min_buy_amount as number | undefined, user.locale)}</span>
+                  <span>Cash buffer: {formatPercent(backtest.cash_buffer_pct, user.locale)}</span>
+                </div>
+              ) : null}
               <div className="finance-stat-grid">
-                <FinanceStat label={copy.models.totalReturn} value={isTrustedBacktest ? formatPercent(totalReturn, user.locale) : "Rerun required"} tone={isTrustedBacktest ? financeTone(totalReturn) : "finance-neutral"} detail="Portfolio total return" />
+                <FinanceStat label={copy.models.totalReturn} value={isRealisticBacktest ? formatPercent(totalReturn, user.locale) : "Research Only"} tone={isRealisticBacktest ? financeTone(totalReturn) : "finance-neutral"} detail="Portfolio total return" />
                 <FinanceStat
                   label="CAGR"
                   tooltip="Compound annual growth rate. It turns the full backtest return into an annualized rate."
-                  value={isTrustedBacktest ? formatPercent(cagr, user.locale) : "Rerun required"}
-                  tone={isTrustedBacktest ? financeTone(cagr) : "finance-neutral"}
+                  value={isRealisticBacktest ? formatPercent(cagr, user.locale) : "Research Only"}
+                  tone={isRealisticBacktest ? financeTone(cagr) : "finance-neutral"}
                   detail="Annualized portfolio return"
                 />
                 <FinanceStat
                   label={copy.models.maxDrawdown}
                   tooltip="The worst peak-to-trough portfolio decline during the backtest. Closer to zero is better."
-                  value={isTrustedBacktest ? formatPercent(maxDrawdown, user.locale) : "Rerun required"}
-                  tone={isTrustedBacktest ? financeTone(maxDrawdown) : "finance-neutral"}
+                  value={isRealisticBacktest ? formatPercent(maxDrawdown, user.locale) : "Research Only"}
+                  tone={isRealisticBacktest ? financeTone(maxDrawdown) : "finance-neutral"}
                   detail="Largest historical pullback"
                 />
-                <FinanceStat label="Win Rate" value={isTrustedBacktest ? formatPercent(winRate, user.locale) : "Rerun required"} tone={isTrustedBacktest ? financeTone(winRate) : "finance-neutral"} detail={`${formatNumber(backtest.num_rebalances as number | undefined, user.locale)} rebalances`} />
+                <FinanceStat label="Win Rate" value={isRealisticBacktest ? formatPercent(winRate, user.locale) : "Research Only"} tone={isRealisticBacktest ? financeTone(winRate) : "finance-neutral"} detail={`${formatNumber(backtest.num_rebalances as number | undefined, user.locale)} rebalances`} />
               </div>
-              {isTrustedBacktest ? (
+              {isRealisticBacktest ? (
                 <EquityCurveChart rows={equityCurve} totalReturn={totalReturn} locale={user.locale} />
               ) : (
-                <p className="empty-state">Legacy equity curve hidden until this profile is rerun with the corrected backtest.</p>
+                <p className="empty-state">Research-only equity curve hidden until this profile is rerun with realistic execution.</p>
               )}
             </div>
           ) : (
@@ -328,7 +338,7 @@ export default async function ModelsPage({
             { key: "portfolio_cagr", label: "CAGR" },
             { key: "portfolio_max_drawdown", label: "Max Drawdown" },
             { key: "portfolio_win_rate", label: "Win Rate" },
-            { key: "is_trustworthy", label: "Trust" },
+            { key: "method_label", label: "Method" },
             { key: "num_rebalances", label: "Rebalances" },
             { key: "backtest_end", label: "Backtest End" }
           ]}

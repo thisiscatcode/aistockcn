@@ -15,6 +15,7 @@ from typing import Any
 
 DEFAULT_CATALOG = "run/model_profiles.json"
 DEFAULT_PROFILE = "short_5d"
+DEFAULT_REALISTIC_BUDGET_TOTAL = 50_000.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog-path", default=DEFAULT_CATALOG, help="Profile catalog JSON path.")
     parser.add_argument("--data-dir", default="quant_data", help="Quant data root directory.")
     parser.add_argument("--sync-latest", action="store_true", help="Also update quant_data/backtests/latest artifacts.")
+    parser.add_argument("--budget-total", type=float, default=DEFAULT_REALISTIC_BUDGET_TOTAL, help="RMB budget cap for realistic execution backtests.")
     return parser.parse_args()
 
 
@@ -128,6 +130,8 @@ def main() -> int:
             str(profile.get("label_horizon", 5)),
             "--label-threshold",
             str(profile.get("label_threshold", 0.02)),
+            "--budget-total",
+            str(args.budget_total),
         ]
     )
 

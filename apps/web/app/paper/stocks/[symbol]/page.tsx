@@ -1,9 +1,9 @@
 import { MetricCard, Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
-import { getPaperDbStock, getPaperDbStockLedger } from "@/lib/api";
+import { getPaperDbStock, getPaperDbStockLedger, getPaperDbStockSelectionHistory } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
-import { formatDisplayValue, formatNumber } from "@/lib/format";
+import { formatDate, formatDisplayValue, formatNumber } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,27 @@ function signedTone(value: unknown) {
   return numeric > 0 ? "positive" : "negative";
 }
 
-function orderDisplayRow(row: DashboardRow) {
+function stockNameFrom(row: DashboardRow, fallback?: unknown): string | null {
+  const name = String(row.name ?? row.stock_name ?? row.security_name ?? fallback ?? "").trim();
+  return name || null;
+}
+
+function stockCell(symbol: string, name?: unknown) {
+  const normalized = normalizeSymbol(symbol);
+  const stockName = stockNameFrom({}, name);
   return {
+    symbol: normalized,
+    symbol_detail: stockName,
+    symbol_href: normalized ? `/paper/stocks/${normalized}` : undefined,
+    code: normalized,
+    code_detail: stockName,
+    code_href: normalized ? `/paper/stocks/${normalized}` : undefined,
+  };
+}
+
+function orderDisplayRow(row: DashboardRow, symbol: string, name?: unknown) {
+  return {
+    ...stockCell(symbol || String(row.symbol ?? ""), name ?? row.name),
     broker_order_id: row.broker_order_id ?? null,
     side: String(row.side ?? "").toUpperCase(),
     order_status: row.order_status ?? null,
@@ -42,8 +61,9 @@ function orderDisplayRow(row: DashboardRow) {
   };
 }
 
-function fillDisplayRow(row: DashboardRow) {
+function fillDisplayRow(row: DashboardRow, symbol: string, name?: unknown) {
   return {
+    ...stockCell(symbol || String(row.symbol ?? ""), name ?? row.name),
     created_at: row.created_at ?? null,
     broker_order_id: row.broker_order_id ?? null,
     side: String(row.side ?? "").toUpperCase(),
@@ -53,10 +73,11 @@ function fillDisplayRow(row: DashboardRow) {
   };
 }
 
-function ledgerDisplayRow(row: DashboardRow) {
+function ledgerDisplayRow(row: DashboardRow, symbol: string, name?: unknown) {
   const realizedPnl = row.realized_pnl ?? null;
   const cumulativeRealizedPnl = row.cumulative_realized_pnl ?? null;
   return {
+    ...stockCell(symbol || String(row.symbol ?? ""), name ?? row.name),
     created_at: row.created_at ?? null,
     broker_order_id: row.broker_order_id ?? null,
     side: String(row.side ?? "").toUpperCase(),
@@ -87,22 +108,56 @@ function dailyDisplayRow(row: DashboardRow) {
   };
 }
 
+function selectionDisplayRow(row: DashboardRow, symbol: string, name?: unknown) {
+  const event = String(row.event ?? "");
+  const rank = row.rank ?? null;
+  const previousRank = row.previous_rank ?? null;
+  return {
+    signal_date: row.signal_date ?? null,
+    event_label: row.event_label ?? row.event ?? null,
+    event_label_tone: event === "DROPPED" ? "negative" : event === "STILL_LISTED" ? "positive" : "neutral",
+    ...stockCell(symbol, name),
+    rank,
+    previous_rank: previousRank,
+    streak: row.streak ?? null,
+    score: row.score ?? null,
+    close: row.close ?? null,
+    bias_20: row.bias_20 ?? null,
+    pct_chg_5d: row.pct_chg_5d ?? null,
+    pct_chg_20d: row.pct_chg_20d ?? null,
+    profile_label: row.profile_label ?? row.profile_name ?? null,
+    order_sides: row.order_sides ?? [],
+    buy_order_count: row.buy_order_count ?? null,
+    sell_order_count: row.sell_order_count ?? null,
+    reason: row.reason ?? null,
+  };
+}
+
 export default async function PaperStockPage({ params }: { params: Promise<{ symbol: string }> }) {
   const user = await requireAuth();
   const { symbol: rawSymbol } = await params;
   const symbol = normalizeSymbol(rawSymbol);
-  const [detail, ledgerResult] = await Promise.all([
+  const [detail, ledgerResult, selectionHistory] = await Promise.all([
     getPaperDbStock(symbol, 5000),
     getPaperDbStockLedger(symbol, 1000, 5000),
+    getPaperDbStockSelectionHistory(symbol, 5000),
   ]);
   const summary = detail.summary ?? {};
-  const ledgerRows = (ledgerResult.ledger as DashboardRow[]).map(ledgerDisplayRow);
+  const stockName = stockNameFrom(summary, selectionHistory.name ?? ledgerResult.name);
+  const displaySymbol = String(summary.display_symbol ?? selectionHistory.display_symbol ?? ledgerResult.display_symbol ?? symbol);
+  const ledgerRows = (ledgerResult.ledger as DashboardRow[]).map((row) => ledgerDisplayRow(row, symbol, stockName));
   const dailyRows = (ledgerResult.daily as DashboardRow[]).map(dailyDisplayRow);
-  const orderRows = (detail.recent_orders as DashboardRow[]).map(orderDisplayRow);
-  const fillRows = (detail.recent_fills as DashboardRow[]).map(fillDisplayRow);
+  const orderRows = (detail.recent_orders as DashboardRow[]).map((row) => orderDisplayRow(row, symbol, stockName));
+  const fillRows = (detail.recent_fills as DashboardRow[]).map((row) => fillDisplayRow(row, symbol, stockName));
+  const selectionRows = (selectionHistory.events as DashboardRow[]).map((row) => selectionDisplayRow(row, symbol, stockName));
+  const latestSelectionEvent = selectionHistory.latest_event ?? null;
+  const latestEventLabel = latestSelectionEvent ? String(latestSelectionEvent.event_label ?? latestSelectionEvent.event ?? "—") : "No list history";
+  const latestEventDate = latestSelectionEvent ? formatDate(latestSelectionEvent.signal_date, user.locale) : "—";
+  const latestScore = selectionHistory.latest_score ?? {};
 
   const ledgerColumns = [
     { key: "created_at", label: "Filled At" },
+    { key: "symbol", label: "Symbol" },
     { key: "broker_order_id", label: "Order ID" },
     { key: "side", label: "Side" },
     { key: "quantity", label: "Qty" },
@@ -125,6 +180,7 @@ export default async function PaperStockPage({ params }: { params: Promise<{ sym
   ];
   const orderColumns = [
     { key: "broker_order_id", label: "Order ID" },
+    { key: "symbol", label: "Symbol" },
     { key: "side", label: "Side" },
     { key: "order_status", label: "Status" },
     { key: "quantity", label: "Qty" },
@@ -136,32 +192,62 @@ export default async function PaperStockPage({ params }: { params: Promise<{ sym
   ];
   const fillColumns = [
     { key: "created_at", label: "Filled At" },
+    { key: "symbol", label: "Symbol" },
     { key: "broker_order_id", label: "Order ID" },
     { key: "side", label: "Side" },
     { key: "quantity", label: "Qty" },
     { key: "price", label: "Price" },
     { key: "notional", label: "Notional" },
   ];
+  const selectionColumns = [
+    { key: "signal_date", label: "Signal Date" },
+    { key: "event_label", label: "Event" },
+    { key: "code", label: "Code" },
+    { key: "rank", label: "Rank" },
+    { key: "previous_rank", label: "Prev Rank" },
+    { key: "streak", label: "Streak" },
+    { key: "score", label: "Score" },
+    { key: "close", label: "Signal Close" },
+    { key: "bias_20", label: "20D Bias" },
+    { key: "pct_chg_5d", label: "5D Chg" },
+    { key: "pct_chg_20d", label: "20D Chg" },
+    { key: "profile_label", label: "Profile" },
+    { key: "order_sides", label: "Paper Orders" },
+    { key: "buy_order_count", label: "Plan Buys" },
+    { key: "sell_order_count", label: "Plan Sells" },
+    { key: "reason", label: "Reason" },
+  ];
 
   return (
     <Shell
-      title={`Stock ${formatDisplayValue(summary.display_symbol ?? symbol, { locale: user.locale, key: "symbol" })}`}
-      subtitle="Postgres trade ledger"
+      title={`${stockName ? `${stockName} ` : ""}${formatDisplayValue(displaySymbol, { locale: user.locale, key: "symbol" })}`}
+      subtitle="Paper trading ledger and ranking history"
       locale={user.locale}
       username={user.username}
       role={user.role}
     >
       {detail.error ? <p className="banner banner-error">Postgres data unavailable: {detail.error}</p> : null}
       {ledgerResult.error ? <p className="banner banner-error">Ledger unavailable: {ledgerResult.error}</p> : null}
+      {selectionHistory.error ? <p className="banner banner-error">Selection history unavailable: {selectionHistory.error}</p> : null}
 
       <section className="metrics-grid">
+        <MetricCard label="Stock Name" value={stockName ?? "—"} hint={displaySymbol} />
         <MetricCard label="Quantity" value={formatDisplayValue(summary.quantity, { locale: user.locale, key: "quantity" })} hint={`${formatNumber(Number(summary.fills_count ?? 0), user.locale)} fills`} />
         <MetricCard label="Avg Cost" value={formatDisplayValue(summary.avg_cost, { locale: user.locale, key: "avg_cost" })} hint="Remaining position cost basis" />
         <MetricCard label="Diluted Cost" value={formatDisplayValue(summary.diluted_cost, { locale: user.locale, key: "diluted_cost" })} hint="After realized P/L allocation" />
         <MetricCard label="Last Price" value={formatDisplayValue(summary.last_price, { locale: user.locale, key: "last_price" })} hint={formatDisplayValue(summary.market_value, { locale: user.locale, key: "market_value" })} />
         <MetricCard label="Realized P/L" value={formatDisplayValue(summary.realized_pnl, { locale: user.locale, key: "realized_pnl" })} hint={`${formatNumber(Number(summary.orders_count ?? 0), user.locale)} orders`} />
         <MetricCard label="Current Unrealized P/L" value={formatDisplayValue(summary.unrealized_pnl, { locale: user.locale, key: "unrealized_pnl" })} hint={`Total ${formatDisplayValue(summary.total_pnl, { locale: user.locale, key: "total_pnl" })}`} />
+        <MetricCard label="Latest List Event" value={latestEventLabel} hint={latestEventDate} />
+        <MetricCard label="Latest Stored Score" value={formatDisplayValue(latestScore.score, { locale: user.locale, key: "score" })} hint={formatDisplayValue(latestScore.close, { locale: user.locale, key: "close" })} />
       </section>
+
+      <Panel title="Ranking History" aside={<span className="pill">{formatNumber(selectionRows.length, user.locale)} events</span>}>
+        <p className="table-note">
+          One row per signal date: first listing, consecutive listing, and the first date the stock dropped from the paper target list.
+        </p>
+        <DataTable rows={selectionRows} columns={selectionColumns} emptyLabel="No ranking history was found for this symbol." locale={user.locale} pageSize={50} />
+      </Panel>
 
       <Panel title="Trade Ledger" aside={<span className="pill">{formatNumber(ledgerResult.rows, user.locale)} rows</span>}>
         <DataTable rows={ledgerRows} columns={ledgerColumns} emptyLabel="No fills for this symbol." locale={user.locale} pageSize={50} />

@@ -125,6 +125,17 @@ function symbolNameFrom(row: DashboardRow): string {
   return String(row.name ?? row.stock_name ?? row.security_name ?? "").trim();
 }
 
+function stockCellFields(symbol: string, name?: unknown) {
+  const normalized = normalizeSymbol(symbol);
+  const stockName = String(name ?? "").trim();
+  return {
+    code_detail: stockName || undefined,
+    code_href: normalized ? `/paper/stocks/${normalized}` : undefined,
+    symbol_detail: stockName || undefined,
+    symbol_href: normalized ? `/paper/stocks/${normalized}` : undefined,
+  };
+}
+
 function hasMeaningfulHolding(row: DashboardRow): boolean {
   const numericKeys = [
     "target_qty",
@@ -470,6 +481,7 @@ export default async function PaperPage({
         ...row,
         broker_order_id: orderIdFrom(row),
         symbol,
+        ...stockCellFields(symbol, symbolNames.get(symbol) ?? row.name),
         name: symbolNames.get(symbol) ?? row.name ?? null,
         side: String(row.side ?? row.trd_side ?? "").toUpperCase(),
         order_status: normalizeOrderStatus(row.order_status ?? row.status),
@@ -541,6 +553,7 @@ export default async function PaperPage({
         rank: target.rank ?? null,
         code: symbol,
         name: target.name ?? position.name ?? null,
+        ...stockCellFields(symbol, target.name ?? position.name),
         industry: target.industry ?? null,
         score: target.score ?? null,
         action: target.action ?? (asNumber(position.quantity) ? "HOLD" : null),
@@ -593,6 +606,14 @@ export default async function PaperPage({
       cancelled_order_ids: row.cancelled_order_ids ?? [],
       skipped_symbols: row.skipped_symbols ?? [],
       message: row.message ?? null,
+    };
+  });
+  const orderActivityRows = recentOrders.map((row) => {
+    const symbol = normalizeSymbol(row.symbol ?? row.code);
+    return {
+      ...row,
+      symbol,
+      ...stockCellFields(symbol, row.name ?? symbolNames.get(symbol)),
     };
   });
 
@@ -827,7 +848,7 @@ export default async function PaperPage({
               ))}
             </div>
             <DataTable
-              rows={recentOrders}
+              rows={orderActivityRows}
               columns={orderColumns}
               emptyLabel={orders.error ? "Live order feed is refreshing." : copy.common.noRows}
               locale={user.locale}

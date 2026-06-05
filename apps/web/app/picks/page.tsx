@@ -9,6 +9,11 @@ import { ProfileSelector } from "../models/profile-selector";
 
 export const dynamic = "force-dynamic";
 
+function normalizeCode(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return /^\d+$/.test(text) ? text.padStart(6, "0") : text;
+}
+
 export default async function PicksPage({
   searchParams
 }: {
@@ -25,6 +30,16 @@ export default async function PicksPage({
   const profiles = Array.isArray(modelOverview.model_profiles) ? modelOverview.model_profiles : [];
   const currentProfile = String(picks.profile_name ?? modelOverview.current_profile ?? modelOverview.active_profile ?? "short_5d");
   const activeProfile = String(modelOverview.active_profile ?? "short_5d");
+  const pickRows = picks.picks.map((row) => {
+    const code = normalizeCode(row.code);
+    const name = String(row.name ?? "").trim();
+    return {
+      ...row,
+      code,
+      code_detail: name || undefined,
+      code_href: code ? `/paper/stocks/${code}` : undefined,
+    };
+  });
 
   return (
     <Shell
@@ -52,12 +67,12 @@ export default async function PicksPage({
         />
         <MetricCard label={copy.picks.featureTime} value={formatDateTime(picks.feature_time, user.locale)} />
         <MetricCard label={copy.picks.modelTime} value={formatDateTime(picks.model_time, user.locale)} />
-        <MetricCard label={copy.picks.displayedPicks} value={formatNumber(picks.picks.length, user.locale)} hint={copy.picks.topRankedRows} />
+        <MetricCard label={copy.picks.displayedPicks} value={formatNumber(pickRows.length, user.locale)} hint={copy.picks.topRankedRows} />
       </section>
 
       <Panel title={copy.picks.rankedSignals}>
         <DataTable
-          rows={picks.picks}
+          rows={pickRows}
           columns={[
             { key: "rank", label: "Rank" },
             { key: "signal_date", label: copy.picks.signalDate },

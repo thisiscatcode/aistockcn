@@ -14,7 +14,8 @@ from app.services.files import read_json
 from app.services.admin_settings import filter_model_candidate_rows
 from app.services.model_profiles import get_model_profile_catalog, set_active_model_profile
 
-TRUSTED_BACKTEST_METHOD_VERSIONS = {
+REALISTIC_BACKTEST_METHOD_VERSIONS = {"realistic_execution_v1"}
+RESEARCH_BACKTEST_METHOD_VERSIONS = {
     "purged_label_horizon_v1",
     "purged_label_horizon_costs_v2",
 }
@@ -191,11 +192,15 @@ def _annotate_backtest_trust(summary: dict[str, Any]) -> dict[str, Any]:
     if not summary:
         return {}
     annotated = dict(summary)
-    is_trustworthy = annotated.get("method_version") in TRUSTED_BACKTEST_METHOD_VERSIONS
-    annotated["is_trustworthy"] = is_trustworthy
-    if not is_trustworthy:
+    method_version = str(annotated.get("method_version") or "")
+    is_realistic = method_version in REALISTIC_BACKTEST_METHOD_VERSIONS
+    is_research = method_version in RESEARCH_BACKTEST_METHOD_VERSIONS
+    annotated["is_trustworthy"] = is_realistic
+    annotated["is_realistic_execution"] = is_realistic
+    annotated["method_label"] = "Realistic Execution" if is_realistic else "Research Only" if is_research else "Legacy"
+    if not is_realistic:
         annotated["trust_warning"] = (
-            "Legacy backtest artifact. Rerun this profile with the purged walk-forward backtest before using these performance numbers."
+            "Research-only backtest artifact. Rerun this profile with the realistic execution backtest before comparing live-trading performance."
         )
     return annotated
 
@@ -283,6 +288,8 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
                 "portfolio_max_drawdown": summary.get("portfolio_max_drawdown"),
                 "portfolio_win_rate": summary.get("portfolio_win_rate"),
                 "method_version": summary.get("method_version"),
+                "method_label": summary.get("method_label"),
+                "is_realistic_execution": summary.get("is_realistic_execution"),
                 "is_trustworthy": summary.get("is_trustworthy"),
                 "num_rebalances": summary.get("num_rebalances"),
                 "backtest_start": summary.get("backtest_start"),
@@ -310,6 +317,8 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
                 "portfolio_max_drawdown": latest_summary.get("portfolio_max_drawdown"),
                 "portfolio_win_rate": latest_summary.get("portfolio_win_rate"),
                 "method_version": latest_summary.get("method_version"),
+                "method_label": latest_summary.get("method_label"),
+                "is_realistic_execution": latest_summary.get("is_realistic_execution"),
                 "is_trustworthy": latest_summary.get("is_trustworthy"),
                 "num_rebalances": latest_summary.get("num_rebalances"),
                 "backtest_start": latest_summary.get("backtest_start"),

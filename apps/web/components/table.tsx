@@ -57,19 +57,19 @@ function isNumericCell(value: unknown, key: string) {
 function linkHref(row: TableRow, key: string): string | null {
   const value = row[`${key}_href`];
   if (typeof value !== "string") {
-    return null;
+    return stockLinkHref(row, key);
   }
   const href = value.trim();
-  return href ? href : null;
+  return href ? href : stockLinkHref(row, key);
 }
 
 function cellDetail(row: TableRow, key: string): string | null {
   const value = row[`${key}_detail`];
   if (typeof value !== "string") {
-    return null;
+    return stockNameDetail(row, key);
   }
   const detail = value.trim();
-  return detail ? detail : null;
+  return detail ? detail : stockNameDetail(row, key);
 }
 
 function cellDisplay(row: TableRow, key: string): string | null {
@@ -92,6 +92,40 @@ function cellTone(row: TableRow, key: string): string | null {
     return value;
   }
   return null;
+}
+
+function normalizeStockCode(value: unknown): string {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) {
+    return "";
+  }
+  if (text.includes(".")) {
+    const parts = text.split(".").filter(Boolean);
+    const numeric = parts.find((part) => /^\d+$/.test(part));
+    return numeric ? numeric.padStart(6, "0") : parts.at(-1) ?? "";
+  }
+  return /^\d+$/.test(text) ? text.padStart(6, "0") : text;
+}
+
+function isStockCodeKey(key: string) {
+  const normalized = key.toLowerCase();
+  return normalized === "code" || normalized === "symbol" || normalized === "display_symbol" || normalized.endsWith("_code") || normalized.endsWith("_symbol");
+}
+
+function stockNameDetail(row: TableRow, key: string): string | null {
+  if (!isStockCodeKey(key)) {
+    return null;
+  }
+  const detail = String(row.name ?? row.stock_name ?? row.security_name ?? "").trim();
+  return detail || null;
+}
+
+function stockLinkHref(row: TableRow, key: string): string | null {
+  if (!isStockCodeKey(key)) {
+    return null;
+  }
+  const code = normalizeStockCode(row[key]);
+  return /^\d{6}$/.test(code) ? `/paper/stocks/${encodeURIComponent(code)}` : null;
 }
 
 export function DataTable({

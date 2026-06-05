@@ -20,6 +20,13 @@ from batch_download_all_a import mark_existing_outputs, merge_existing_output, p
 from backtest_walk_forward import annualized_return, estimate_rebalance_fees, max_drawdown, training_end_for_rebalance
 from build_inference_features import build_inference_frame
 from control_settings import is_investable_stock_name, is_st_stock_name, read_control_settings, write_control_settings
+from execution_model import (
+    DEFAULT_EXECUTION_MODEL,
+    board_price_limit_rate,
+    buy_liquidity_skip_reason,
+    liquidity_cap_notional,
+    near_price_limit,
+)
 from download_data import (
     build_valuation_df,
     is_investable_stock_name as is_universe_investable_stock_name,
@@ -42,13 +49,15 @@ from paper_trade_futu import (
 )
 from trading_fees import DEFAULT_FEE_MODEL, transaction_fee
 from scripts.import_daily_kline_to_postgres import UPSERT_SQL as KLINE_UPSERT_SQL, rows_from_kline
-from scripts.update_us_selection_data import shares_to_yi
+from scripts.import_stock_list_to_postgres import UPSERT_SQL as STOCK_LIST_UPSERT_SQL
+from scripts.update_us_selection_data import process_symbol_batches, shares_to_yi
 from scripts.import_stock_master_attributes import (
     SHAREHOLDER_RESEARCH_UPSERT_SQL,
     eastmoney_secucode,
     parse_shareholder_research_rows,
     parse_sina_concept_html,
 )
+import refresh_reference_data as reference_refresh
 from app.services import batch as batch_service
 from app.services import admin_settings as admin_settings_service
 from app.services import benchmark as benchmark_service
@@ -57,6 +66,7 @@ from app.services import model_profiles as model_profiles_service
 from app.services import paper as paper_service
 from app.services import paper_db as paper_db_service
 from app.services import pipeline_control as pipeline_control_service
+from app.services import pipeline_runner as pipeline_runner_service
 from app.services import source_readiness
 from app.services import us_selection_control as us_selection_control_service
 from app.services.fei_selection import SELECTION_SQL, STOCK_DETAIL_HISTORY_SQL, STOCK_DETAIL_SHAREHOLDER_SQL
@@ -242,6 +252,55 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertIn("stock_shareholder_research_code_date_idx", schema)
         self.assertIn("on conflict (report_date, code, exchange) do update set", SHAREHOLDER_RESEARCH_UPSERT_SQL)
 
+    def test_stock_list_upsert_preserves_existing_industry_when_source_is_missing(self) -> None:
+        self.assertIn("industry_code = coalesce(excluded.industry_code, stock_master.industry_code)", STOCK_LIST_UPSERT_SQL)
+        self.assertIn("industry_name = coalesce(excluded.industry_name, stock_master.industry_name)", STOCK_LIST_UPSERT_SQL)
+        self.assertIn("industry_short_name = coalesce(excluded.industry_short_name, stock_master.industry_short_name)", STOCK_LIST_UPSERT_SQL)
+        self.assertNotIn("industry_name = excluded.industry_name", STOCK_LIST_UPSERT_SQL)
+
+    def test_reference_publish_runs_full_fei_stock_attributes(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            calls.append(command)
+            return SimpleNamespace(returncode=0)
+
+        with mock.patch.dict(reference_refresh.os.environ, {"PAPER_DB_URL": "postgresql://example/db"}, clear=True):
+            with mock.patch.object(reference_refresh.subprocess, "run", side_effect=fake_run):
+                reference_refresh.run_fei_stock_attributes(Path("quant_data"))
+
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(calls[0][1].endswith("scripts/import_stock_list_to_postgres.py"))
+        self.assertTrue(calls[1][1].endswith("scripts/import_stock_master_attributes.py"))
+        self.assertNotIn("--skip-eps", calls[1])
+        self.assertIn("run/fei_stock_attributes_status.json", calls[1])
+        self.assertIn("run/fei_stock_attributes_checkpoint.json", calls[1])
+
+    def test_pipeline_stock_master_upsert_runs_import_command(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            calls.append(command)
+            return SimpleNamespace(returncode=0, stdout="ok\n", stderr="")
+
+        settings = SimpleNamespace(
+            project_root=ROOT,
+            stock_list_path=ROOT / "quant_data" / "stock_list.parquet",
+            paper_db_url="postgresql://example/db",
+            run_dir=ROOT / "run",
+        )
+
+        with mock.patch.object(pipeline_runner_service, "get_settings", return_value=settings):
+            with mock.patch.object(pipeline_runner_service, "_write_state"):
+                with mock.patch.object(pipeline_runner_service, "read_json", return_value={}):
+                    with mock.patch.object(pipeline_runner_service, "_log"):
+                        with mock.patch.object(pipeline_runner_service.subprocess, "run", side_effect=fake_run):
+                            pipeline_runner_service._run_stock_master_upsert()
+
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0][1].endswith("scripts/import_stock_list_to_postgres.py"))
+        self.assertIn("--database-url", calls[0])
+
     def test_daily_kline_import_rows_include_volume_and_amount(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "000001.parquet"
@@ -384,6 +443,30 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertIn("turnover = None", source)
         self.assertIn("if volume is not None and shares_yi and shares_yi > 0:", source)
         self.assertIn("turnover = round(volume / (shares_yi * 100000000) * 100, 2)", source)
+
+    def test_us_selection_batches_write_requested_checkpoint_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status_path = root / "status.json"
+            checkpoint_path = root / "custom-checkpoint.json"
+
+            summary = process_symbol_batches(
+                None,
+                ["AAPL", "MSFT"],
+                status_path,
+                None,
+                stage="update_prices",
+                batch_size=10,
+                sleep_seconds=0,
+                worker=lambda symbol: True,
+                target_date=date(2026, 6, 3),
+                checkpoint_path=checkpoint_path,
+            )
+
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["done_count"], 2)
+            self.assertEqual(checkpoint["last_symbol"], "MSFT")
+            self.assertEqual(checkpoint["target_date"], "2026-06-03")
 
     def test_paper_db_symbol_ledger_keeps_avg_and_realized_pnl_separate(self) -> None:
         fills = [
@@ -1325,6 +1408,9 @@ class PipelineRepairTests(unittest.TestCase):
                         "industry": "Bank",
                         "score": 0.9,
                         "close": 10.0,
+                        "amount": 100_000_000.0,
+                        "pct_chg": 0.0,
+                        "change": 0.0,
                     }
                 ]
             ).to_parquet(scores_path, index=False)
@@ -1348,7 +1434,7 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_buy_order_qty=1000,
+                max_buy_order_qty=0,
                 max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
@@ -1407,6 +1493,9 @@ class PipelineRepairTests(unittest.TestCase):
                         "industry": "Bank",
                         "score": 0.9,
                         "close": 10.0,
+                        "amount": 100_000_000.0,
+                        "pct_chg": 0.0,
+                        "change": 0.0,
                     }
                 ]
             ).to_parquet(scores_path, index=False)
@@ -1430,7 +1519,7 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.0,
                 budget_total=None,
-                max_buy_order_qty=1000,
+                max_buy_order_qty=0,
                 max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
@@ -1655,6 +1744,40 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertAlmostEqual(transaction_fee("SELL", 10_000.0), 25.4, places=6)
         self.assertEqual(transaction_fee("BUY", 0.0), 0.0)
 
+    def test_conservative_execution_model_price_limit_and_liquidity_rules(self) -> None:
+        self.assertAlmostEqual(board_price_limit_rate("000001", "平安银行"), 0.10)
+        self.assertAlmostEqual(board_price_limit_rate("300001", "创业板"), 0.20)
+        self.assertAlmostEqual(board_price_limit_rate("688001", "科创板"), 0.20)
+        self.assertAlmostEqual(board_price_limit_rate("688496", "*ST清越"), 0.05)
+        self.assertAlmostEqual(liquidity_cap_notional(100_000_000.0), 500_000.0)
+        self.assertEqual(
+            buy_liquidity_skip_reason(amount=10_000_000.0, order_notional=10_000.0),
+            "SKIP_LOW_LIQUIDITY",
+        )
+        self.assertEqual(
+            buy_liquidity_skip_reason(amount=100_000_000.0, order_notional=600_000.0),
+            "SKIP_LIQUIDITY_CAP",
+        )
+        self.assertIsNone(buy_liquidity_skip_reason(amount=100_000_000.0, order_notional=10_000.0))
+        self.assertTrue(
+            near_price_limit(
+                side="BUY",
+                price=10.96,
+                previous_close=10.0,
+                symbol="000001",
+                name="平安银行",
+            )
+        )
+        self.assertTrue(
+            near_price_limit(
+                side="SELL",
+                price=9.04,
+                previous_close=10.0,
+                symbol="000001",
+                name="平安银行",
+            )
+        )
+
     def test_paper_plan_reserves_buy_fees_before_sizing_order(self) -> None:
         affordable = compute_affordable_buy_quantity(cash_available=1020.0, price=10.0, lot_size=100)
         self.assertEqual(affordable, 0)
@@ -1696,6 +1819,9 @@ class PipelineRepairTests(unittest.TestCase):
                         "industry": "Bank",
                         "score": 0.9,
                         "close": 10.0,
+                        "amount": 100_000_000.0,
+                        "pct_chg": 0.0,
+                        "change": 0.0,
                     }
                 ]
             )
@@ -1710,6 +1836,61 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(int(plan.loc[0, "buy_order_qty"]), 100)
         self.assertAlmostEqual(float(plan.loc[0, "estimated_order_fee"]), 20.04, places=6)
         self.assertAlmostEqual(float(summary["estimated_order_fee"]), 20.04, places=6)
+        self.assertEqual(summary["execution_model"]["name"], "conservative_v1")
+
+    def test_paper_plan_uses_budget_cap_and_cash_buffer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = SyncConfig(
+                scores_path=Path(tmp) / "scores.parquet",
+                state_dir=Path(tmp),
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.05,
+                budget_total=50_000.0,
+                max_buy_order_qty=0,
+                max_sell_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+            latest_scores = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-19",
+                        "rank": 1,
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "Ping An Bank",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                        "amount": 100_000_000.0,
+                        "pct_chg": 0.0,
+                        "change": 0.0,
+                    }
+                ]
+            )
+
+            _plan, summary = build_plan(
+                config,
+                latest_scores=latest_scores,
+                positions={},
+                balance_metrics={"power": 1_000_000.0, "cash": 1_000_000.0, "total_assets": 1_000_000.0},
+            )
+
+        self.assertEqual(summary["total_capital"], 50_000.0)
+        self.assertEqual(summary["investable_capital"], 47_500.0)
+        self.assertEqual(int(_plan.loc[0, "buy_order_qty"]), 4700)
+        self.assertAlmostEqual(float(_plan.loc[0, "estimated_order_notional"]), 47_000.0, places=6)
 
     def test_paper_latest_scores_filters_st_before_top_k(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1828,7 +2009,12 @@ class PipelineRepairTests(unittest.TestCase):
                 return {"order_id": "order-1", "order_status": "SUBMITTED"}
 
         client = OrderClient()
-        config = SimpleNamespace(cancel_open_orders=False, max_buy_order_qty=1000, max_sell_order_qty=1000)
+        config = SimpleNamespace(
+            cancel_open_orders=False,
+            max_buy_order_qty=1000,
+            max_sell_order_qty=1000,
+            execution_model=DEFAULT_EXECUTION_MODEL,
+        )
         plan = pd.DataFrame(
             [
                 {
@@ -1836,6 +2022,8 @@ class PipelineRepairTests(unittest.TestCase):
                     "score": 0.9,
                     "code": "000001",
                     "close": 10.0,
+                    "amount": 100_000_000.0,
+                    "previous_close": 10.0,
                     "buy_limit_price": 10.0,
                     "sell_limit_price": 10.0,
                     "buy_order_qty": 100,
@@ -1864,11 +2052,16 @@ class PipelineRepairTests(unittest.TestCase):
                 return {"order_id": f"order-{len(self.orders)}", "order_status": "SUBMITTED"}
 
         client = OrderClient()
-        config = SimpleNamespace(cancel_open_orders=False, max_buy_order_qty=100, max_sell_order_qty=9999999999)
+        config = SimpleNamespace(
+            cancel_open_orders=False,
+            max_buy_order_qty=100,
+            max_sell_order_qty=9999999999,
+            execution_model=DEFAULT_EXECUTION_MODEL,
+        )
         plan = pd.DataFrame(
             [
-                {"rank": None, "score": None, "code": "605288", "buy_order_qty": 0, "sell_order_qty": 300},
-                {"rank": 1, "score": 0.9, "code": "000001", "buy_order_qty": 500, "sell_order_qty": 0},
+                {"rank": None, "score": None, "code": "605288", "buy_order_qty": 0, "sell_order_qty": 300, "previous_close": 10.0, "amount": 100_000_000.0},
+                {"rank": 1, "score": 0.9, "code": "000001", "buy_order_qty": 500, "sell_order_qty": 0, "previous_close": 10.0, "amount": 100_000_000.0},
             ]
         )
 
@@ -1935,7 +2128,7 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertEqual(overview["backtest_summary"]["profile_name"], "short_3d")
         self.assertEqual([row["equity"] for row in overview["backtest_equity_curve"]], [1.1, 1.32])
 
-    def test_model_overview_trusts_cost_adjusted_backtest_version(self) -> None:
+    def test_model_overview_marks_cost_adjusted_backtest_as_research_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             models_dir = root / "quant_data" / "models"
@@ -1970,7 +2163,49 @@ class PipelineRepairTests(unittest.TestCase):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
                     overview = model_service.get_model_overview(profile_name="short_3d")
 
+        self.assertFalse(overview["backtest_summary"]["is_trustworthy"])
+        self.assertFalse(overview["backtest_summary"]["is_realistic_execution"])
+        self.assertEqual(overview["backtest_summary"]["method_label"], "Research Only")
+        self.assertIn("trust_warning", overview["backtest_summary"])
+
+    def test_model_overview_marks_realistic_backtest_as_execution_method(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "quant_data" / "models"
+            backtests_dir = root / "quant_data" / "backtests"
+            run_dir = root / "run"
+            short_3d_run = backtests_dir / "runs" / "20260603T000000Z__short_3d"
+            models_dir.mkdir(parents=True)
+            short_3d_run.mkdir(parents=True)
+            run_dir.mkdir()
+            (models_dir / "training_metadata.json").write_text(
+                json.dumps({"profile_name": "short_3d"}),
+                encoding="utf-8",
+            )
+            (short_3d_run / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260603T000000Z__short_3d",
+                        "profile_name": "short_3d",
+                        "profile_label": "3D Short",
+                        "method_version": "realistic_execution_v1",
+                        "portfolio_total_return": 0.05,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pd.DataFrame(
+                [{"rebalance_date": "2026-05-20", "portfolio_return": 0.1, "equity": 1.1, "num_picks": 5}]
+            ).to_parquet(short_3d_run / "equity_curve.parquet", index=False)
+            settings = SimpleNamespace(models_dir=models_dir, backtests_dir=backtests_dir, run_dir=run_dir, quant_dir=root / "quant_data")
+
+            with mock.patch.object(model_service, "get_settings", return_value=settings):
+                with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
+                    overview = model_service.get_model_overview(profile_name="short_3d")
+
         self.assertTrue(overview["backtest_summary"]["is_trustworthy"])
+        self.assertTrue(overview["backtest_summary"]["is_realistic_execution"])
+        self.assertEqual(overview["backtest_summary"]["method_label"], "Realistic Execution")
         self.assertNotIn("trust_warning", overview["backtest_summary"])
 
     def test_backtest_metric_helpers_report_drawdown_and_annualized_return(self) -> None:

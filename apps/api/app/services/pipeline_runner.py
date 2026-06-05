@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -132,6 +134,94 @@ def _run_fei_kline_import() -> None:
     CURRENT_STEP_LABEL = None
 
 
+def _run_stock_master_upsert() -> None:
+    global CURRENT_STEP_KEY, CURRENT_STEP_LABEL
+
+    label = "Stock Master Upsert"
+    CURRENT_STEP_KEY = "stock_master_upsert"
+    CURRENT_STEP_LABEL = label
+    _write_state(status="running", current_step_key="stock_master_upsert", current_step_label=label, failed_step_key=None, error_message=None)
+    _log(f"Starting {label}.")
+
+    settings = get_settings()
+    database_url = os.getenv("APP_DB_URL") or settings.paper_db_url
+    if not database_url:
+        raise RuntimeError("APP_DB_URL or PAPER_DB_URL is required to upsert stock_master.")
+
+    command = [
+        sys.executable,
+        str(settings.project_root / "scripts" / "import_stock_list_to_postgres.py"),
+        "--stock-list",
+        str(settings.stock_list_path),
+        "--schema-sql",
+        str(settings.project_root / "scripts" / "create_stock_master.sql"),
+        "--database-url",
+        database_url,
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=settings.project_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    for line in completed.stdout.splitlines():
+        _log(line)
+    for line in completed.stderr.splitlines():
+        _log(line)
+    if completed.returncode != 0:
+        raise RuntimeError(f"{label} failed with exit code {completed.returncode}.")
+
+    state = read_json(_state_path())
+    completed_steps = list(state.get("completed_steps", []))
+    if "stock_master_upsert" not in completed_steps:
+        completed_steps.append("stock_master_upsert")
+    _write_state(completed_steps=completed_steps, current_step_key=None, current_step_label=None)
+    CURRENT_STEP_KEY = None
+    CURRENT_STEP_LABEL = None
+
+
+def _run_pre_explosion_scan() -> None:
+    global CURRENT_STEP_KEY, CURRENT_STEP_LABEL
+
+    label = "Pre-Explosion Pattern Scan"
+    CURRENT_STEP_KEY = "pre_explosion_scan"
+    CURRENT_STEP_LABEL = label
+    _write_state(status="running", current_step_key="pre_explosion_scan", current_step_label=label, failed_step_key=None, error_message=None)
+    _log(f"Starting {label}.")
+
+    settings = get_settings()
+    command = [
+        sys.executable,
+        str(settings.project_root / "pre_explosion_scanner.py"),
+        "--data-dir",
+        str(settings.quant_dir),
+        "--output-dir",
+        str(settings.quant_dir / "pre_explosion"),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=settings.project_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    for line in completed.stdout.splitlines():
+        _log(line)
+    for line in completed.stderr.splitlines():
+        _log(line)
+    if completed.returncode != 0:
+        raise RuntimeError(f"{label} failed with exit code {completed.returncode}.")
+
+    state = read_json(_state_path())
+    completed_steps = list(state.get("completed_steps", []))
+    if "pre_explosion_scan" not in completed_steps:
+        completed_steps.append("pre_explosion_scan")
+    _write_state(completed_steps=completed_steps, current_step_key=None, current_step_label=None)
+    CURRENT_STEP_KEY = None
+    CURRENT_STEP_LABEL = None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timestamp", required=True)
@@ -160,7 +250,9 @@ def main() -> int:
         for step_key, label in ordered_steps:
             _run_step(step_key, label)
             if step_key == "step1":
+                _run_stock_master_upsert()
                 _run_fei_kline_import()
+                _run_pre_explosion_scan()
 
         _write_state(status="completed", finished_at=_now_iso(), current_step_key=None, current_step_label=None)
         _log("Daily pipeline completed successfully.")

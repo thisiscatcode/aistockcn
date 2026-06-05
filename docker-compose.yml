@@ -32,7 +32,7 @@ services:
       PROJECT_ROOT: /workspace
       HOST_PROJECT_ROOT: ${HOST_PROJECT_ROOT:-/opt/aistockcn}
       PANEL_API_ALLOWED_CIDRS: ${PANEL_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128}
-      PANEL_API_ALLOWED_SERVICE_NAMES: ${PANEL_API_ALLOWED_SERVICE_NAMES:-panel-web}
+      PANEL_API_ALLOWED_SERVICE_NAMES: ${PANEL_API_ALLOWED_SERVICE_NAMES:-panel-web,panel-web-fei}
     networks:
       - default
       - paper-db
@@ -56,6 +56,27 @@ services:
       - ./run:/run-config:ro
     ports:
       - "127.0.0.1:3030:3000"
+
+  panel-web-fei:
+    build:
+      context: .
+      dockerfile: apps/web-fei/Dockerfile
+    image: aistockcn-panel-web-fei:latest
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      - panel-api
+    env_file:
+      - ./run/panel.env
+    environment:
+      API_BASE_URL: http://panel-api:8000
+      PANEL_PUBLIC_URL: https://fei.wintrusttech.com
+      PANEL_PUBLIC_HOSTS: fei.wintrusttech.com
+    volumes:
+      - ./run:/run-config:ro
+      - ./apps/web-fei/private:/app/private:ro
+    ports:
+      - "127.0.0.1:3031:3000"
 
 networks:
   paper-db:
