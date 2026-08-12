@@ -2,7 +2,7 @@
 
 ## What The Dashboard Is For
 
-The web panel is built for operators and reviewers who need to inspect the current state of the quant workflow without opening files or shell logs manually.
+The web panel is built for operators and product users who need to inspect the current state of the quant workflow without opening files or shell logs manually.
 
 ## Main Pages
 

@@ -5,23 +5,23 @@ Start with the document that matches what you want to evaluate.
 ## Research Copilot
 
 - [RESEARCH_COPILOT.md](RESEARCH_COPILOT.md)
-- Product scope, source-grounding contract, RAG and agent architecture, local runtime, deployment boundaries and the three-minute interview walkthrough
-- Best first document for hiring managers and engineers reviewing the AI system
+- Product scope, source-grounding contract, RAG and agent architecture, user workflow, local runtime and deployment boundaries
+- Use this document to operate, maintain or extend the AI research system
 
 ## Quant Platform User Guide
 
 - [USER_GUIDE.md](USER_GUIDE.md)
-- Best for reviewers who want to understand the product surface and operator workflow
+- Product surface and operator workflow
 
 ## System Design Spec
 
 - [SYSTEM_DESIGN_SPEC.md](SYSTEM_DESIGN_SPEC.md)
-- Best for reviewers who want the architecture, boundaries, runtime model, and operational controls
+- Architecture, boundaries, runtime model and operational controls
 
 ## System Manual
 
 - [SYSTEM_MANUAL.md](SYSTEM_MANUAL.md)
-- Best for reviewers who want a step-by-step explanation of the quant pipeline and artifact flow
+- Step-by-step explanation of the quant pipeline and artifact flow
 
 ## Results and model profiles
 
@@ -35,9 +35,9 @@ Suggested reading order:
 3. `SYSTEM_DESIGN_SPEC.md`
 4. `SYSTEM_MANUAL.md`
 
-## Deployment truth
+## Deployment status
 
 - `aistockcn.com` and `research.aistockcn.com` are live.
 - The Research Copilot currently runs on the existing host with Docker Compose.
-- Kubernetes manifests and Terraform are validated deployment assets, but are not represented as the current public runtime.
+- Kubernetes manifests and Terraform are validated deployment assets, but are not part of the current public runtime.
 - Terraform is intentionally not applied because it would create chargeable AWS resources.

@@ -65,7 +65,7 @@ const decisions = [
   {
     id: "ADR-03",
     title: "Run the LLM locally",
-    reason: "Ollama qwen2.5:3b makes the public demo independent of a paid API key while preserving the same structured planning and synthesis contracts."
+    reason: "Ollama qwen2.5:3b keeps the research service independent of a paid API key while preserving the same structured planning and synthesis contracts."
   },
   {
     id: "ADR-04",
@@ -76,7 +76,7 @@ const decisions = [
 
 export function CaseStudyContent() {
   return (
-    <section className="case-embedded" aria-label="AiStockCN Research Copilot engineering case study">
+    <section className="case-embedded" aria-label="AiStockCN Research Copilot system architecture">
       <section className="case-section" id="architecture">
         <div className="case-section-heading">
           <div>
@@ -143,9 +143,9 @@ model_inference:
         <div className="case-section-heading">
           <div>
             <p className="case-kicker">Product · ML · Delivery</p>
-            <h2>One feature, three kinds of proof</h2>
+            <h2>One workflow, three product guarantees</h2>
           </div>
-          <p>A recruiter can use the feature, inspect the agent path and run its retrieval benchmark from the same product surface.</p>
+          <p>Users can run research, inspect the agent path and review retrieval quality from the same product surface.</p>
         </div>
         <div className="case-capability-grid">
           {capabilityCards.map((card, index) => (
@@ -164,7 +164,7 @@ model_inference:
         <div className="case-section-heading">
           <div>
             <p className="case-kicker">Requirements traceability</p>
-            <h2>Product needs become acceptance evidence</h2>
+            <h2>Product needs map to verifiable behaviour</h2>
           </div>
           <p>Every important requirement maps to an implementation choice and something visible in the running system.</p>
         </div>
@@ -172,7 +172,7 @@ model_inference:
           <div className="case-trace-row case-trace-header" role="row">
             <span role="columnheader">Product need</span>
             <span role="columnheader">Engineering response</span>
-            <span role="columnheader">Acceptance evidence</span>
+            <span role="columnheader">Product behaviour</span>
           </div>
           {traceabilityRows.map((row) => (
             <div className="case-trace-row" role="row" key={row.need}>
@@ -190,7 +190,7 @@ model_inference:
             <p className="case-kicker">Architecture decision record</p>
             <h2>Trade-offs made explicit</h2>
           </div>
-          <p>The implementation favours a credible, inspectable product over disconnected technology demonstrations.</p>
+          <p>The implementation prioritises traceable research, operational reliability and maintainable system boundaries.</p>
         </div>
         <div className="case-decision-list">
           {decisions.map((decision) => (

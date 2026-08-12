@@ -9,9 +9,9 @@ AiStockCN is a live financial-data platform with an integrated, source-grounded 
 
 The customer site and Research Copilot use separate frontend/API services. Research development and deployment therefore do not require rebuilding the customer-facing image.
 
-## Why this project exists
+## Product overview
 
-This is not a standalone chatbot built around sample data. The copilot is attached to AiStockCN's existing US equity database and operational platform. It is designed to demonstrate how an AI research workflow can be added to a real financial product while preserving source traceability, deterministic calculations and production boundaries.
+The Research Copilot is attached directly to AiStockCN's existing US equity database and operational platform. It gives users one research workflow for company filings, market data, deterministic calculations and source-grounded AI analysis.
 
 ## Product surfaces
 
@@ -19,7 +19,7 @@ This is not a standalone chatbot built around sample data. The copilot is attach
 | --- | --- | --- |
 | `aistockcn.com` | Existing customer-facing market and quantitative platform | Live, isolated production image |
 | `research.aistockcn.com` | US equity document research, comparison and retrieval evaluation | Live, Docker Compose on the existing host |
-| Kubernetes manifests | API, worker, frontend, Ollama, probes and rolling updates | Validated configuration; not claimed as the public runtime |
+| Kubernetes manifests | API, worker, frontend, Ollama, probes and rolling updates | Validated configuration; not active in the current public runtime |
 | Terraform | EC2, S3, ECR, IAM and CloudWatch infrastructure | Validated infrastructure as code; not applied to avoid unnecessary AWS cost |
 
 ## Research Copilot capabilities
@@ -48,7 +48,7 @@ Citation metadata is never invented by the language model. The server attaches t
 
 ```mermaid
 flowchart LR
-    U["User / interviewer"] --> W["Next.js research frontend"]
+    U["User"] --> W["Next.js research frontend"]
     W --> A["FastAPI research API"]
     A --> L["Structured agent planner and synthesis\nOllama qwen2.5:3b"]
     A --> M["AiStockCN US market data\nPostgreSQL"]
@@ -71,7 +71,7 @@ flowchart LR
 6. The LLM synthesizes the supplied evidence and tool output.
 7. The API returns a structured response containing evidence, inference, limitations and an execution trace.
 
-## Technology evidence in the repository
+## Implementation map
 
 | Area | Implementation |
 | --- | --- |
@@ -87,17 +87,14 @@ flowchart LR
 | AWS infrastructure design | `deploy/terraform/` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 
-## Three-minute product walkthrough
+## Typical research workflow
 
-1. Open `research.aistockcn.com` and select a US-listed company.
-2. Upload an annual-report PDF and show its queued, extracting and indexed states.
-3. Ask a question about revenue, profit, risk or management commentary.
-4. Open a cited page and explain the Evidence / Model inference separation.
-5. Compare two or three companies and show the agent's database, calculation and retrieval steps.
-6. Run the reranker evaluation and show Top-1 accuracy, MRR and the lexical baseline.
-7. Finish with the architecture and the honest deployment boundary shown above.
-
-The full interview script is in [docs/RESEARCH_COPILOT.md](docs/RESEARCH_COPILOT.md#three-minute-interview-walkthrough).
+1. Select a US-listed company.
+2. Upload an annual report or company filing and wait for indexing to complete.
+3. Ask about revenue, profitability, risks or changes in management commentary.
+4. Inspect the cited filename, page and original passage alongside the model inference.
+5. Compare two or three companies using the same document, market-data and calculation tools.
+6. Review retrieval quality through the evaluation page when maintaining or changing the search pipeline.
 
 ## Underlying AiStockCN platform
 
@@ -137,7 +134,7 @@ tests/                Unit and integration-style service tests
 
 ## Local development
 
-This repository is a production platform snapshot, not a seeded toy application. The Research Copilot expects:
+Local setup connects to existing platform services and does not seed market data. The Research Copilot expects:
 
 - Docker and Docker Compose;
 - a reachable PostgreSQL database with the existing AiStockCN schema and `pgvector`;
@@ -185,7 +182,3 @@ Datasets, uploaded documents, logs, model caches, runtime state and real credent
 - [System manual](docs/SYSTEM_MANUAL.md)
 - [Production research results](docs/RESULTS.md)
 - [A-share 10-day model profile](docs/A_SHARE_MEDIUM_10D_V2.md)
-
-## Resume summary
-
-> Built and deployed a production financial research copilot using FastAPI, LLM agents, RAG, PostgreSQL/pgvector and a PyTorch reranker; containerised with Docker and supported by Kubernetes/AWS infrastructure as code, automated evaluation, observability and source-grounded responses.

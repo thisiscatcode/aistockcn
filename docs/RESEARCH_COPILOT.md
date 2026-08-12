@@ -30,7 +30,7 @@ Production-oriented US equity research on top of AiStockCN's existing market-dat
 
 ```mermaid
 flowchart LR
-    U["User / interviewer"] --> W["Next.js research frontend"]
+    U["User"] --> W["Next.js research frontend"]
     W --> A["FastAPI research API"]
     A --> P["Structured agent planner\nOllama qwen2.5:3b"]
     A --> D["AiStockCN US market data\nPostgreSQL"]
@@ -109,24 +109,20 @@ terraform plan
 terraform apply
 ```
 
-Terraform is not applied automatically because it creates chargeable AWS resources. The current public demo runs on the existing AiStockCN host.
+Terraform is not applied automatically because it creates chargeable AWS resources. The current public service runs on the existing AiStockCN host.
 
-## Three-minute interview walkthrough
+## User workflow
 
-**0:00–0:25 — product context.** Open `research.aistockcn.com`, explain that this is attached to the live AiStockCN US database and isolated from the customer-facing site.
+1. Open `research.aistockcn.com` and select a company from the AiStockCN US equity universe.
+2. Upload an annual report or filing. The document moves through queued, extracting and search-ready states while preserving its page structure.
+3. Ask a company-specific question. The API streams progress while the agent selects and executes its allow-listed document, market-data and calculation tools.
+4. Review the answer's Document evidence, Model inference and Limitations sections. Each document passage includes its filename and page number.
+5. Compare two or three companies. The system executes the required tools for each company before synthesizing the comparison.
+6. Use the evaluation page to monitor Top-1 accuracy, MRR, lexical baseline and per-query ranks when the retrieval pipeline changes.
 
-**0:25–0:55 — ingestion.** Select AAPL, upload an annual-report PDF, and point out queued → extracting → search-ready status, page count and chunk count.
+## Operational boundaries
 
-**0:55–1:40 — grounded question.** Ask: “What changed in management’s discussion of supply-chain and regulatory risk?” Show streamed planner/tool events, then the answer. Point to the separate Evidence and Model inference panels and the filename/page citation.
-
-**1:40–2:15 — multi-step comparison.** Compare AAPL, MSFT and GOOGL. Explain that the agent executes the same database, calculation and retrieval tools for each company before synthesis.
-
-**2:15–2:40 — evaluation.** Run the live PyTorch benchmark. Show Top-1 accuracy, MRR, lexical baseline and per-query relevant ranks.
-
-**2:40–3:00 — production design.** Show the trace and architecture, then mention worker claiming, S3 encryption, pgvector indexes, retries/rate limits/logging, Docker isolation, Kubernetes probes/rolling updates and Terraform-managed AWS infrastructure.
-
-## Interview claim
-
-> Built and deployed a production financial research copilot using FastAPI, LLM agents, RAG, PostgreSQL/pgvector and a PyTorch reranker; containerised with Docker and deployed with Kubernetes/AWS infrastructure, automated evaluation, observability and source-grounded responses.
-
-Do not claim Kubernetes or Terraform is the current public runtime until those manifests have actually been applied. The public demo is deployed; the Kubernetes and Terraform assets are deployment-ready infrastructure as code.
+- Docker Compose is the current public runtime.
+- Kubernetes and Terraform are maintained as validated deployment assets, not described as the current runtime.
+- Real credentials, uploaded documents, logs, model caches and runtime state are excluded from Git.
+- The example secret files define configuration shape only and must never be applied unchanged.
