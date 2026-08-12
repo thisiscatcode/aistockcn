@@ -14,7 +14,7 @@ export function Shell({
   locale,
   username,
   role,
-  tone = "dark",
+  tone = "light",
   compact = false
 }: {
   title: string;

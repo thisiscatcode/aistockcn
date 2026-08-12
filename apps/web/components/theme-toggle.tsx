@@ -18,11 +18,11 @@ function applyTheme(theme: ThemeMode) {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [theme, setTheme] = useState<ThemeMode>("bright");
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(STORAGE_KEY);
-    const nextTheme: ThemeMode = savedTheme === "bright" ? "bright" : "dark";
+    const nextTheme: ThemeMode = savedTheme === "dark" ? "dark" : "bright";
     setTheme(nextTheme);
     applyTheme(nextTheme);
   }, []);
@@ -35,14 +35,15 @@ export function ThemeToggle() {
   }
 
   const switchingTo = theme === "dark" ? "bright" : "dark";
+  const switchingToLabel = switchingTo === "bright" ? "light" : "dark";
 
   return (
     <button
       type="button"
       className="theme-toggle"
       onClick={toggleTheme}
-      aria-label={`Switch to ${switchingTo} theme`}
-      title={`Switch to ${switchingTo} theme`}
+      aria-label={`Switch to ${switchingToLabel} theme`}
+      title={`Switch to ${switchingToLabel} theme`}
     >
       <span className={`theme-toggle-icon theme-toggle-${switchingTo}`} aria-hidden="true" />
     </button>

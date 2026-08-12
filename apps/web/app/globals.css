@@ -2500,8 +2500,9 @@ select {
   margin: 0;
   padding: 16px;
   border-radius: 6px;
-  background: #1f1a15;
-  color: #f5efe6;
+  border: 1px solid rgba(68, 49, 28, 0.12);
+  background: #fffdf8;
+  color: #3f3529;
   overflow: auto;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 0.88rem;
@@ -7297,4 +7298,165 @@ select {
   .research-document-status {
     width: fit-content;
   }
+}
+
+/* Light theme keeps every authenticated research surface light. */
+.theme-shell-root[data-theme="bright"] .research-command-panel,
+.theme-shell-root[data-theme="bright"] .research-company-panel,
+.theme-shell-root[data-theme="bright"] .research-workspace > section,
+.theme-shell-root[data-theme="bright"] .research-copilot-panel,
+.theme-shell-root[data-theme="bright"] .research-comparison-panel,
+.theme-shell-root[data-theme="bright"] .research-evaluation-panel,
+.theme-shell-root[data-theme="bright"] .research-documents-panel {
+  border-color: rgba(15, 118, 110, 0.18);
+  background: rgba(255, 253, 248, 0.92);
+  color: var(--text);
+  box-shadow: 0 14px 34px rgba(92, 69, 37, 0.1);
+}
+
+.theme-shell-root[data-theme="bright"] .research-home-search > div,
+.theme-shell-root[data-theme="bright"] .research-search-form > div,
+.theme-shell-root[data-theme="bright"] .research-question-form textarea,
+.theme-shell-root[data-theme="bright"] .research-comparison-form input,
+.theme-shell-root[data-theme="bright"] .research-document-upload input,
+.theme-shell-root[data-theme="bright"] .research-document-upload select {
+  border-color: rgba(68, 49, 28, 0.18);
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.theme-shell-root[data-theme="bright"] .research-home-search input,
+.theme-shell-root[data-theme="bright"] .research-search-form input {
+  color: var(--text);
+}
+
+.theme-shell-root[data-theme="bright"] .research-home-search input::placeholder,
+.theme-shell-root[data-theme="bright"] .research-search-form input::placeholder,
+.theme-shell-root[data-theme="bright"] .research-question-form textarea::placeholder,
+.theme-shell-root[data-theme="bright"] .research-comparison-form input::placeholder {
+  color: #928475;
+}
+
+.theme-shell-root[data-theme="bright"] .research-command-panel h2,
+.theme-shell-root[data-theme="bright"] .research-section-heading h2,
+.theme-shell-root[data-theme="bright"] .research-company-hero h2,
+.theme-shell-root[data-theme="bright"] .research-task-panel h2,
+.theme-shell-root[data-theme="bright"] .research-empty-state h2,
+.theme-shell-root[data-theme="bright"] .research-company-row strong,
+.theme-shell-root[data-theme="bright"] .research-row-price,
+.theme-shell-root[data-theme="bright"] .research-price-block strong,
+.theme-shell-root[data-theme="bright"] .research-metric-grid strong,
+.theme-shell-root[data-theme="bright"] .research-readiness-grid strong,
+.theme-shell-root[data-theme="bright"] .research-task-grid strong,
+.theme-shell-root[data-theme="bright"] .research-answer-summary > p:last-child,
+.theme-shell-root[data-theme="bright"] .research-proof-card > div span,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > div span,
+.theme-shell-root[data-theme="bright"] .research-agent-trace li strong,
+.theme-shell-root[data-theme="bright"] .research-comparison-result > p:first-child,
+.theme-shell-root[data-theme="bright"] .research-evaluation-metrics strong,
+.theme-shell-root[data-theme="bright"] .research-evaluation-cases strong,
+.theme-shell-root[data-theme="bright"] .research-document-list strong {
+  color: #2c342f;
+}
+
+.theme-shell-root[data-theme="bright"] .research-command-panel > div > p:last-child,
+.theme-shell-root[data-theme="bright"] .research-empty-state > p:last-child,
+.theme-shell-root[data-theme="bright"] .research-company-hero > div:first-child > p:last-child,
+.theme-shell-root[data-theme="bright"] .research-price-block small,
+.theme-shell-root[data-theme="bright"] .research-company-row small,
+.theme-shell-root[data-theme="bright"] .research-row-price,
+.theme-shell-root[data-theme="bright"] .research-metric-grid span,
+.theme-shell-root[data-theme="bright"] .research-readiness-grid small,
+.theme-shell-root[data-theme="bright"] .research-task-grid span,
+.theme-shell-root[data-theme="bright"] .research-question-form small,
+.theme-shell-root[data-theme="bright"] .research-proof-card > div small,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > div small,
+.theme-shell-root[data-theme="bright"] .research-agent-trace li small,
+.theme-shell-root[data-theme="bright"] .research-limitations,
+.theme-shell-root[data-theme="bright"] .research-comparison-trace,
+.theme-shell-root[data-theme="bright"] .research-evaluation-model,
+.theme-shell-root[data-theme="bright"] .research-evaluation-hint,
+.theme-shell-root[data-theme="bright"] .research-evaluation-metrics span,
+.theme-shell-root[data-theme="bright"] .research-evaluation-cases small,
+.theme-shell-root[data-theme="bright"] .research-document-list small,
+.theme-shell-root[data-theme="bright"] .research-document-stats,
+.theme-shell-root[data-theme="bright"] .research-document-upload label > span {
+  color: #6f6254;
+}
+
+.theme-shell-root[data-theme="bright"] .research-kicker,
+.theme-shell-root[data-theme="bright"] .research-symbol,
+.theme-shell-root[data-theme="bright"] .research-agent-trace li > span,
+.theme-shell-root[data-theme="bright"] .research-proof-card cite,
+.theme-shell-root[data-theme="bright"] .research-question-form label,
+.theme-shell-root[data-theme="bright"] .research-comparison-form label,
+.theme-shell-root[data-theme="bright"] .research-home-search label,
+.theme-shell-root[data-theme="bright"] .research-search-form label {
+  color: #0f766e;
+}
+
+.theme-shell-root[data-theme="bright"] .research-company-list,
+.theme-shell-root[data-theme="bright"] .research-company-row,
+.theme-shell-root[data-theme="bright"] .research-metric-grid article,
+.theme-shell-root[data-theme="bright"] .research-proof-card > div,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > div,
+.theme-shell-root[data-theme="bright"] .research-agent-trace li,
+.theme-shell-root[data-theme="bright"] .research-comparison-table > div,
+.theme-shell-root[data-theme="bright"] .research-evaluation-metrics article {
+  border-color: rgba(68, 49, 28, 0.12);
+}
+
+.theme-shell-root[data-theme="bright"] .research-company-row:hover,
+.theme-shell-root[data-theme="bright"] .research-company-row.is-selected {
+  background: #e7f5f1;
+}
+
+.theme-shell-root[data-theme="bright"] .research-readiness-grid article,
+.theme-shell-root[data-theme="bright"] .research-task-grid article,
+.theme-shell-root[data-theme="bright"] .research-suggestions button,
+.theme-shell-root[data-theme="bright"] .research-answer-summary,
+.theme-shell-root[data-theme="bright"] .research-proof-card,
+.theme-shell-root[data-theme="bright"] .research-agent-trace,
+.theme-shell-root[data-theme="bright"] .research-comparison-result > p:first-child,
+.theme-shell-root[data-theme="bright"] .research-comparison-table,
+.theme-shell-root[data-theme="bright"] .research-evaluation-metrics,
+.theme-shell-root[data-theme="bright"] .research-evaluation-cases article,
+.theme-shell-root[data-theme="bright"] .research-document-list article,
+.theme-shell-root[data-theme="bright"] .research-document-status,
+.theme-shell-root[data-theme="bright"] .research-document-empty {
+  border-color: rgba(68, 49, 28, 0.13);
+  background: #fbf7f0;
+  color: var(--text);
+}
+
+.theme-shell-root[data-theme="bright"] .research-readiness-grid article.is-ready,
+.theme-shell-root[data-theme="bright"] .research-document-status.is-text_ready,
+.theme-shell-root[data-theme="bright"] .research-document-status.is-indexed {
+  border-color: rgba(15, 118, 110, 0.25);
+  background: #e4f4ee;
+  color: #0f6b55;
+}
+
+.theme-shell-root[data-theme="bright"] .research-suggestions button:hover {
+  border-color: rgba(15, 118, 110, 0.35);
+  color: #0f766e;
+}
+
+.theme-shell-root[data-theme="bright"] .research-plan-reason,
+.theme-shell-root[data-theme="bright"] .research-agent-progress,
+.theme-shell-root[data-theme="bright"] .research-proof-card section.is-document-evidence {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #edf8f5;
+  color: #356f69;
+}
+
+.theme-shell-root[data-theme="bright"] .research-no-docs {
+  background: #fff7df;
+  color: #805f1b !important;
+}
+
+.theme-shell-root[data-theme="bright"] .research-comparison-table .is-heading {
+  background: #f0edfb;
+  color: #5f5878;
 }

@@ -389,7 +389,7 @@ export default async function OverviewPage({
       locale={user.locale}
       username={user.username}
       role={user.role}
-      tone="dark"
+      tone="light"
     >
       {overview.warnings.length ? (
         <section className="portfolio-warning-list" aria-label="Overview data warnings">
