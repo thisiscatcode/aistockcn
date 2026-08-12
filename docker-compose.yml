@@ -32,7 +32,7 @@ services:
       PROJECT_ROOT: /workspace
       HOST_PROJECT_ROOT: ${HOST_PROJECT_ROOT:-/opt/aistockcn}
       PANEL_API_ALLOWED_CIDRS: ${PANEL_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128}
-      PANEL_API_ALLOWED_SERVICE_NAMES: ${PANEL_API_ALLOWED_SERVICE_NAMES:-panel-web,panel-web-fei}
+      PANEL_API_ALLOWED_SERVICE_NAMES: ${PANEL_API_ALLOWED_SERVICE_NAMES:-panel-web,panel-web-fei,panel-web-research}
     networks:
       - default
       - paper-db
@@ -97,10 +97,12 @@ services:
     working_dir: /app
     depends_on:
       - panel-api
+      - research-api
     env_file:
       - ./run/panel.env
     environment:
       API_BASE_URL: http://panel-api:8000
+      RESEARCH_API_BASE_URL: http://research-api:8000
     volumes:
       - ./run:/run-config:ro
     ports:
@@ -111,11 +113,13 @@ services:
     restart: unless-stopped
     working_dir: /app
     depends_on:
+      - panel-api
       - research-api
     env_file:
       - ./run/panel.env
     environment:
-      API_BASE_URL: http://research-api:8000
+      API_BASE_URL: http://panel-api:8000
+      RESEARCH_API_BASE_URL: http://research-api:8000
       PANEL_PUBLIC_URL: https://research.aistockcn.com
       PANEL_PUBLIC_HOSTS: research.aistockcn.com
     volumes:

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { API_BASE_URL } from "@/lib/api";
+import { RESEARCH_API_BASE_URL } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 
 
@@ -13,7 +13,7 @@ export async function GET(
   const { documentId } = await context.params;
   try {
     const response = await fetch(
-      `${API_BASE_URL}/api/research/documents/${encodeURIComponent(documentId)}`,
+      `${RESEARCH_API_BASE_URL}/api/research/documents/${encodeURIComponent(documentId)}`,
       { cache: "no-store", signal: AbortSignal.timeout(15_000) }
     );
     const body = await response.json();

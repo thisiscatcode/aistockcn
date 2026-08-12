@@ -3,8 +3,13 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   "http://127.0.0.1:8000";
 
+export const RESEARCH_API_BASE_URL =
+  process.env.RESEARCH_API_BASE_URL ??
+  API_BASE_URL;
+
 type FetchJsonOptions = {
   timeoutMs?: number;
+  baseUrl?: string;
 };
 
 async function fetchJson<T>(path: string, options: FetchJsonOptions = {}): Promise<T> {
@@ -14,7 +19,7 @@ async function fetchJson<T>(path: string, options: FetchJsonOptions = {}): Promi
     : null;
 
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(`${options.baseUrl ?? API_BASE_URL}${path}`, {
       cache: "no-store",
       signal: controller?.signal
     });
@@ -926,14 +931,17 @@ export type ResearchDocumentList = {
 
 export function getResearchCompanies(query = "", limit = 12) {
   const params = new URLSearchParams({ query, limit: String(limit) });
-  return fetchJson<ResearchCompanySearch>(`/api/research/companies?${params.toString()}`, { timeoutMs: 10000 });
+  return fetchJson<ResearchCompanySearch>(`/api/research/companies?${params.toString()}`, {
+    timeoutMs: 10000,
+    baseUrl: RESEARCH_API_BASE_URL
+  });
 }
 
 export function getResearchCompany(symbol: string, historyLimit = 30) {
   const params = new URLSearchParams({ history_limit: String(historyLimit) });
   return fetchJson<ResearchCompanySnapshot>(
     `/api/research/companies/${encodeURIComponent(symbol)}?${params.toString()}`,
-    { timeoutMs: 10000 }
+    { timeoutMs: 10000, baseUrl: RESEARCH_API_BASE_URL }
   );
 }
 
@@ -941,5 +949,8 @@ export function getResearchDocuments(symbol?: string) {
   const params = new URLSearchParams();
   if (symbol) params.set("symbol", symbol);
   const query = params.size ? `?${params.toString()}` : "";
-  return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, { timeoutMs: 10000 });
+  return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, {
+    timeoutMs: 10000,
+    baseUrl: RESEARCH_API_BASE_URL
+  });
 }

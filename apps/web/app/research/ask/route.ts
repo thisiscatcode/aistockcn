@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
-import { API_BASE_URL } from "@/lib/api";
+import { RESEARCH_API_BASE_URL } from "@/lib/api";
 
 
 export async function POST(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/research/ask`, {
+    const response = await fetch(`${RESEARCH_API_BASE_URL}/api/research/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Research-Actor": user.username },
       body: JSON.stringify(payload),

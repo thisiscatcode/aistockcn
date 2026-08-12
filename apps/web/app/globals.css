@@ -7460,3 +7460,262 @@ select {
   background: #f0edfb;
   color: #5f5878;
 }
+
+/* Authenticated application typography and density. */
+.theme-shell-root .shell {
+  max-width: 1480px;
+  padding: 18px 18px 30px;
+}
+
+.theme-shell-root .hero:not(.hero-landing) {
+  gap: 7px;
+  padding: 11px 16px 6px;
+}
+
+.theme-shell-root .hero h1 {
+  font-size: clamp(1.75rem, 2.5vw, 2.35rem);
+}
+
+.theme-shell-root .eyebrow {
+  font-size: 0.82rem;
+}
+
+.theme-shell-root .hero-subtitle {
+  margin-top: 4px;
+  font-size: 1rem;
+  line-height: 1.42;
+}
+
+.theme-shell-root .hero-meta,
+.theme-shell-root .nav-time {
+  font-size: 0.92rem;
+}
+
+.theme-shell-root .nav {
+  gap: 4px;
+}
+
+.theme-shell-root .nav-link {
+  min-height: 40px;
+  font-size: 0.98rem;
+}
+
+.theme-shell-root .nav-link-label {
+  min-height: 32px;
+  padding: 5px 11px;
+}
+
+.theme-shell-root .page-content {
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.theme-shell-root .metrics-grid,
+.theme-shell-root .two-col-grid,
+.theme-shell-root .workflow-grid,
+.theme-shell-root .workflow-runtime-grid,
+.theme-shell-root .catalog-grid,
+.theme-shell-root .summary-list,
+.theme-shell-root .sparkline-grid {
+  gap: 12px;
+}
+
+.theme-shell-root .metric-card,
+.theme-shell-root .panel {
+  padding: 16px;
+}
+
+.theme-shell-root .panel-header {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.theme-shell-root .panel h2 {
+  font-size: 1.3rem;
+}
+
+.theme-shell-root .metric-label {
+  font-size: 0.9rem;
+}
+
+.theme-shell-root .metric-value {
+  margin-top: 8px;
+  font-size: clamp(1.5rem, 2.2vw, 1.9rem);
+}
+
+.theme-shell-root .metric-hint,
+.theme-shell-root .panel-copy,
+.theme-shell-root .empty-state,
+.theme-shell-root .table-note {
+  font-size: 0.96rem;
+}
+
+.theme-shell-root .pill {
+  padding: 7px 11px;
+  font-size: 0.92rem;
+}
+
+.theme-shell-root .status-meta {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.theme-shell-root .data-table th,
+.theme-shell-root .portfolio-picks-table th {
+  padding: 8px 10px;
+  font-size: 0.86rem;
+}
+
+.theme-shell-root .data-table td,
+.theme-shell-root .portfolio-picks-table td {
+  padding: 8px 10px;
+  font-size: 0.98rem;
+}
+
+.theme-shell-root .data-table-cell-detail {
+  font-size: 0.84rem;
+}
+
+.theme-shell-root .log-console {
+  min-height: 220px;
+  padding: 13px;
+  font-size: 0.9rem;
+  line-height: 1.48;
+}
+
+.theme-shell-root .finance-stat {
+  padding: 12px;
+}
+
+.theme-shell-root .finance-stat-label,
+.theme-shell-root .overview-kpi-label,
+.theme-shell-root .portfolio-section-kicker,
+.theme-shell-root .snapshot-health-section h3,
+.theme-shell-root .snapshot-label,
+.theme-shell-root .summary-label,
+.theme-shell-root .sparkline-label,
+.theme-shell-root .workflow-step-kicker,
+.theme-shell-root .model-view-kicker {
+  font-size: 0.86rem;
+}
+
+.theme-shell-root .finance-stat-detail,
+.theme-shell-root .snapshot-hint,
+.theme-shell-root .summary-hint,
+.theme-shell-root .sparkline-caption,
+.theme-shell-root .pipeline-warning-row {
+  font-size: 0.88rem;
+}
+
+.theme-shell-root .snapshot-value,
+.theme-shell-root .pipeline-info-row,
+.theme-shell-root .workflow-step-card h3,
+.theme-shell-root .dataset-card-metric,
+.theme-shell-root .field-block span {
+  font-size: 0.94rem;
+}
+
+.theme-shell-root .overview-summary-layout {
+  gap: 10px;
+}
+
+.theme-shell-root .overview-calendar-panel {
+  padding: 11px;
+}
+
+.theme-shell-root .overview-summary-layout .overview-kpi-card {
+  padding: 11px 13px;
+}
+
+.theme-shell-root .overview-summary-layout .overview-kpi-label {
+  font-size: 0.8rem;
+}
+
+.theme-shell-root .overview-summary-layout .overview-kpi-card strong {
+  margin-top: 6px;
+  font-size: clamp(1.25rem, 1.6vw, 1.5rem);
+}
+
+.theme-shell-root .overview-summary-layout .overview-kpi-card span {
+  margin-top: 5px;
+  font-size: 0.88rem;
+}
+
+.theme-shell-root .overview-summary-layout .pnl-calendar-date {
+  font-size: 0.8rem;
+}
+
+.theme-shell-root .overview-summary-layout .pnl-calendar-day span:last-child {
+  font-size: 0.76rem;
+}
+
+.theme-shell-root .overview-kpi-card,
+.theme-shell-root .portfolio-chart-card,
+.theme-shell-root .portfolio-table-card {
+  padding: 16px;
+}
+
+.theme-shell-root .portfolio-card-header {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.theme-shell-root .portfolio-card-header h2 {
+  font-size: 1.4rem;
+}
+
+.theme-shell-root .summary-item,
+.theme-shell-root .sparkline-card,
+.theme-shell-root .workflow-step-card,
+.theme-shell-root .catalog-panel,
+.theme-shell-root .dataset-card {
+  padding: 13px;
+}
+
+.theme-shell-root .snapshot-row {
+  padding: 8px 9px;
+}
+
+.theme-shell-root .field-block input,
+.theme-shell-root .field-block select,
+.theme-shell-root .filter-row input,
+.theme-shell-root .filter-row select {
+  min-height: 42px;
+  font-size: 0.98rem;
+}
+
+.theme-shell-root .action-button {
+  min-height: 38px;
+  font-size: 0.94rem;
+}
+
+@media (max-width: 720px) {
+  .theme-shell-root .shell {
+    padding: 10px 10px 22px;
+  }
+
+  .theme-shell-root .hero:not(.hero-landing) {
+    padding: 10px 12px 5px;
+  }
+
+  .theme-shell-root .hero h1 {
+    font-size: 1.75rem;
+  }
+
+  .theme-shell-root .nav-link {
+    font-size: 0.94rem;
+  }
+
+  .theme-shell-root .nav-link-label {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .theme-shell-root .metric-card,
+  .theme-shell-root .panel,
+  .theme-shell-root .overview-kpi-card,
+  .theme-shell-root .portfolio-chart-card,
+  .theme-shell-root .portfolio-table-card {
+    padding: 13px;
+  }
+}
