@@ -6,6 +6,7 @@ import { PanelLocale, getMessages } from "@/lib/i18n";
 import { NavTabs } from "@/components/nav-tabs";
 import { ShanghaiTime } from "@/components/shanghai-time";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { MarketSwitcher } from "@/components/market-switcher";
 
 export function Shell({
   title,
@@ -14,6 +15,7 @@ export function Shell({
   locale,
   username,
   role,
+  market = "CN",
   tone = "light",
   compact = false
 }: {
@@ -23,23 +25,35 @@ export function Shell({
   locale: PanelLocale;
   username: string;
   role: PanelRole;
+  market?: "CN" | "US";
   tone?: "light" | "dark";
   compact?: boolean;
 }) {
   const copy = getMessages(locale);
   const isDark = tone === "dark";
   const navItem = (href: Route, label: string) => ({ href, label });
-  const navItems: Array<{ href: Route; label: string }> = [
-    navItem("/overview", copy.shell.nav.overview),
-    navItem("/research" as Route, copy.shell.nav.research),
-    navItem("/system-monitor", copy.shell.nav.systemMonitor),
-    navItem("/batch", copy.shell.nav.batch),
-    navItem("/data", copy.shell.nav.data),
-    navItem("/models", copy.shell.nav.models),
-    navItem("/picks", copy.shell.nav.picks),
-    navItem("/paper", copy.shell.nav.paper),
-    navItem("/admin", copy.shell.nav.admin)
-  ];
+  const navItems: Array<{ href: Route; label: string }> = market === "US"
+    ? [
+        navItem("/us/overview" as Route, copy.shell.nav.overview),
+        navItem("/research" as Route, copy.shell.nav.research),
+        navItem("/us/system-monitor" as Route, copy.shell.nav.systemMonitor),
+        navItem("/us/batch" as Route, copy.shell.nav.batch),
+        navItem("/us/data" as Route, copy.shell.nav.data),
+        navItem("/us/models" as Route, copy.shell.nav.models),
+        navItem("/us/picks" as Route, copy.shell.nav.picks),
+        navItem("/us/paper" as Route, copy.shell.nav.paper)
+      ]
+    : [
+        navItem("/overview", copy.shell.nav.overview),
+        navItem("/research" as Route, copy.shell.nav.research),
+        navItem("/system-monitor", copy.shell.nav.systemMonitor),
+        navItem("/batch", copy.shell.nav.batch),
+        navItem("/data", copy.shell.nav.data),
+        navItem("/models", copy.shell.nav.models),
+        navItem("/picks", copy.shell.nav.picks),
+        navItem("/paper", copy.shell.nav.paper),
+        navItem("/admin", copy.shell.nav.admin)
+      ];
 
   const content = (
     <div className={`shell${isDark ? " shell-dark" : ""}${compact ? " shell-compact" : ""}`}>
@@ -58,6 +72,7 @@ export function Shell({
           </div>
           <div className="hero-meta" aria-label={copy.shell.signedInAs}>
             <div className="hero-meta-line">
+              <MarketSwitcher market={market} />
               <ThemeToggle />
               <span>{copy.shell.signedInAs}:</span> <strong>{username}</strong>
               <form action="/auth/logout" method="post" className="hero-logout-form">
@@ -71,7 +86,11 @@ export function Shell({
         <div className="nav-row">
           <NavTabs items={navItems} />
           <div className="nav-time">
-            <ShanghaiTime locale={locale} label={copy.shell.shanghaiTime} />
+            <ShanghaiTime
+              locale={locale}
+              label={market === "US" ? "New York Time" : copy.shell.shanghaiTime}
+              timeZone={market === "US" ? "America/New_York" : "Asia/Shanghai"}
+            />
           </div>
         </div>
       </header>

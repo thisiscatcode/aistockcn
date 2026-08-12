@@ -2,7 +2,24 @@
 
 ## Goal
 
-Build an operator-friendly quant workflow for the China A-share market that can ingest data, train models, produce ranked signals, run backtests, and coordinate paper trading through an external gateway.
+Build an operator-friendly multi-market quant workflow that can ingest data, train market-specific models, produce ranked signals, run backtests, and coordinate paper trading through external gateways.
+
+The A-share workflow is stable and remains the system of record for its existing routes and artifacts. United States equity functionality is additive rather than a refactor of this workflow.
+
+## Additive US Market Architecture
+
+- `apps/web/app/us` provides dedicated `/us/*` product pages.
+- `app.us_market_main` runs as a separate, read-only `us-market-api` service.
+- The service reads `us_stock_master`, `us_stock_daily_metrics`, US selection snapshots and job history.
+- The existing panel API and A-share pages keep their current contracts.
+- The US model is an independent `us_5d_v1` pipeline; it must never consume A-share training samples or execution rules.
+- US paper trading remains disabled until historical coverage, corporate-action handling and walk-forward validation pass.
+
+The initial US market-data gate requires at least 504 trading dates. Until that gate passes, the product may display company data and rules-based screening but must report the ML model as `insufficient_history` and paper trading as `gated`.
+
+## Web-Fei Protection Boundary
+
+`apps/web-fei` is outside the US product scope. Its source, container image, runtime configuration, API contracts and database semantics must remain unchanged. US deployments target only the dedicated US API/workers and the main `apps/web` frontend.
 
 ## Main Components
 

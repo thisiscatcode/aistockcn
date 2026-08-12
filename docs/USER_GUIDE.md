@@ -1,5 +1,16 @@
 # User Guide
 
+## Switching between A-shares and US stocks
+
+Authenticated pages now show a market selector in the header:
+
+- **US Stocks** opens the additive `/us/*` workspace in USD and New York market time.
+- **A-Shares** returns to the established pages and existing A-share workflow.
+
+The selected market is remembered in the browser. The two sides do not combine currencies, model artifacts, paper accounts or execution rules.
+
+The US workspace currently provides live company data, rules-based selection, Research Copilot access and ingestion monitoring. The Models and Paper pages deliberately show validation gates until sufficient history and walk-forward results exist; a visible gated state is not a system error.
+
 ## What The Dashboard Is For
 
 The web panel is built for operators and product users who need to inspect the current state of the quant workflow without opening files or shell logs manually.

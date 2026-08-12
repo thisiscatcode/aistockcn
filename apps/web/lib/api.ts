@@ -7,6 +7,10 @@ export const RESEARCH_API_BASE_URL =
   process.env.RESEARCH_API_BASE_URL ??
   API_BASE_URL;
 
+export const US_MARKET_API_BASE_URL =
+  process.env.US_MARKET_API_BASE_URL ??
+  "http://127.0.0.1:8004";
+
 type FetchJsonOptions = {
   timeoutMs?: number;
   baseUrl?: string;
@@ -953,4 +957,172 @@ export function getResearchDocuments(symbol?: string) {
     timeoutMs: 10000,
     baseUrl: RESEARCH_API_BASE_URL
   });
+}
+
+export type UsMarketContext = {
+  market: "US";
+  currency: "USD";
+  timezone: "America/New_York";
+  benchmark: { symbol: string; name: string };
+  as_of: string;
+  data_freshness?: Record<string, string | null>;
+};
+
+export type UsCoverage = {
+  active_symbols: number;
+  latest_trade_date?: string | null;
+  first_trade_date?: string | null;
+  trading_dates: number;
+  total_bars: number;
+  latest_symbols: number;
+  latest_coverage_pct: number;
+};
+
+export type UsMarketSummary = UsMarketContext & {
+  coverage: UsCoverage;
+  exchanges: Array<{ exchange: string; symbols: number }>;
+  fundamentals: {
+    details_ready: number;
+    industry_ready: number;
+    market_cap_ready: number;
+  };
+};
+
+export type UsStockRow = {
+  symbol: string;
+  exchange?: string | null;
+  name?: string | null;
+  name_zh?: string | null;
+  industry?: string | null;
+  market_cap?: number | null;
+  currency?: string | null;
+  trade_date?: string | null;
+  close?: number | null;
+  price_diff?: number | null;
+  volume?: number | null;
+  turnover?: number | null;
+};
+
+export type UsStocksResponse = UsMarketContext & {
+  stocks: UsStockRow[];
+  rows: number;
+  total: number;
+  limit: number;
+  offset: number;
+  search: string;
+};
+
+export type UsPick = {
+  rank: number;
+  symbol: string;
+  exchange?: string | null;
+  score?: number | null;
+  signal_date?: string | null;
+  name?: string | null;
+  industry?: string | null;
+  currency?: string | null;
+  row_data?: Record<string, unknown>;
+};
+
+export type UsPicksResponse = UsMarketContext & {
+  selection_type: "cat" | "lobster";
+  selection_method: "rules_based";
+  model_profile: null;
+  picks: UsPick[];
+  rows: number;
+};
+
+export type UsModelStatus = UsMarketContext & {
+  profile: {
+    name: string;
+    label: string;
+    horizon_trading_days: number;
+    benchmark: { symbol: string; name: string };
+    status: "insufficient_history" | "not_trained" | string;
+  };
+  gate: {
+    ready: boolean;
+    required_trading_dates: number;
+    available_trading_dates: number;
+    history_ready: boolean;
+    training_ready: boolean;
+    walk_forward_ready: boolean;
+    blockers: string[];
+  };
+  metrics: Record<string, number> | null;
+};
+
+export type UsPipelineRun = {
+  lane: string;
+  target_date?: string | null;
+  status: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  total_count: number;
+  done_count: number;
+  failed_count: number;
+  skipped_count: number;
+  last_symbol?: string | null;
+  last_error?: string | null;
+};
+
+export type UsPipelineStatus = UsMarketContext & {
+  status: string;
+  is_running: boolean;
+  current_run?: UsPipelineRun | null;
+  recent_runs: UsPipelineRun[];
+  coverage: UsCoverage;
+  scheduler: { timezone: string; lanes: string[] };
+};
+
+export type UsOverview = UsMarketContext & {
+  summary: UsMarketSummary;
+  top_picks: UsPick[];
+  selection: { method: string; date?: string | null };
+  model: UsModelStatus;
+  pipeline: { status: string; is_running: boolean; current_run?: UsPipelineRun | null };
+  paper: { status: string; enabled: boolean; message: string };
+};
+
+export type UsPaperStatus = UsMarketContext & {
+  status: "gated" | string;
+  enabled: boolean;
+  account: null;
+  positions: Array<Record<string, unknown>>;
+  orders: Array<Record<string, unknown>>;
+  gate: UsModelStatus["gate"];
+  message: string;
+};
+
+const usFetch = <T>(path: string, timeoutMs = 15000) =>
+  fetchJson<T>(path, { baseUrl: US_MARKET_API_BASE_URL, timeoutMs });
+
+export function getUsOverview() {
+  return usFetch<UsOverview>("/api/us/overview", 25000);
+}
+
+export function getUsMarketSummary() {
+  return usFetch<UsMarketSummary>("/api/us/data/summary");
+}
+
+export function getUsStocks(search = "", limit = 50, offset = 0) {
+  const params = new URLSearchParams({ search, limit: String(limit), offset: String(offset) });
+  return usFetch<UsStocksResponse>(`/api/us/data/stocks?${params.toString()}`);
+}
+
+export function getUsModelStatus() {
+  return usFetch<UsModelStatus>("/api/us/models");
+}
+
+export function getUsPicks(limit = 25, listType: "cat" | "lobster" = "cat") {
+  const params = new URLSearchParams({ limit: String(limit), list_type: listType });
+  return usFetch<UsPicksResponse>(`/api/us/picks?${params.toString()}`, 25000);
+}
+
+export function getUsPaperStatus() {
+  return usFetch<UsPaperStatus>("/api/us/paper/status");
+}
+
+export function getUsPipelineStatus() {
+  return usFetch<UsPipelineStatus>("/api/us/pipeline/status");
 }

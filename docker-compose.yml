@@ -39,6 +39,26 @@ services:
     ports:
       - "127.0.0.1:8001:8000"
 
+  us-market-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: aistockcn-us-market-api:20260812-v1
+    restart: unless-stopped
+    working_dir: /app
+    command: uvicorn app.us_market_main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./run/panel.env
+    environment:
+      PROJECT_ROOT: /workspace
+      PANEL_API_ALLOWED_CIDRS: ${US_MARKET_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128}
+      PANEL_API_ALLOWED_SERVICE_NAMES: panel-web,panel-web-research
+    networks:
+      - default
+      - paper-db
+    ports:
+      - "127.0.0.1:8004:8000"
+
   research-api:
     image: aistockcn-research-api:20260810-mvp
     restart: unless-stopped
@@ -98,11 +118,13 @@ services:
     depends_on:
       - panel-api
       - research-api
+      - us-market-api
     env_file:
       - ./run/panel.env
     environment:
       API_BASE_URL: http://panel-api:8000
       RESEARCH_API_BASE_URL: http://research-api:8000
+      US_MARKET_API_BASE_URL: http://us-market-api:8000
     volumes:
       - ./run:/run-config:ro
     ports:
@@ -115,11 +137,13 @@ services:
     depends_on:
       - panel-api
       - research-api
+      - us-market-api
     env_file:
       - ./run/panel.env
     environment:
       API_BASE_URL: http://panel-api:8000
       RESEARCH_API_BASE_URL: http://research-api:8000
+      US_MARKET_API_BASE_URL: http://us-market-api:8000
       PANEL_PUBLIC_URL: https://research.aistockcn.com
       PANEL_PUBLIC_HOSTS: research.aistockcn.com
     volumes:

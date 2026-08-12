@@ -81,6 +81,7 @@ export default async function ResearchPage({
       locale={user.locale}
       username={user.displayName}
       role={user.role}
+      market="US"
     >
       <div className="research-page">
       <section className="research-command-panel">

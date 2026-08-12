@@ -10,7 +10,7 @@ function localeTag(locale: PanelLocale) {
   return locale === "zh-Hant" ? "zh-Hant-HK" : "en-US";
 }
 
-function formatShanghaiTime(value: Date, locale: PanelLocale) {
+function formatMarketTime(value: Date, locale: PanelLocale, timeZone: string) {
   return new Intl.DateTimeFormat(localeTag(locale), {
     month: "short",
     day: "2-digit",
@@ -18,26 +18,28 @@ function formatShanghaiTime(value: Date, locale: PanelLocale) {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: SHANGHAI_TIME_ZONE,
+    timeZone,
     timeZoneName: "short"
   }).format(value);
 }
 
 export function ShanghaiTime({
   locale,
-  label
+  label,
+  timeZone = SHANGHAI_TIME_ZONE
 }: {
   locale: PanelLocale;
   label: string;
+  timeZone?: string;
 }) {
   const [value, setValue] = useState("—");
 
   useEffect(() => {
-    const updateValue = () => setValue(formatShanghaiTime(new Date(), locale));
+    const updateValue = () => setValue(formatMarketTime(new Date(), locale, timeZone));
     updateValue();
     const timerId = window.setInterval(updateValue, 1000);
     return () => window.clearInterval(timerId);
-  }, [locale]);
+  }, [locale, timeZone]);
 
   return (
     <span className="shell-time">

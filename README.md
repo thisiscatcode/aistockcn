@@ -1,6 +1,6 @@
 # AiStockCN — Financial Data & AI Research Platform
 
-AiStockCN is a live financial-data platform with an integrated, source-grounded US Equity Research Copilot. It combines the existing market-data and quantitative-research system with document ingestion, hybrid retrieval, a PyTorch reranker and a multi-step research agent.
+AiStockCN is a live financial-data platform for A-shares and United States equities, with an integrated, source-grounded US Equity Research Copilot. The established A-share workflow remains intact while the main product adds a separate US market workspace for company data, screening, model readiness and operations.
 
 - Customer product: [aistockcn.com](https://aistockcn.com)
 - Research Copilot: [research.aistockcn.com](https://research.aistockcn.com)
@@ -18,7 +18,21 @@ The Research Copilot is attached directly to AiStockCN's existing US equity data
 | Surface | Purpose | Current runtime |
 | --- | --- | --- |
 | `aistockcn.com` | Existing customer-facing market and quantitative platform | Live, isolated production image |
+| `aistockcn.com/us/overview` | US market data, screening and model-readiness workspace | Live, backed by an isolated read-only US API |
 | `research.aistockcn.com` | US equity document research, comparison and retrieval evaluation | Live, Docker Compose on the existing host |
+
+## United States market workspace
+
+The main product exposes a dedicated `/us/*` route family without replacing or migrating the existing A-share pages:
+
+- `/us/overview` — active universe, latest coverage, selection and product gates;
+- `/us/data` — NASDAQ and NYSE company search with current daily observations;
+- `/us/models` — the truthful readiness state for the independent `us_5d_v1` pipeline;
+- `/us/picks` — existing rules-based US selection, explicitly separated from ML predictions;
+- `/us/paper` — a disabled-by-default paper-trading surface that unlocks only after validation;
+- `/us/system-monitor` and `/us/batch` — US ingestion coverage and recent job history.
+
+The US workspace is served by a dedicated `us-market-api`. It reads the existing US company and market tables without changing the A-share control API or the independently deployed Web-Fei frontend.
 
 ## Research Copilot capabilities
 
@@ -59,6 +73,8 @@ flowchart LR
     A --> O["Structured logs, traces\nand evaluation runs"]
 ```
 
+The operational product has a second isolated path: the main Next.js frontend calls `us-market-api` for `/us/*`, while all existing A-share routes continue to call the established panel API.
+
 ### Research request lifecycle
 
 1. The authenticated frontend submits a company-scoped question.
@@ -80,6 +96,8 @@ flowchart LR
 | PyTorch reranking | `apps/api/app/services/research_models.py` |
 | Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
 | Next.js research UI | `apps/web/app/research/` |
+| US market product UI | `apps/web/app/us/` |
+| Isolated US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
 | Docker environment | `docker-compose.yml`, `apps/api/Dockerfile.research` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 
@@ -157,6 +175,8 @@ npm --prefix apps/web run build
 ## Security and repository boundaries
 
 Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`. Never use example credentials unchanged.
+
+`apps/web-fei` is an operationally protected frontend. US product development does not modify or rebuild it, does not change its API contracts, and does not alter the tables it consumes.
 
 ## Documentation
 
