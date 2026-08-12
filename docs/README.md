@@ -39,5 +39,3 @@ Suggested reading order:
 
 - `aistockcn.com` and `research.aistockcn.com` are live.
 - The Research Copilot currently runs on the existing host with Docker Compose.
-- Kubernetes manifests and Terraform are validated deployment assets, but are not part of the current public runtime.
-- Terraform is intentionally not applied because it would create chargeable AWS resources.

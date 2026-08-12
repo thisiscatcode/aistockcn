@@ -10,8 +10,6 @@ Production-oriented US equity research on top of AiStockCN's existing market-dat
 | Customer platform | Live at `aistockcn.com` on an isolated frontend image |
 | Current public runtime | Docker Compose on the existing AiStockCN host |
 | Paid LLM API | Not required; the current agent uses local Ollama |
-| Kubernetes | Manifests validated and deployment-ready; not the current public runtime |
-| Terraform / AWS | Configuration validated but intentionally not applied because it creates chargeable resources |
 
 ## What is live
 
@@ -24,7 +22,7 @@ Production-oriented US equity research on top of AiStockCN's existing market-dat
 - Structured tool plans, server-side tool allow-listing, SSE progress events and multi-company comparison.
 - A live reranker benchmark with persisted Top-1 accuracy, MRR and lexical-baseline results.
 - Request IDs, structured latency logs, retries with exponential backoff, rate limiting and privacy-conscious run telemetry.
-- Docker Compose services for API, worker and frontend; Kubernetes rolling updates and probes; Terraform for EC2, S3, ECR and CloudWatch.
+- Docker Compose services for the API, background worker and frontend.
 
 ## Architecture
 
@@ -43,7 +41,6 @@ flowchart LR
     K --> V["Pages, chunks, vectors\nPostgreSQL / pgvector"]
     V --> H
     A --> O["Logs, run telemetry,\nevaluation results"]
-    O --> C["CloudWatch"]
 ```
 
 The LLM never provides the citation metadata shown by the UI. The server attaches `document_id`, filename, page number and source URL from retrieval results. Model-generated interpretation is kept in a separate field and rendered in a separate card.
@@ -84,33 +81,6 @@ Required runtime values already used by the current installation are read from `
 
 The Compose configuration intentionally joins the existing `paper-db` and `ai-services` networks because the copilot is integrated with the live platform database and local Ollama service. A new machine must provide equivalent PostgreSQL/pgvector and Ollama services rather than expecting seeded demonstration data.
 
-## Kubernetes
-
-Manifests are under `deploy/kubernetes`. They include two API replicas, two ingestion workers, two web replicas, a local Ollama deployment, readiness/liveness probes, rolling-update policies, ingress and resource boundaries.
-
-```bash
-kubectl apply -k deploy/kubernetes
-kubectl -n aistockcn-research rollout status deployment/research-api
-kubectl -n aistockcn-research rollout status deployment/research-worker
-kubectl -n aistockcn-research rollout status deployment/research-web
-```
-
-Create `research-secrets` through the deployment secret manager; `secret.example.yaml` is a shape-only example and must not be applied unchanged. Replace image names with immutable ECR image digests for a real rollout.
-
-## AWS / Terraform
-
-`deploy/terraform` provisions an encrypted/versioned/private S3 document bucket, immutable scanned ECR repositories, a monitored EC2 k3s host, an encrypted gp3 volume, a least-privilege instance role, restricted SSH, and CloudWatch logs/metrics.
-
-```bash
-cd deploy/terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform plan
-terraform apply
-```
-
-Terraform is not applied automatically because it creates chargeable AWS resources. The current public service runs on the existing AiStockCN host.
-
 ## User workflow
 
 1. Open `research.aistockcn.com` and select a company from the AiStockCN US equity universe.
@@ -123,6 +93,5 @@ Terraform is not applied automatically because it creates chargeable AWS resourc
 ## Operational boundaries
 
 - Docker Compose is the current public runtime.
-- Kubernetes and Terraform are maintained as validated deployment assets, not described as the current runtime.
 - Real credentials, uploaded documents, logs, model caches and runtime state are excluded from Git.
 - The example secret files define configuration shape only and must never be applied unchanged.

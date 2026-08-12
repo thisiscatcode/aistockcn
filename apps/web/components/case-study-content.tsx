@@ -209,8 +209,8 @@ model_inference:
         </div>
         <div className="case-stack-list">
           <span>FastAPI</span><span>Next.js</span><span>PostgreSQL</span><span>pgvector</span>
-          <span>PyTorch</span><span>Ollama</span><span>Docker</span><span>Kubernetes</span>
-          <span>Terraform</span><span>AWS S3</span><span>ECR</span><span>CloudWatch</span>
+          <span>PyTorch</span><span>Ollama</span><span>Docker Compose</span><span>LightGBM</span>
+          <span>Pandas</span><span>PyArrow</span><span>Structured logging</span><span>SSE</span>
         </div>
       </section>
 

@@ -19,8 +19,6 @@ The Research Copilot is attached directly to AiStockCN's existing US equity data
 | --- | --- | --- |
 | `aistockcn.com` | Existing customer-facing market and quantitative platform | Live, isolated production image |
 | `research.aistockcn.com` | US equity document research, comparison and retrieval evaluation | Live, Docker Compose on the existing host |
-| Kubernetes manifests | API, worker, frontend, Ollama, probes and rolling updates | Validated configuration; not active in the current public runtime |
-| Terraform | EC2, S3, ECR, IAM and CloudWatch infrastructure | Validated infrastructure as code; not applied to avoid unnecessary AWS cost |
 
 ## Research Copilot capabilities
 
@@ -83,8 +81,6 @@ flowchart LR
 | Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
 | Next.js research UI | `apps/web/app/research/` |
 | Docker environment | `docker-compose.yml`, `apps/api/Dockerfile.research` |
-| Kubernetes deployment design | `deploy/kubernetes/` |
-| AWS infrastructure design | `deploy/terraform/` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 
 ## Typical research workflow
@@ -116,15 +112,12 @@ The original platform remains part of the same repository and provides the produ
 - **AI/RAG:** Ollama, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
 - **Quant/ML:** Pandas, PyArrow, LightGBM, scikit-learn
 - **Operations:** Docker Compose, structured logging, retry, rate limiting and background workers
-- **Deployment assets:** Kubernetes, Terraform, AWS EC2/S3/ECR/CloudWatch
 
 ## Repository layout
 
 ```text
 apps/api/             FastAPI APIs, agent, retrieval and ingestion worker
 apps/web/             Next.js customer and research interfaces
-deploy/kubernetes/    Kubernetes workloads, health probes and ingress
-deploy/terraform/     AWS infrastructure as code
 docs/                 Product, architecture, results and operating docs
 run/                  Safe example configuration and model profiles
 scripts/              SQL migrations and operational runners
@@ -161,17 +154,9 @@ docker compose config --quiet
 npm --prefix apps/web run build
 ```
 
-Terraform and Kubernetes configurations can be validated without deploying chargeable infrastructure:
-
-```bash
-terraform -chdir=deploy/terraform init -backend=false
-terraform -chdir=deploy/terraform validate
-kubectl kustomize deploy/kubernetes >/dev/null
-```
-
 ## Security and repository boundaries
 
-Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe examples are provided in `run/*.example` and `deploy/**/secret.example.yaml`. Never apply example secrets unchanged.
+Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`. Never use example credentials unchanged.
 
 ## Documentation
 
