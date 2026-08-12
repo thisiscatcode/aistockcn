@@ -2,6 +2,17 @@
 
 Production-oriented US equity research on top of AiStockCN's existing market-data platform. The customer site remains isolated at `aistockcn.com`; the copilot is deployed at `research.aistockcn.com`.
 
+## Deployment status
+
+| Component | Status |
+| --- | --- |
+| Public Research Copilot | Live at `research.aistockcn.com` |
+| Customer platform | Live at `aistockcn.com` on an isolated frontend image |
+| Current public runtime | Docker Compose on the existing AiStockCN host |
+| Paid LLM API | Not required; the current agent uses local Ollama |
+| Kubernetes | Manifests validated and deployment-ready; not the current public runtime |
+| Terraform / AWS | Configuration validated but intentionally not applied because it creates chargeable resources |
+
 ## What is live
 
 - Company search over the existing US equity universe and market-history tables.
@@ -37,6 +48,17 @@ flowchart LR
 
 The LLM never provides the citation metadata shown by the UI. The server attaches `document_id`, filename, page number and source URL from retrieval results. Model-generated interpretation is kept in a separate field and rendered in a separate card.
 
+## Source-grounding contract
+
+Every completed research response separates:
+
+- `evidence`: retrieved document passages carrying server-owned document and page metadata;
+- `inference`: model synthesis generated from evidence and deterministic tool output;
+- `limitations`: unavailable filings, missing coverage and other qualifications;
+- `trace`: the allow-listed tools executed by the agent.
+
+This prevents a fluent model answer from being presented as documentary evidence. Users can inspect the cited PDF page directly from the result.
+
 ## Request path
 
 1. The authenticated frontend sends a company-scoped question.
@@ -59,6 +81,8 @@ docker compose ps research-api research-worker panel-web-research
 ```
 
 Required runtime values already used by the current installation are read from `run/panel.env`. Do not commit that file. Optional cloud document storage is enabled with `RESEARCH_S3_BUCKET`; local Compose uses the shared `research-uploads` volume when the variable is empty.
+
+The Compose configuration intentionally joins the existing `paper-db` and `ai-services` networks because the copilot is integrated with the live platform database and local Ollama service. A new machine must provide equivalent PostgreSQL/pgvector and Ollama services rather than expecting seeded demonstration data.
 
 ## Kubernetes
 

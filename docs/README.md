@@ -1,8 +1,14 @@
 # Documentation Index
 
-The public documentation set is organized around three audiences:
+Start with the document that matches what you want to evaluate.
 
-## User Guide
+## Research Copilot
+
+- [RESEARCH_COPILOT.md](RESEARCH_COPILOT.md)
+- Product scope, source-grounding contract, RAG and agent architecture, local runtime, deployment boundaries and the three-minute interview walkthrough
+- Best first document for hiring managers and engineers reviewing the AI system
+
+## Quant Platform User Guide
 
 - [USER_GUIDE.md](USER_GUIDE.md)
 - Best for reviewers who want to understand the product surface and operator workflow
@@ -17,8 +23,21 @@ The public documentation set is organized around three audiences:
 - [SYSTEM_MANUAL.md](SYSTEM_MANUAL.md)
 - Best for reviewers who want a step-by-step explanation of the quant pipeline and artifact flow
 
+## Results and model profiles
+
+- [RESULTS.md](RESULTS.md) — saved production research and model results
+- [A_SHARE_MEDIUM_10D_V2.md](A_SHARE_MEDIUM_10D_V2.md) — the additive 10-day A-share profile and its paper-only deployment gate
+
 Suggested reading order:
 
-1. `USER_GUIDE.md`
-2. `SYSTEM_DESIGN_SPEC.md`
-3. `SYSTEM_MANUAL.md`
+1. `RESEARCH_COPILOT.md`
+2. `USER_GUIDE.md`
+3. `SYSTEM_DESIGN_SPEC.md`
+4. `SYSTEM_MANUAL.md`
+
+## Deployment truth
+
+- `aistockcn.com` and `research.aistockcn.com` are live.
+- The Research Copilot currently runs on the existing host with Docker Compose.
+- Kubernetes manifests and Terraform are validated deployment assets, but are not represented as the current public runtime.
+- Terraform is intentionally not applied because it would create chargeable AWS resources.

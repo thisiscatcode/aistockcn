@@ -1,172 +1,191 @@
-# AistockCN Quant Trading System
+# AiStockCN — Financial Data & AI Research Platform
 
-## US Equity Research Copilot
+AiStockCN is a live financial-data platform with an integrated, source-grounded US Equity Research Copilot. It combines the existing market-data and quantitative-research system with document ingestion, hybrid retrieval, a PyTorch reranker and a multi-step research agent.
 
-The source-grounded Research Copilot is documented in [docs/RESEARCH_COPILOT.md](docs/RESEARCH_COPILOT.md). It runs as an isolated API/worker/frontend stack so research development cannot change the customer-facing `aistockcn.com` image.
+- Customer product: [aistockcn.com](https://aistockcn.com)
+- Research Copilot: [research.aistockcn.com](https://research.aistockcn.com)
+- Technical deep dive: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
+- Documentation index: [docs/README.md](docs/README.md)
 
-AistockCN is a full-stack quant research and operations project for the China A-share market. This shared source repository keeps the application code, workflow orchestration, architecture docs, and deployment setup while excluding local datasets, logs, and runtime secrets.
+The customer site and Research Copilot use separate frontend/API services. Research development and deployment therefore do not require rebuilding the customer-facing image.
 
-## Core Capabilities
+## Why this project exists
 
-- End-to-end market-data ingestion for the full A-share universe
-- Feature engineering for training and inference snapshots
-- LightGBM model training and scoring
-- Walk-forward out-of-sample backtesting
-- Automated paper-trading reconciliation through an external gateway
-- A FastAPI + Next.js control panel for monitoring, inspection, and operations
-- Container-first deployment and long-running batch orchestration
+This is not a standalone chatbot built around sample data. The copilot is attached to AiStockCN's existing US equity database and operational platform. It is designed to demonstrate how an AI research workflow can be added to a real financial product while preserving source traceability, deterministic calculations and production boundaries.
+
+## Product surfaces
+
+| Surface | Purpose | Current runtime |
+| --- | --- | --- |
+| `aistockcn.com` | Existing customer-facing market and quantitative platform | Live, isolated production image |
+| `research.aistockcn.com` | US equity document research, comparison and retrieval evaluation | Live, Docker Compose on the existing host |
+| Kubernetes manifests | API, worker, frontend, Ollama, probes and rolling updates | Validated configuration; not claimed as the public runtime |
+| Terraform | EC2, S3, ECR, IAM and CloudWatch infrastructure | Validated infrastructure as code; not applied to avoid unnecessary AWS cost |
+
+## Research Copilot capabilities
+
+- Search and select companies from the existing US equity universe.
+- Upload annual reports and company filings as PDFs.
+- Preserve document, filename and page metadata throughout ingestion and retrieval.
+- Ask company-specific questions in natural language with streamed progress events.
+- Compare two or three companies through a structured multi-step agent workflow.
+- Query market data and run deterministic return and volatility calculations through server-side tools.
+- Combine PostgreSQL full-text search and `pgvector` similarity search using reciprocal-rank fusion.
+- Rerank candidate passages with a PyTorch cross-encoder.
+- Display document evidence separately from model inference and limitations.
+- Run a retrieval benchmark that records Top-1 accuracy, MRR and lexical-baseline results.
+- Operate without a paid OpenAI key by using a local Ollama model.
+
+## Evidence contract
+
+Citation metadata is never invented by the language model. The server attaches the source document ID, filename, page number and source URL from retrieved database records. The response schema keeps three concepts separate:
+
+1. **Document evidence** — retrieved passages with verifiable source metadata.
+2. **Model inference** — synthesis produced only from the supplied evidence and tool results.
+3. **Limitations** — missing documents, incomplete coverage or other reasons to qualify the answer.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U["User / interviewer"] --> W["Next.js research frontend"]
+    W --> A["FastAPI research API"]
+    A --> L["Structured agent planner and synthesis\nOllama qwen2.5:3b"]
+    A --> M["AiStockCN US market data\nPostgreSQL"]
+    A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
+    H --> R["PyTorch cross-encoder reranker"]
+    A --> Q["PostgreSQL ingestion queue\nSKIP LOCKED"]
+    Q --> K["Background PDF worker"]
+    K --> V["Pages, chunks and vectors\nPostgreSQL / pgvector"]
+    V --> H
+    A --> O["Structured logs, traces\nand evaluation runs"]
+```
+
+### Research request lifecycle
+
+1. The authenticated frontend submits a company-scoped question.
+2. The local LLM creates a JSON tool plan; the API removes tools outside the server allow-list.
+3. The executor searches documents, queries company data and performs deterministic calculations as required.
+4. Hybrid retrieval fuses lexical and vector candidates.
+5. A PyTorch cross-encoder reranks the candidate passages.
+6. The LLM synthesizes the supplied evidence and tool output.
+7. The API returns a structured response containing evidence, inference, limitations and an execution trace.
+
+## Technology evidence in the repository
+
+| Area | Implementation |
+| --- | --- |
+| FastAPI and streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
+| Multi-step agent and tool calling | `apps/api/app/services/research.py` |
+| PDF ingestion and background work | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
+| Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
+| PyTorch reranking | `apps/api/app/services/research_models.py` |
+| Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
+| Next.js research UI | `apps/web/app/research/` |
+| Docker environment | `docker-compose.yml`, `apps/api/Dockerfile.research` |
+| Kubernetes deployment design | `deploy/kubernetes/` |
+| AWS infrastructure design | `deploy/terraform/` |
+| Tests | `tests/test_research_service.py` and the wider `tests/` suite |
+
+## Three-minute product walkthrough
+
+1. Open `research.aistockcn.com` and select a US-listed company.
+2. Upload an annual-report PDF and show its queued, extracting and indexed states.
+3. Ask a question about revenue, profit, risk or management commentary.
+4. Open a cited page and explain the Evidence / Model inference separation.
+5. Compare two or three companies and show the agent's database, calculation and retrieval steps.
+6. Run the reranker evaluation and show Top-1 accuracy, MRR and the lexical baseline.
+7. Finish with the architecture and the honest deployment boundary shown above.
+
+The full interview script is in [docs/RESEARCH_COPILOT.md](docs/RESEARCH_COPILOT.md#three-minute-interview-walkthrough).
+
+## Underlying AiStockCN platform
+
+The original platform remains part of the same repository and provides the production context for the copilot:
+
+- full-universe A-share and US market-data workflows;
+- feature engineering and inference snapshots;
+- LightGBM training, scoring and model profiles;
+- expanding-window walk-forward backtesting;
+- selection snapshots and operational monitoring;
+- paper-trading reconciliation through an external gateway;
+- FastAPI and Next.js control surfaces;
+- long-running batch and reference-data orchestration.
 
 ## Stack
 
-- Frontend: Next.js 15, React 19, TypeScript
-- Backend: FastAPI, Uvicorn, Python 3
-- Data: Pandas, PyArrow, parquet artifacts
-- ML: LightGBM, scikit-learn
-- Market data: BaoStock plus AKShare fallback/enrichment
-- Ops: Docker, Docker Compose
+- **Frontend:** Next.js 15, React 19, TypeScript
+- **Backend:** FastAPI, Uvicorn, Python 3.12
+- **AI/RAG:** Ollama, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
+- **Quant/ML:** Pandas, PyArrow, LightGBM, scikit-learn
+- **Operations:** Docker Compose, structured logging, retry, rate limiting and background workers
+- **Deployment assets:** Kubernetes, Terraform, AWS EC2/S3/ECR/CloudWatch
 
-## Repository Layout
+## Repository layout
 
 ```text
-apps/
-  api/        FastAPI control and inspection API
-  web/        Next.js operator dashboard
-docs/         Public-facing architecture and usage docs
-run/          Safe example configs and model profile definitions
-*.py          Data, feature, model, backtest, and trading workflow scripts
-*.sh          Operational runners for repeatable batch jobs
+apps/api/             FastAPI APIs, agent, retrieval and ingestion worker
+apps/web/             Next.js customer and research interfaces
+deploy/kubernetes/    Kubernetes workloads, health probes and ingress
+deploy/terraform/     AWS infrastructure as code
+docs/                 Product, architecture, results and operating docs
+run/                  Safe example configuration and model profiles
+scripts/              SQL migrations and operational runners
+tests/                Unit and integration-style service tests
+*.py / *.sh           Data, model, backtest and trading workflows
 ```
 
-## Pipeline Overview
+## Local development
 
-### Step 1. Data Prepare
+This repository is a production platform snapshot, not a seeded toy application. The Research Copilot expects:
 
-- Refresh the current A-share universe and canonical stock registry
-- Download or update per-symbol daily kline parquet files
-- Download or update daily valuation parquet files
-
-### Step 2. Training Features
-
-- Merge raw market and valuation data
-- Generate model-ready features plus forward-return labels
-
-### Step 3. Inference Features
-
-- Build the latest feature snapshot without future labels
-
-### Step 4. Train And Score
-
-- Train the latest LightGBM model
-- Save model artifacts and training metadata
-- Score the latest inference snapshot
-
-### Step 5. Backtest
-
-- Run expanding-window walk-forward backtests
-- Compare profile variants across saved runs
-
-### Step 6. Auto Paper Trading
-
-- Monitor new scored snapshots
-- Reconcile target holdings with an existing Futu gateway
-- Persist local paper-trading state and sync history
-
-## Run Locally
-
-### Build images
-
-```bash
-docker compose build
-```
-
-### Start the panel
-
-The default `docker-compose.override.yml` bind-mounts `apps/api` and runs
-FastAPI with `--reload`. The web panel runs with the production Next.js server
-by default, so the public panel does not show the Next.js development overlay.
+- Docker and Docker Compose;
+- a reachable PostgreSQL database with the existing AiStockCN schema and `pgvector`;
+- a reachable Ollama service with `qwen2.5:3b`;
+- local authentication values in `run/panel.env` and `run/panel_users.json`.
 
 ```bash
 cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
-docker compose up -d panel-api panel-web
+
+docker build -t aistockcn-research-api:20260810-mvp -f apps/api/Dockerfile.research .
+docker build -t aistockcn-research-web:20260810-mvp -f apps/web/Dockerfile .
+docker compose up -d research-api research-worker panel-web-research
+docker compose ps research-api research-worker panel-web-research
 ```
 
-If you change Python dependencies, rebuild and restart the API container:
+The current Compose file connects to the platform's existing external database and AI-service networks. See [the detailed local-development notes](docs/RESEARCH_COPILOT.md#local-development) before starting from a new machine.
+
+### Validation
 
 ```bash
-docker compose build panel-api
-docker compose up -d panel-api
+python3 -m pytest -q
+docker compose config --quiet
+npm --prefix apps/web run build
 ```
 
-If you change the web app, rebuild and restart the web image:
+Terraform and Kubernetes configurations can be validated without deploying chargeable infrastructure:
 
 ```bash
-docker compose build panel-web
-docker compose up -d panel-web
+terraform -chdir=deploy/terraform init -backend=false
+terraform -chdir=deploy/terraform validate
+kubectl kustomize deploy/kubernetes >/dev/null
 ```
 
-If you want local Next.js development with source mounts and `next dev`, include
-the web development override explicitly:
+## Security and repository boundaries
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.web-dev.yml up -d panel-web
-```
+Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe examples are provided in `run/*.example` and `deploy/**/secret.example.yaml`. Never apply example secrets unchanged.
 
-Before first start, replace the example auth secrets and password hashes in those local copies.
-Generate a new hash with:
+## Documentation
 
-```bash
-node apps/web/scripts/hash-password.mjs 'replace-with-a-real-password'
-```
+- [Research Copilot](docs/RESEARCH_COPILOT.md)
+- [Documentation index](docs/README.md)
+- [User guide](docs/USER_GUIDE.md)
+- [System design specification](docs/SYSTEM_DESIGN_SPEC.md)
+- [System manual](docs/SYSTEM_MANUAL.md)
+- [Production research results](docs/RESULTS.md)
+- [A-share 10-day model profile](docs/A_SHARE_MEDIUM_10D_V2.md)
 
-If you use the single-user env fallback instead of `run/panel_users.json`, set `PANEL_PASSWORD_HASH` rather than `PANEL_PASSWORD`.
-The default API IP policy is `localhost` plus the local `panel-web` service only, not the whole Compose subnet.
+## Resume summary
 
-Panel endpoints:
-
-- Web: `http://localhost:3030`
-- API: `http://localhost:8001`
-
-### Start the major jobs
-
-```bash
-bash run_a_share_3y_batch.sh
-bash run_step2_feature_engineering.sh
-bash run_step3_inference_features.sh
-bash run_step4_train_score.sh
-bash run_step5_backtest.sh
-bash run_paper_trading_daemon.sh
-```
-
-## Shared Repository Notes
-
-This shared source snapshot excludes:
-
-- `quant_data/`
-- `logs/`
-- runtime PID/state files
-- real local credentials such as `run/panel.env` and `run/panel_users.json`
-
-Safe examples are included instead:
-
-- `run/panel.env.example`
-- `run/panel_users.example.json`
-
-## Docs
-
-- [User Guide](docs/USER_GUIDE.md)
-- [System Design Spec](docs/SYSTEM_DESIGN_SPEC.md)
-- [System Manual](docs/SYSTEM_MANUAL.md)
-- [Production Research Results](docs/RESULTS.md)
-
-## Engineering Scope
-
-This codebase covers practical production-oriented engineering work, not only model experimentation:
-
-- backend API design
-- frontend dashboard implementation
-- data engineering workflow design
-- ML training and evaluation plumbing
-- batch orchestration
-- containerized deployment
-- operational safety around secrets and runtime artifacts
+> Built and deployed a production financial research copilot using FastAPI, LLM agents, RAG, PostgreSQL/pgvector and a PyTorch reranker; containerised with Docker and supported by Kubernetes/AWS infrastructure as code, automated evaluation, observability and source-grounded responses.
