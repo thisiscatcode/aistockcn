@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Panel } from "@/components/cards";
+import { CustomerSystemArchitecture } from "@/components/customer-system-architecture";
 import { DataTable } from "@/components/table";
 import {
   getBatchLogs,
@@ -120,6 +121,8 @@ export async function CustomerHomePage() {
             </div>
           </section>
         </header>
+
+        <CustomerSystemArchitecture />
 
         <main className="page-content customer-home-content">
           <section className="two-col-grid">

@@ -7076,6 +7076,187 @@ select {
   }
 }
 
+.customer-system-architecture {
+  margin-top: 24px;
+  background:
+    radial-gradient(circle at 8% 18%, rgba(34, 211, 238, 0.08), transparent 25%),
+    radial-gradient(circle at 92% 72%, rgba(99, 102, 241, 0.07), transparent 27%);
+}
+
+.customer-system-architecture > .case-section:first-child,
+.customer-system-architecture .case-section {
+  padding: 34px 0 8px;
+}
+
+.customer-system-architecture .case-section + .case-section {
+  margin-top: 28px;
+}
+
+.customer-system-architecture .case-section-heading {
+  gap: 32px;
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.customer-system-architecture .case-section-heading h2 {
+  font-size: clamp(2.25rem, 3.4vw, 3.35rem);
+  line-height: 1.04;
+}
+
+.customer-system-architecture .case-section-heading > p {
+  padding: 13px 16px;
+  font-size: 1.04rem;
+  line-height: 1.5;
+}
+
+.customer-system-architecture .case-kicker {
+  font-size: 0.78rem;
+}
+
+.customer-system-architecture .case-flow-step {
+  min-height: 122px;
+  padding: 14px;
+}
+
+.customer-system-architecture .case-flow-top {
+  font-size: 0.76rem;
+}
+
+.customer-system-architecture .case-flow-step strong {
+  margin-top: 20px;
+  font-size: 1.08rem;
+}
+
+.customer-system-architecture .case-flow-step small {
+  margin-top: 6px;
+  font-size: 0.84rem;
+}
+
+.customer-system-architecture .case-capability-card {
+  min-height: 264px;
+  padding: 22px;
+}
+
+.customer-system-architecture .case-capability-index {
+  top: 15px;
+  right: 18px;
+  font-size: 2.25rem;
+}
+
+.customer-system-architecture .case-capability-label {
+  font-size: 0.74rem;
+}
+
+.customer-system-architecture .case-capability-card h3 {
+  max-width: 310px;
+  margin-top: 22px;
+  font-size: 1.4rem;
+}
+
+.customer-system-architecture .case-capability-card > p:not(.case-capability-label) {
+  max-width: none;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.customer-system-architecture .case-tags {
+  right: 22px;
+  bottom: 20px;
+  left: 22px;
+}
+
+.customer-system-architecture .case-tags span,
+.customer-system-architecture .case-stack-list span {
+  font-size: 0.76rem;
+}
+
+.customer-system-architecture .case-stack-section {
+  gap: 32px;
+  margin-top: 30px;
+  padding: 26px;
+}
+
+.customer-system-architecture .case-stack-section h2 {
+  font-size: clamp(1.9rem, 2.8vw, 2.65rem);
+}
+
+@media (max-width: 1000px) {
+  .customer-system-architecture .case-section-heading {
+    gap: 16px;
+  }
+
+  .customer-system-architecture .case-flow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .customer-system-architecture {
+    margin-top: 16px;
+  }
+
+  .customer-system-architecture > .case-section:first-child,
+  .customer-system-architecture .case-section {
+    padding-top: 24px;
+  }
+
+  .customer-system-architecture .case-section + .case-section {
+    margin-top: 20px;
+  }
+
+  .customer-system-architecture .case-section-heading {
+    margin-bottom: 18px;
+  }
+
+  .customer-system-architecture .case-section-heading h2 {
+    font-size: 2rem;
+  }
+
+  .customer-system-architecture .case-section-heading > p {
+    font-size: 1rem;
+  }
+
+  .customer-system-architecture .case-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .customer-system-architecture .case-flow-step {
+    min-height: 108px;
+    padding: 12px;
+  }
+
+  .customer-system-architecture .case-flow-step strong {
+    margin-top: 14px;
+    font-size: 1rem;
+  }
+
+  .customer-system-architecture .case-capability-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .customer-system-architecture .case-capability-card {
+    min-height: 0;
+    padding: 20px;
+  }
+
+  .customer-system-architecture .case-capability-card h3 {
+    margin-top: 18px;
+  }
+
+  .customer-system-architecture .case-tags {
+    position: static;
+    margin-top: 18px;
+  }
+
+  .customer-system-architecture .case-stack-section {
+    gap: 18px;
+    margin-top: 22px;
+    padding: 20px;
+  }
+}
+
 .research-document-list article > p {
   grid-column: 1 / -1;
   margin: 0;
