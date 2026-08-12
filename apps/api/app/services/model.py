@@ -12,7 +12,7 @@ from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
 from app.services.admin_settings import filter_model_candidate_rows
-from app.services.model_profiles import get_model_profile_catalog, set_active_model_profile
+from app.services.model_profiles import get_model_profile_catalog, resolve_model_profile, set_active_model_profile
 
 REALISTIC_BACKTEST_METHOD_VERSIONS = {"realistic_execution_v1"}
 RESEARCH_BACKTEST_METHOD_VERSIONS = {
@@ -668,8 +668,11 @@ def get_lobster_picks(*, limit: int = 100) -> dict[str, Any]:
 
 
 def activate_model_for_paper(profile_name: str) -> dict[str, Any]:
-    profile = set_active_model_profile(profile_name)
+    profile = resolve_model_profile(profile_name)
+    if str(profile.get("deployment_status") or "available") != "available":
+        raise ValueError(f"profile {profile['name']} is research-only and cannot be activated for paper trading yet")
     sync_result = _sync_profile_to_production(str(profile["name"]))
+    profile = set_active_model_profile(profile_name)
     return {
         "ok": True,
         "profile_name": profile["name"],

@@ -9,8 +9,10 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 import scripts.import_stcn_average_trade as stcn_import
+from app.services.fei_db_sync import _metric_readiness_publishable, _parse_spot_code, _stcn_summary_reaches_target
 from scripts.import_daily_kline_to_postgres import rows_from_kline
 
 
@@ -71,6 +73,49 @@ def test_fetch_json_retries_with_backoff_and_success_sleep(monkeypatch) -> None:
     assert payload == {"data": []}
     assert calls == [("http://example.test/data.json", 10), ("http://example.test/data.json", 10)]
     assert sleeps == [3, 3]
+
+
+def test_fei_sync_treats_stcn_no_update_for_target_date_as_imported() -> None:
+    assert _stcn_summary_reaches_target(
+        {"status": "no_update", "source_latest_trade_date": "2026-06-15"},
+        "2026-06-15",
+    )
+    assert not _stcn_summary_reaches_target(
+        {"status": "no_update", "source_latest_trade_date": "2026-06-12"},
+        "2026-06-15",
+    )
+
+
+def test_fei_sync_metric_readiness_requires_complete_publish_coverage() -> None:
+    assert _metric_readiness_publishable(
+        {
+            "close_rows": 5100,
+            "volume_rows": 5100,
+            "amount_rows": 5100,
+            "turnover_rows": 5100,
+            "average_trade_rows": 5100,
+        },
+        5000,
+    )
+    assert not _metric_readiness_publishable(
+        {
+            "close_rows": 5100,
+            "volume_rows": 5100,
+            "amount_rows": 5100,
+            "turnover_rows": 4999,
+            "average_trade_rows": 5100,
+        },
+        5000,
+    )
+
+
+def test_fei_sync_parses_akshare_spot_codes_for_supported_exchanges() -> None:
+    assert _parse_spot_code("sz000001") == ("sz", "000001")
+    assert _parse_spot_code("sh600000") == ("sh", "600000")
+    assert _parse_spot_code("600000") == ("sh", "600000")
+    assert _parse_spot_code("000001") == ("sz", "000001")
+    assert _parse_spot_code("bj920000") == (None, None)
+    assert _parse_spot_code("920000") == (None, None)
 
 
 def test_daily_kline_rows_can_filter_one_target_date(tmp_path: Path) -> None:

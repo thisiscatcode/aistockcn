@@ -17,15 +17,11 @@ if docker ps --format '{{.Names}}' | grep -Eq '^aistockcn-reference-data-'; then
   exit 0
 fi
 
-if docker ps --format '{{.Names}}' | grep -Eq '^aistockcn-(full-pipeline|full-market-3y|step[0-9]-)'; then
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) reference auto-run skipped: A-share pipeline is running"
-  exit 0
-fi
-
 cd "$ROOT_DIR"
 exec env START_DATE="${START_DATE:-20200101}" \
   END_DATE="${END_DATE:-$(date -u +%Y%m%d)}" \
   SLEEP_SECONDS="${SLEEP_SECONDS:-0.2}" \
+  REFERENCE_SYMBOL_TIMEOUT_SECONDS="${REFERENCE_SYMBOL_TIMEOUT_SECONDS:-300}" \
   LIMIT="${LIMIT:-0}" \
   SKIP_INDUSTRY="${SKIP_INDUSTRY:-0}" \
   OVERWRITE="${OVERWRITE:-0}" \

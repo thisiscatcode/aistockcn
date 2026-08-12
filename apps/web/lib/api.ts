@@ -777,3 +777,169 @@ export function getPaperHistory(limit = 50) {
 export function getPaperPerformance(limit = 240) {
   return fetchJson<PaperPerformance>(`/api/paper/performance?limit=${limit}`);
 }
+
+export type ResearchCompany = {
+  symbol: string;
+  market?: string | null;
+  stock_name?: string | null;
+  stock_name_zh?: string | null;
+  stock_type?: string | null;
+  stock_industry?: string | null;
+  stock_industry_en?: string | null;
+  stock_industry_short?: string | null;
+  market_cap?: number | string | null;
+  earnings_per_share?: number | string | null;
+  pe_ratio?: number | string | null;
+  currency?: string | null;
+  trade_date?: string | null;
+  close?: number | string | null;
+  price_diff?: number | string | null;
+  volume?: number | string | null;
+  turnover?: number | string | null;
+  average_trade?: number | string | null;
+};
+
+export type ResearchCompanySearch = {
+  query: string;
+  rows: number;
+  total_active: number;
+  companies: ResearchCompany[];
+};
+
+export type ResearchCompanySnapshot = {
+  company: ResearchCompany;
+  history: Array<Record<string, unknown>>;
+  coverage: {
+    observations?: number | null;
+    date_min?: string | null;
+    date_max?: string | null;
+  };
+  research_readiness: {
+    market_data: string;
+    sec_filings: string;
+    financial_facts: string;
+  };
+};
+
+export type ResearchEvidence = {
+  id: string;
+  claim: string;
+  source: string;
+  locator: string;
+  as_of?: string | null;
+  document_id?: string;
+  page_number?: number;
+  source_url?: string | null;
+  reranker_score?: number;
+};
+
+export type ResearchAnswer = {
+  symbol: string;
+  question: string;
+  answer: string;
+  document_evidence: ResearchEvidence[];
+  data_evidence: ResearchEvidence[];
+  model_inference: string[];
+  limitations: string[];
+  agent_steps: Array<{ tool: string; status: string; detail: string }>;
+  tool_plan?: { tools: string[]; reason: string; planner: string };
+  duration_ms?: number;
+  model: { provider: string; name: string };
+  retrieval?: {
+    strategy?: string;
+    embedding_model?: string;
+    reranker_model?: string;
+    indexed_documents?: number;
+    lexical_candidates?: number;
+    vector_candidates?: number;
+    merged_candidates?: number;
+    diversified_by_document?: boolean;
+  };
+};
+
+export type ResearchComparison = {
+  symbols: string[];
+  question: string;
+  answer: string;
+  companies: Array<{
+    symbol: string;
+    company: ResearchCompany;
+    calculations: {
+      return_1d_pct?: number | null;
+      return_5d_pct?: number | null;
+      return_20d_pct?: number | null;
+      annualized_volatility_pct?: number | null;
+    };
+  }>;
+  document_evidence: Array<ResearchEvidence & { symbol: string }>;
+  model_inference: string[];
+  agent_steps: Array<{ tool: string; status: string; detail: string }>;
+  model: { provider: string; name: string };
+};
+
+export type ResearchEvaluationRun = {
+  id: string;
+  benchmark_name: string;
+  model_name: string;
+  framework?: string;
+  torch_version?: string;
+  case_count: number;
+  top1_accuracy: number;
+  mean_reciprocal_rank: number;
+  baseline_top1_accuracy: number;
+  duration_ms: number;
+  created_at?: string;
+  details?: Array<{
+    case: number;
+    query: string;
+    relevant_rank: number;
+    reranker_top_passage: string;
+    reranker_top_score: number;
+    baseline_relevant_rank: number;
+    passed: boolean;
+  }>;
+};
+
+export type ResearchDocument = {
+  id: string;
+  symbol: string;
+  filename: string;
+  document_type: string;
+  filing_date?: string | null;
+  fiscal_year?: number | null;
+  source_url?: string | null;
+  sha256: string;
+  size_bytes: number;
+  page_count?: number | null;
+  chunk_count: number;
+  status: "uploaded" | "processing" | "text_ready" | "indexed" | "failed" | string;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+  duplicate?: boolean;
+};
+
+export type ResearchDocumentList = {
+  rows: number;
+  documents: ResearchDocument[];
+};
+
+export function getResearchCompanies(query = "", limit = 12) {
+  const params = new URLSearchParams({ query, limit: String(limit) });
+  return fetchJson<ResearchCompanySearch>(`/api/research/companies?${params.toString()}`, { timeoutMs: 10000 });
+}
+
+export function getResearchCompany(symbol: string, historyLimit = 30) {
+  const params = new URLSearchParams({ history_limit: String(historyLimit) });
+  return fetchJson<ResearchCompanySnapshot>(
+    `/api/research/companies/${encodeURIComponent(symbol)}?${params.toString()}`,
+    { timeoutMs: 10000 }
+  );
+}
+
+export function getResearchDocuments(symbol?: string) {
+  const params = new URLSearchParams();
+  if (symbol) params.set("symbol", symbol);
+  const query = params.size ? `?${params.toString()}` : "";
+  return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, { timeoutMs: 10000 });
+}

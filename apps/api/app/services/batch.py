@@ -255,9 +255,14 @@ def _default_batch_args() -> dict[str, str]:
     settings = get_settings()
     state = read_json(settings.state_file)
     china_today = _china_today()
+    end_date = china_today.strftime("%Y%m%d")
     return {
-        "start_date": str(state.get("start_date") or _rolling_default_start_date(china_today)),
-        "end_date": china_today.strftime("%Y%m%d"),
+        # Daily control-panel runs refresh only the newest tail. Existing
+        # per-symbol parquet history is merged in batch_download_all_a.py, so
+        # using the trade date here keeps FEI selection fresh without waiting
+        # for a slow full-history repair sweep.
+        "start_date": end_date,
+        "end_date": end_date,
         "sleep_seconds": "1.2",
         "pause_minutes": "15",
         "max_passes": "5",

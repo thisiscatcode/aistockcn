@@ -67,6 +67,7 @@ from app.services import paper as paper_service
 from app.services import paper_db as paper_db_service
 from app.services import pipeline_control as pipeline_control_service
 from app.services import pipeline_runner as pipeline_runner_service
+from app.services import reference_control as reference_control_service
 from app.services import source_readiness
 from app.services import us_selection_control as us_selection_control_service
 from app.services.fei_selection import SELECTION_SQL, STOCK_DETAIL_HISTORY_SQL, STOCK_DETAIL_SHAREHOLDER_SQL
@@ -357,9 +358,20 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertIn("coalesce(s.turnover_compare_pct <= -40, false) as blue_flg", SELECTION_SQL)
 
     def test_fei_selection_sql_exposes_latest_shareholder_count(self) -> None:
+        self.assertIn("shareholder_ranked as", SELECTION_SQL)
         self.assertIn("shareholder_latest as", SELECTION_SQL)
+        self.assertIn("shareholder_peak_ranked as", SELECTION_SQL)
+        self.assertIn("shareholder_peak as", SELECTION_SQL)
         self.assertIn("from stock_shareholder_research", SELECTION_SQL)
-        self.assertIn("holder_total_num as shareholder_total_num", SELECTION_SQL)
+        self.assertIn("max(holder_total_num) filter (where rn = 1) as shareholder_total_num", SELECTION_SQL)
+        self.assertIn("holder_total_num) filter (where rn = 2) as shareholder_previous_total_num", SELECTION_SQL)
+        self.assertIn("sh.shareholder_total_num - sh.shareholder_previous_total_num", SELECTION_SQL)
+        self.assertIn("shareholder_total_num_change_pct", SELECTION_SQL)
+        self.assertIn("interval '90 days'", SELECTION_SQL)
+        self.assertIn("sp.shareholder_peak_report_date", SELECTION_SQL)
+        self.assertIn("sp.shareholder_peak_total_num", SELECTION_SQL)
+        self.assertIn("shareholder_total_num_from_peak_change", SELECTION_SQL)
+        self.assertIn("shareholder_total_num_from_peak_change_pct", SELECTION_SQL)
         self.assertIn("s.shareholder_total_num", SELECTION_SQL)
 
     def test_fei_stock_detail_history_sql_includes_volume(self) -> None:
@@ -436,6 +448,45 @@ class PipelineRepairTests(unittest.TestCase):
 
         start_mock.assert_not_called()
         self.assertEqual(state["last_skip_reason"], "details_already_running")
+
+    def test_us_selection_scheduled_lane_marks_attempt_separately_from_completion(self) -> None:
+        with (
+            mock.patch.object(us_selection_control_service, "_find_running_container", return_value=None),
+            mock.patch.object(us_selection_control_service, "_completed_run_exists", return_value=False),
+            mock.patch.object(us_selection_control_service, "start_us_selection", return_value={"code": "started", "container_name": "demo"}),
+        ):
+            state = us_selection_control_service._maybe_start_scheduled_lane(
+                "average-trade",
+                date(2026, 7, 10),
+                "average_date",
+                {},
+            )
+
+        self.assertNotIn("last_average_date", state)
+        self.assertEqual(state["last_attempted_average_date"], "2026-07-10")
+
+    def test_us_selection_scheduled_lane_marks_date_after_completed_run(self) -> None:
+        with (
+            mock.patch.object(us_selection_control_service, "_find_running_container", return_value=None),
+            mock.patch.object(us_selection_control_service, "_completed_run_exists", return_value=True),
+            mock.patch.object(us_selection_control_service, "start_us_selection") as start_mock,
+        ):
+            state = us_selection_control_service._maybe_start_scheduled_lane(
+                "average-trade",
+                date(2026, 7, 10),
+                "average_date",
+                {},
+            )
+
+        start_mock.assert_not_called()
+        self.assertEqual(state["last_average_date"], "2026-07-10")
+
+    def test_reference_control_passes_symbol_timeout(self) -> None:
+        command = reference_control_service._reference_command()
+
+        self.assertIn("--symbol-timeout-seconds", command)
+        timeout_index = command.index("--symbol-timeout-seconds") + 1
+        self.assertEqual(command[timeout_index], "300")
 
     def test_us_selection_price_lane_keeps_turnover_dependent_on_existing_shares(self) -> None:
         source = (ROOT / "scripts" / "update_us_selection_data.py").read_text(encoding="utf-8")
@@ -1109,6 +1160,21 @@ class PipelineRepairTests(unittest.TestCase):
 
         self.assertFalse(status["is_stalled"])
         self.assertEqual(status["state_file_updated_at"], status["last_activity_at"])
+
+    def test_daily_batch_defaults_refresh_only_current_trade_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "quant_data" / "batch_state" / "all_a_3y_state.json"
+            state_file.parent.mkdir(parents=True)
+            state_file.write_text(json.dumps({"start_date": "20230322"}), encoding="utf-8")
+            settings = SimpleNamespace(state_file=state_file)
+
+            with mock.patch.object(batch_service, "get_settings", return_value=settings):
+                with mock.patch.object(batch_service, "_china_today", return_value=date(2026, 6, 16)):
+                    defaults = batch_service._default_batch_args()
+
+        self.assertEqual(defaults["start_date"], "20260616")
+        self.assertEqual(defaults["end_date"], "20260616")
 
     def test_paper_targets_hide_noop_zero_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1855,7 +1921,7 @@ class PipelineRepairTests(unittest.TestCase):
                 lot_size=100,
                 cash_buffer_pct=0.05,
                 budget_total=50_000.0,
-                max_buy_order_qty=0,
+                max_buy_order_qty=10_000,
                 max_sell_order_qty=1000,
                 cancel_open_orders=True,
                 sync_existing_orders=True,
@@ -1992,6 +2058,119 @@ class PipelineRepairTests(unittest.TestCase):
         self.assertIn("600000", plan["code"].tolist())
         self.assertEqual(summary["manual_st_positions_ignored"], ["688496"])
 
+    def test_paper_plan_ignores_unmanaged_positions_when_db_managed_positions_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            scores_path = quant_dir / "models" / "scores.parquet"
+            scores_path.parent.mkdir(parents=True)
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=quant_dir / "paper_trading",
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=10_000.0,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+            latest_scores = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-20",
+                        "rank": 1,
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "平安银行",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            )
+
+            plan, summary = build_plan(
+                config,
+                latest_scores=latest_scores,
+                positions={
+                    "600000": {"symbol": "600000", "quantity": 100, "last_price": 10.0, "market_value": 1000.0},
+                },
+                balance_metrics={"power": 20_000.0, "cash": 20_000.0, "total_assets": 21_000.0},
+                managed_positions={},
+            )
+
+        self.assertNotIn("600000", plan["code"].tolist())
+        self.assertEqual(summary["managed_position_source"], "paper_managed_positions")
+        self.assertEqual(summary["manual_position_symbols_ignored"], ["600000"])
+
+    def test_paper_plan_only_sells_db_managed_quantity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            quant_dir = Path(tmp) / "quant_data"
+            scores_path = quant_dir / "models" / "scores.parquet"
+            scores_path.parent.mkdir(parents=True)
+            config = SyncConfig(
+                scores_path=scores_path,
+                state_dir=quant_dir / "paper_trading",
+                gateway_base_url="http://127.0.0.1:8080",
+                market="CN",
+                agent_id="agent",
+                agent_key="key",
+                agent_id_header="X-Agent-Id",
+                agent_key_header="X-Agent-Key",
+                account_id=None,
+                top_k=1,
+                min_score=0.5,
+                lot_size=100,
+                cash_buffer_pct=0.0,
+                budget_total=10_000.0,
+                max_buy_order_qty=1000,
+                max_sell_order_qty=1000,
+                cancel_open_orders=True,
+                sync_existing_orders=True,
+                force=False,
+                dry_run=True,
+            )
+            latest_scores = pd.DataFrame(
+                [
+                    {
+                        "date": "2026-05-20",
+                        "rank": 1,
+                        "code": "000001",
+                        "exchange": "SZ",
+                        "name": "平安银行",
+                        "industry": "Bank",
+                        "score": 0.9,
+                        "close": 10.0,
+                    }
+                ]
+            )
+
+            plan, _summary = build_plan(
+                config,
+                latest_scores=latest_scores,
+                positions={
+                    "600000": {"symbol": "600000", "quantity": 300, "last_price": 10.0, "market_value": 3000.0},
+                },
+                balance_metrics={"power": 20_000.0, "cash": 20_000.0, "total_assets": 23_000.0},
+                managed_positions={"600000": {"symbol": "600000", "quantity": 100, "avg_cost": 9.0}},
+            )
+
+        exit_row = plan[plan["code"].eq("600000")].iloc[0]
+        self.assertEqual(int(exit_row["current_qty"]), 100)
+        self.assertEqual(int(exit_row["sell_order_qty"]), 100)
+        self.assertEqual(exit_row["reason"], "exit_non_target")
+
     def test_sina_quote_parser_uses_latest_price_field(self) -> None:
         payload = 'var hq_str_sz000001="平安银行,10.860,10.860,10.770,10.880,10.760,10.770,10.780,74763214";'
 
@@ -2074,6 +2253,35 @@ class PipelineRepairTests(unittest.TestCase):
             ("SELL", "605288", 300),
             ("BUY", "000001", 100),
         ])
+
+    def test_paper_execution_zero_buy_cap_blocks_buy_orders(self) -> None:
+        class OrderClient:
+            def __init__(self) -> None:
+                self.orders: list[dict[str, object]] = []
+
+            def place_order(self, **kwargs: object) -> dict[str, object]:
+                self.orders.append(dict(kwargs))
+                return {"order_id": f"order-{len(self.orders)}", "order_status": "SUBMITTED"}
+
+        client = OrderClient()
+        config = SimpleNamespace(
+            cancel_open_orders=False,
+            max_buy_order_qty=0,
+            max_sell_order_qty=1000,
+            execution_model=DEFAULT_EXECUTION_MODEL,
+        )
+        plan = pd.DataFrame(
+            [
+                {"rank": 1, "score": 0.9, "code": "000001", "buy_order_qty": 500, "sell_order_qty": 0, "previous_close": 10.0, "amount": 100_000_000.0},
+            ]
+        )
+
+        with mock.patch("paper_trade_futu.is_active_trading_hours", return_value=True):
+            with mock.patch("paper_trade_futu.get_sina_latest_price", return_value=10.0):
+                result = execute_plan(client, config, plan=plan, signal_date="2026-05-20", active_orders=[])
+
+        self.assertEqual(result["placed_orders"], [])
+        self.assertEqual(client.orders, [])
 
     def test_backtest_rebalance_fees_count_buy_and_sell_orders(self) -> None:
         fees = estimate_rebalance_fees(

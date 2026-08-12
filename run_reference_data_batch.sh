@@ -14,6 +14,7 @@ SLEEP_SECONDS="${SLEEP_SECONDS:-0.2}"
 LIMIT="${LIMIT:-0}"
 SKIP_INDUSTRY="${SKIP_INDUSTRY:-0}"
 OVERWRITE="${OVERWRITE:-0}"
+REFERENCE_SYMBOL_TIMEOUT_SECONDS="${REFERENCE_SYMBOL_TIMEOUT_SECONDS:-300}"
 PANEL_ENV_FILE="$ROOT_DIR/run/panel.env"
 
 read_panel_env_value() {
@@ -54,6 +55,7 @@ ARGS+=(
   "--start-date" "$START_DATE"
   "--end-date" "$END_DATE"
   "--sleep" "$SLEEP_SECONDS"
+  "--symbol-timeout-seconds" "$REFERENCE_SYMBOL_TIMEOUT_SECONDS"
 )
 
 if [[ "$LIMIT" != "0" ]]; then

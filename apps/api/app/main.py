@@ -25,18 +25,27 @@ from app.routers.pre_explosion import router as pre_explosion_router
 from app.routers.status import router as status_router
 from app.services.auto_pipeline import start_auto_pipeline_scheduler, stop_auto_pipeline_scheduler
 from app.services.fei_db_sync import start_fei_db_sync_scheduler, stop_fei_db_sync_scheduler
+from app.services.fei_selection_snapshots import start_snapshot_scheduler, stop_snapshot_scheduler
 from app.services.us_selection_control import start_us_selection_scheduler, stop_us_selection_scheduler
+from app.services.us_selection_snapshots import (
+    start_snapshot_scheduler as start_us_snapshot_scheduler,
+    stop_snapshot_scheduler as stop_us_snapshot_scheduler,
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     start_auto_pipeline_scheduler()
     start_fei_db_sync_scheduler()
+    start_snapshot_scheduler()
     start_us_selection_scheduler()
+    start_us_snapshot_scheduler()
     try:
         yield
     finally:
+        stop_us_snapshot_scheduler()
         stop_us_selection_scheduler()
+        stop_snapshot_scheduler()
         stop_fei_db_sync_scheduler()
         stop_auto_pipeline_scheduler()
 
@@ -146,9 +155,16 @@ def root() -> dict[str, object]:
             "/api/fei-keywords-us/favorites",
             "PUT /api/fei-keywords-us/favorites",
             "/api/fei-selection",
+            "/api/fei-selection/snapshot-dates",
+            "/api/fei-selection/snapshots/status",
+            "POST /api/fei-selection/snapshots/refresh",
             "PUT /api/fei-selection/favorites",
             "/api/pre-explosion",
             "/api/fei-selection-us",
+            "/api/fei-selection-us/snapshot-dates",
+            "/api/fei-selection-us/snapshots/status",
+            "POST /api/fei-selection-us/snapshots/refresh",
+            "/api/fei-selection-us/stocks/{code}/signal-visualizer",
             "PUT /api/fei-selection-us/favorites",
             "/api/admin/settings",
             "/api/model/latest",

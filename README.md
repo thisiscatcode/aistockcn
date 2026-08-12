@@ -1,5 +1,9 @@
 # AistockCN Quant Trading System
 
+## US Equity Research Copilot
+
+The source-grounded Research Copilot is documented in [docs/RESEARCH_COPILOT.md](docs/RESEARCH_COPILOT.md). It runs as an isolated API/worker/frontend stack so research development cannot change the customer-facing `aistockcn.com` image.
+
 AistockCN is a full-stack quant research and operations project for the China A-share market. This shared source repository keeps the application code, workflow orchestration, architecture docs, and deployment setup while excluding local datasets, logs, and runtime secrets.
 
 ## Core Capabilities

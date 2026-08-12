@@ -16,11 +16,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 import download_data as dl
@@ -41,6 +44,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-industry", action="store_true", help="Skip refreshing industry metadata.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing reference valuation files.")
     parser.add_argument(
+        "--symbol-timeout-seconds",
+        type=int,
+        default=int(os.getenv("REFERENCE_SYMBOL_TIMEOUT_SECONDS", "300")),
+        help="Maximum seconds to spend on one stock before recording a failure and moving on; 0 disables the timeout.",
+    )
+    parser.add_argument(
         "--state-file",
         default="quant_data/batch_state/reference_data_state.json",
         help="State file path for progress tracking.",
@@ -50,6 +59,30 @@ def parse_args() -> argparse.Namespace:
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+class SymbolTimeoutError(TimeoutError):
+    pass
+
+
+@contextmanager
+def symbol_timeout(seconds: int, code: str) -> Any:
+    if seconds <= 0:
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _handle_timeout(signum: int, frame: FrameType | None) -> None:
+        raise SymbolTimeoutError(f"{code} exceeded {seconds}s symbol timeout")
+
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def load_active_universe(data_dir: Path, *, limit: int) -> Any:
@@ -233,6 +266,7 @@ def main() -> int:
         print(f"Slow-reference stock count: {len(stock_df)}")
         print(f"State file: {state_path}")
         print(f"Target trading day: {trade_date}")
+        print(f"Per-symbol timeout: {args.symbol_timeout_seconds}s")
 
         records = stock_df.to_dict(orient="records")
         for idx, stock in enumerate(records, start=1):
@@ -262,7 +296,8 @@ def main() -> int:
                     target_trade_date=trade_date,
                     overwrite=args.overwrite,
                 ):
-                    reference_df = dl.fetch_market_cap_df(code, args.start_date, args.end_date)
+                    with symbol_timeout(args.symbol_timeout_seconds, code):
+                        reference_df = dl.fetch_market_cap_df(code, args.start_date, args.end_date)
                     reference_path = dl.reference_valuation_path(data_dir, code)
                     reference_df.to_parquet(reference_path, index=False)
 

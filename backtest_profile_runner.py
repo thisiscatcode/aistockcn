@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog-path", default=DEFAULT_CATALOG, help="Profile catalog JSON path.")
     parser.add_argument("--data-dir", default="quant_data", help="Quant data root directory.")
     parser.add_argument("--sync-latest", action="store_true", help="Also update quant_data/backtests/latest artifacts.")
-    parser.add_argument("--budget-total", type=float, default=DEFAULT_REALISTIC_BUDGET_TOTAL, help="RMB budget cap for realistic execution backtests.")
+    parser.add_argument("--budget-total", type=float, default=None, help="RMB budget cap. Defaults to the profile value or the legacy RMB 50,000 cap.")
     return parser.parse_args()
 
 
@@ -100,12 +100,16 @@ def main() -> int:
             str(profile.get("label_threshold", 0.02)),
             "--label-horizon",
             str(profile.get("label_horizon", 5)),
+            "--return-mode",
+            str(profile.get("return_mode", "close_to_close")),
             "--profile-name",
             str(profile["name"]),
         ]
     )
-    run_command(
-        [
+    budget_total = args.budget_total
+    if budget_total is None:
+        budget_total = float(profile.get("backtest_budget_total", DEFAULT_REALISTIC_BUDGET_TOTAL))
+    backtest_command = [
             sys.executable,
             "backtest_walk_forward.py",
             "--train-path",
@@ -130,10 +134,16 @@ def main() -> int:
             str(profile.get("label_horizon", 5)),
             "--label-threshold",
             str(profile.get("label_threshold", 0.02)),
+            "--objective",
+            str(profile.get("model_objective", "binary")),
+            "--max-drop",
+            str(profile.get("backtest_max_drop", 0)),
             "--budget-total",
-            str(args.budget_total),
+            str(budget_total),
         ]
-    )
+    if bool(profile.get("cross_sectional_target", False)):
+        backtest_command.append("--cross-sectional-target")
+    run_command(backtest_command)
 
     if args.sync_latest:
         copy_latest_artifacts(run_dir=run_dir, backtest_root=backtest_root)

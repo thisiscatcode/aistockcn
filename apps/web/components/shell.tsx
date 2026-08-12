@@ -14,7 +14,8 @@ export function Shell({
   locale,
   username,
   role,
-  tone = "dark"
+  tone = "dark",
+  compact = false
 }: {
   title: string;
   subtitle: string;
@@ -23,11 +24,13 @@ export function Shell({
   username: string;
   role: PanelRole;
   tone?: "light" | "dark";
+  compact?: boolean;
 }) {
   const copy = getMessages(locale);
   const isDark = tone === "dark";
   const navItem = (href: Route, label: string) => ({ href, label });
   const navItems: Array<{ href: Route; label: string }> = [
+    navItem("/research" as Route, copy.shell.nav.research),
     navItem("/overview", copy.shell.nav.overview),
     navItem("/system-monitor", copy.shell.nav.systemMonitor),
     navItem("/batch", copy.shell.nav.batch),
@@ -39,7 +42,7 @@ export function Shell({
   ];
 
   const content = (
-    <div className={`shell${isDark ? " shell-dark" : ""}`}>
+    <div className={`shell${isDark ? " shell-dark" : ""}${compact ? " shell-compact" : ""}`}>
       <header className="hero">
         <div className="hero-topline">
           <div className="hero-copy">

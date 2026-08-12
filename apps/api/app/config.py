@@ -40,6 +40,17 @@ class Settings:
     futu_gateway_agent_key_header: str
     futu_gateway_account_id: int | None
     paper_db_url: str | None
+    research_llm_base_url: str
+    research_llm_model: str
+    research_llm_timeout_seconds: int
+    research_upload_dir: Path
+    research_max_upload_bytes: int
+    research_embedding_model: str
+    research_reranker_model: str
+    research_model_cache_dir: Path
+    research_inline_indexing: bool
+    research_s3_bucket: str | None
+    research_aws_region: str
     paper_trading_top_k: int
     paper_trading_min_score: float
     paper_trading_lot_size: int
@@ -61,6 +72,8 @@ class Settings:
     us_selection_average_time: str
     us_selection_details_time: str
     us_selection_universe_time: str
+    us_selection_snapshot_time: str
+    fei_selection_snapshot_time: str
 
 
 def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -169,6 +182,32 @@ def get_settings() -> Settings:
         futu_gateway_agent_key_header=os.getenv("FUTU_GATEWAY_AGENT_KEY_HEADER", "X-Agent-Key").strip() or "X-Agent-Key",
         futu_gateway_account_id=_optional_int_env("FUTU_GATEWAY_ACCOUNT_ID"),
         paper_db_url=(os.getenv("PAPER_DB_URL") or "").strip() or None,
+        research_llm_base_url=(
+            os.getenv("RESEARCH_LLM_BASE_URL", "http://ollama:11434").strip()
+            or "http://ollama:11434"
+        ).rstrip("/"),
+        research_llm_model=os.getenv("RESEARCH_LLM_MODEL", "qwen2.5:3b").strip() or "qwen2.5:3b",
+        research_llm_timeout_seconds=max(_int_env("RESEARCH_LLM_TIMEOUT_SECONDS", 120), 10),
+        research_upload_dir=Path(
+            os.getenv("RESEARCH_UPLOAD_DIR", "/data/research_uploads").strip()
+            or "/data/research_uploads"
+        ),
+        research_max_upload_bytes=max(_int_env("RESEARCH_MAX_UPLOAD_BYTES", 50 * 1024 * 1024), 1024 * 1024),
+        research_embedding_model=(
+            os.getenv("RESEARCH_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
+            or "BAAI/bge-small-en-v1.5"
+        ),
+        research_reranker_model=(
+            os.getenv("RESEARCH_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2").strip()
+            or "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        ),
+        research_model_cache_dir=Path(
+            os.getenv("RESEARCH_MODEL_CACHE_DIR", "/models/sentence-transformers").strip()
+            or "/models/sentence-transformers"
+        ),
+        research_inline_indexing=_bool_env("RESEARCH_INLINE_INDEXING", True),
+        research_s3_bucket=(os.getenv("RESEARCH_S3_BUCKET") or "").strip() or None,
+        research_aws_region=(os.getenv("AWS_REGION", "eu-west-2").strip() or "eu-west-2"),
         paper_trading_top_k=max(_int_env("PAPER_TRADING_TOP_K", 5), 1),
         paper_trading_min_score=_float_env("PAPER_TRADING_MIN_SCORE", 0.5),
         paper_trading_lot_size=max(_int_env("PAPER_TRADING_LOT_SIZE", 100), 1),
@@ -196,4 +235,6 @@ def get_settings() -> Settings:
         us_selection_average_time=os.getenv("US_SELECTION_AVERAGE_TIME", "00:30").strip() or "00:30",
         us_selection_details_time=os.getenv("US_SELECTION_DETAILS_TIME", "03:00").strip() or "03:00",
         us_selection_universe_time=os.getenv("US_SELECTION_UNIVERSE_TIME", "06:00").strip() or "06:00",
+        us_selection_snapshot_time=os.getenv("US_SELECTION_SNAPSHOT_TIME", "01:30").strip() or "01:30",
+        fei_selection_snapshot_time=os.getenv("FEI_SELECTION_SNAPSHOT_TIME", "06:00").strip() or "06:00",
     )

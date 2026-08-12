@@ -61,6 +61,8 @@ DEFAULT_MIN_SCORE = 0.5
 DEFAULT_LOT_SIZE = 100
 DEFAULT_CASH_BUFFER_PCT = 0.05
 DEFAULT_MAX_ORDER_QTY = 1000
+DEFAULT_STRATEGY_ID = "aistock_rebalance"
+QUANT_ORDER_REMARK_PREFIX = "aistock sig="
 ORDER_ATTEMPT_INTERVAL_SECONDS = 2.2
 SINA_QUOTE_URL = "https://hq.sinajs.cn/list={code}"
 SINA_QUOTE_REFERER = "https://finance.sina.com.cn"
@@ -904,9 +906,11 @@ def apply_optional_quantity_cap(quantity: int, max_quantity: int | None) -> int:
     normalized = int(max(quantity, 0))
     if normalized <= 0:
         return 0
+    if max_quantity is None:
+        return normalized
     cap = int(max_quantity or 0)
     if cap <= 0:
-        return normalized
+        return 0
     return min(normalized, cap)
 
 
@@ -934,14 +938,66 @@ def compute_affordable_buy_quantity(*, cash_available: float, price: float, lot_
     return affordable_lots * lot
 
 
+def position_quantity(row: dict[str, Any]) -> int:
+    return int(round(to_float(row.get("quantity"))))
+
+
+def planning_position_for_symbol(
+    symbol: str,
+    positions: dict[str, dict[str, Any]],
+    managed_positions: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    broker = positions.get(symbol, {})
+    if managed_positions is None:
+        return broker
+
+    managed = managed_positions.get(symbol, {})
+    broker_qty = position_quantity(broker)
+    managed_qty = int(round(to_float(managed.get("quantity"))))
+    quantity = min(max(managed_qty, 0), max(broker_qty, 0))
+    last_price = (
+        to_float(broker.get("last_price"))
+        or to_float(managed.get("last_price"))
+        or to_float(broker.get("avg_cost"))
+        or to_float(managed.get("avg_cost"))
+    )
+    avg_cost = to_float(managed.get("avg_cost")) or to_float(broker.get("avg_cost"))
+    return {
+        **broker,
+        "symbol": symbol,
+        "quantity": quantity,
+        "avg_cost": avg_cost,
+        "last_price": last_price,
+        "market_value": quantity * last_price,
+        "realized_pnl": to_float(managed.get("realized_pnl")) or to_float(broker.get("realized_pnl")),
+        "unrealized_pnl": to_float(broker.get("unrealized_pnl")),
+        "managed_quantity": managed_qty,
+        "broker_quantity": broker_qty,
+    }
+
+
+def planning_market_value(
+    positions: dict[str, dict[str, Any]],
+    managed_positions: dict[str, dict[str, Any]] | None,
+) -> float:
+    if managed_positions is None:
+        return sum(to_float(item.get("market_value")) for item in positions.values())
+    return sum(
+        to_float(planning_position_for_symbol(symbol, positions, managed_positions).get("market_value"))
+        for symbol in managed_positions
+    )
+
+
 def build_plan(
     config: SyncConfig,
     *,
     latest_scores: pd.DataFrame,
     positions: dict[str, dict[str, Any]],
     balance_metrics: dict[str, float | str | None],
+    managed_positions: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    current_market_value = sum(to_float(item.get("market_value")) for item in positions.values())
+    managed_positions_enabled = managed_positions is not None
+    current_market_value = planning_market_value(positions, managed_positions)
     total_capital = determine_total_capital(config, balance_metrics=balance_metrics, current_market_value=current_market_value)
     investable_capital = clamp_non_negative(total_capital * (1.0 - config.cash_buffer_pct))
     target_count = int(len(latest_scores))
@@ -951,6 +1007,13 @@ def build_plan(
     plan_rows: list[dict[str, Any]] = []
     target_symbols: list[str] = []
     manual_st_positions_ignored: list[str] = []
+    manual_position_symbols_ignored = sorted(
+        symbol
+        for symbol, row in positions.items()
+        if managed_positions_enabled
+        and position_quantity(row) > 0
+        and int(round(to_float((managed_positions or {}).get(symbol, {}).get("quantity")))) <= 0
+    )
     exclude_st = exclude_st_from_model_candidates(quant_dir_for_scores_path(config.scores_path))
     stock_name_lookup = load_stock_name_lookup(quant_dir_for_scores_path(config.scores_path)) if exclude_st else {}
     for _, row in latest_scores.iterrows():
@@ -958,8 +1021,8 @@ def build_plan(
         target_symbols.append(symbol)
         score_row = row.to_dict()
         score_lookup[symbol] = score_row
-        current = positions.get(symbol, {})
-        current_qty = int(round(to_float(current.get("quantity"))))
+        current = planning_position_for_symbol(symbol, positions, managed_positions)
+        current_qty = position_quantity(current)
         close_price = to_float(row["close"])
         reference_amount = to_float(row.get("amount"))
         previous_close = previous_close_from_row(row.to_dict())
@@ -1010,10 +1073,12 @@ def build_plan(
             }
         )
 
-    for symbol, current in positions.items():
+    exit_symbols = (managed_positions or positions).keys()
+    for symbol in exit_symbols:
         if symbol in score_lookup:
             continue
-        current_qty = int(round(to_float(current.get("quantity"))))
+        current = planning_position_for_symbol(symbol, positions, managed_positions)
+        current_qty = position_quantity(current)
         if current_qty <= 0:
             continue
         current_name = stock_name_for_position(symbol, current, stock_name_lookup)
@@ -1200,6 +1265,9 @@ def build_plan(
         "buy_order_count": int((plan["buy_order_qty"] > 0).sum()),
         "skip_count": int(plan["action"].astype(str).str.startswith("SKIP_").sum()),
         "manual_st_positions_ignored": manual_st_positions_ignored,
+        "manual_position_symbols_ignored": manual_position_symbols_ignored,
+        "managed_position_source": "paper_managed_positions" if managed_positions_enabled else "broker_positions",
+        "managed_position_count": len([row for row in (managed_positions or {}).values() if to_float(row.get("quantity")) > 0]),
     }
     return plan, summary
 
@@ -1487,6 +1555,164 @@ def ensure_paper_history_schema(conn: Any) -> None:
             "create index if not exists idx_paper_rebalance_targets_run_rank "
             "on paper_rebalance_targets(run_id, rank)"
         )
+        cur.execute(
+            """
+            create table if not exists paper_managed_positions (
+              agent_id text not null,
+              market text not null,
+              strategy_id text not null,
+              symbol text not null,
+              quantity double precision not null default 0,
+              avg_cost double precision not null default 0,
+              cost_basis double precision not null default 0,
+              realized_pnl double precision not null default 0,
+              buy_qty double precision not null default 0,
+              sell_qty double precision not null default 0,
+              last_price double precision not null default 0,
+              last_fill_at timestamptz,
+              source_fill_count integer not null default 0,
+              updated_at timestamptz not null default now(),
+              primary key (agent_id, market, strategy_id, symbol)
+            )
+            """
+        )
+        cur.execute(
+            "create index if not exists idx_paper_managed_positions_open "
+            "on paper_managed_positions(agent_id, market, strategy_id, quantity desc)"
+        )
+
+
+def build_managed_positions_from_fills(fills: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    positions: dict[str, dict[str, Any]] = {}
+    for fill in fills:
+        symbol = normalize_symbol(fill.get("symbol"))
+        if not symbol:
+            continue
+        position = positions.setdefault(
+            symbol,
+            {
+                "symbol": symbol,
+                "quantity": 0.0,
+                "cost_basis": 0.0,
+                "avg_cost": 0.0,
+                "realized_pnl": 0.0,
+                "buy_qty": 0.0,
+                "sell_qty": 0.0,
+                "last_price": 0.0,
+                "last_fill_at": None,
+                "source_fill_count": 0,
+            },
+        )
+        side = str(fill.get("side") or "").upper()
+        quantity = max(to_float(fill.get("quantity")), 0.0)
+        price = max(to_float(fill.get("price")), 0.0)
+        notional = max(to_float(fill.get("notional")) or quantity * price, 0.0)
+        current_qty = to_float(position.get("quantity"))
+        cost_basis = to_float(position.get("cost_basis"))
+        avg_before = cost_basis / current_qty if current_qty > 0 else 0.0
+
+        if side == "BUY":
+            current_qty += quantity
+            cost_basis += notional
+            position["buy_qty"] = to_float(position.get("buy_qty")) + quantity
+        elif side == "SELL":
+            matched_qty = min(current_qty, quantity)
+            position["realized_pnl"] = to_float(position.get("realized_pnl")) + (price - avg_before) * matched_qty
+            current_qty -= matched_qty
+            cost_basis -= avg_before * matched_qty
+            position["sell_qty"] = to_float(position.get("sell_qty")) + quantity
+            if current_qty <= 1e-9:
+                current_qty = 0.0
+                cost_basis = 0.0
+
+        position["quantity"] = current_qty
+        position["cost_basis"] = cost_basis
+        position["avg_cost"] = cost_basis / current_qty if current_qty > 0 else 0.0
+        position["last_price"] = price
+        position["last_fill_at"] = fill.get("created_at")
+        position["source_fill_count"] = int(position.get("source_fill_count") or 0) + 1
+    return positions
+
+
+def refresh_managed_positions_from_db(config: SyncConfig) -> dict[str, dict[str, Any]] | None:
+    if not config.paper_db_url:
+        return None
+    if psycopg is None or Jsonb is None:
+        raise RuntimeError("PAPER_DB_URL is configured but psycopg is unavailable; cannot load managed positions")
+
+    with psycopg.connect(config.paper_db_url, connect_timeout=5) as conn:
+        ensure_paper_history_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select
+                  f.created_at, f.broker_order_id, f.market, f.symbol, f.side,
+                  f.quantity, f.price, f.notional
+                from agent_fills f
+                left join agent_order_snapshots o
+                  on o.agent_id = f.agent_id
+                 and o.market = f.market
+                 and o.broker_order_id = f.broker_order_id
+                where f.agent_id = %s
+                  and f.market = %s
+                  and (
+                    exists (
+                      select 1
+                      from paper_rebalance_targets t
+                      where t.agent_id = f.agent_id
+                        and t.market = f.market
+                        and t.sent_order_id = f.broker_order_id
+                    )
+                    or coalesce(o.remark, '') like %s
+                  )
+                order by f.created_at asc, f.id asc
+                """,
+                [config.agent_id, config.market, f"{QUANT_ORDER_REMARK_PREFIX}%"],
+            )
+            columns = [desc[0] for desc in cur.description]
+            fills = [dict(zip(columns, row)) for row in cur.fetchall()]
+            managed_positions = build_managed_positions_from_fills(fills)
+
+            cur.execute(
+                """
+                delete from paper_managed_positions
+                where agent_id = %s and market = %s and strategy_id = %s
+                """,
+                [config.agent_id, config.market, DEFAULT_STRATEGY_ID],
+            )
+            for symbol, position in managed_positions.items():
+                cur.execute(
+                    """
+                    insert into paper_managed_positions (
+                      agent_id, market, strategy_id, symbol, quantity, avg_cost,
+                      cost_basis, realized_pnl, buy_qty, sell_qty, last_price,
+                      last_fill_at, source_fill_count, updated_at
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                    """,
+                    [
+                        config.agent_id,
+                        config.market,
+                        DEFAULT_STRATEGY_ID,
+                        symbol,
+                        to_float(position.get("quantity")),
+                        to_float(position.get("avg_cost")),
+                        to_float(position.get("cost_basis")),
+                        to_float(position.get("realized_pnl")),
+                        to_float(position.get("buy_qty")),
+                        to_float(position.get("sell_qty")),
+                        to_float(position.get("last_price")),
+                        position.get("last_fill_at"),
+                        int(position.get("source_fill_count") or 0),
+                    ],
+                )
+        conn.commit()
+
+    return {
+        symbol: position
+        for symbol, position in managed_positions.items()
+        if to_float(position.get("quantity")) > 1e-9
+    }
 
 
 def persist_rebalance_result_to_db(config: SyncConfig, result: dict[str, Any]) -> None:
@@ -1701,6 +1927,8 @@ def execute_plan(
                 continue
             max_order_qty = config.max_sell_order_qty if side == "SELL" else config.max_buy_order_qty
             quantity = apply_optional_quantity_cap(quantity, max_order_qty)
+            if quantity <= 0:
+                continue
             symbol = str(row["code"])
             try:
                 latest_price = get_sina_latest_price(symbol, row.get("exchange"))
@@ -1862,6 +2090,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
                 pass
 
         positions = normalize_positions(gateway.get_agent_positions())
+        managed_positions = refresh_managed_positions_from_db(config)
         orders = normalize_orders(gateway.get_agent_orders())
         active_orders = [row for row in orders if is_active_order(row.get("order_status"))]
         balance_rows = gateway.get_balance()
@@ -1873,6 +2102,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             latest_scores=latest_scores,
             positions=positions,
             balance_metrics=balance_metrics,
+            managed_positions=managed_positions,
         )
         rebalance = rebalance_decision(
             scores_path=config.scores_path,
@@ -2196,6 +2426,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         balance_rows = gateway.get_balance()
         balance_metrics = extract_balance_metrics(balance_rows, config.account_id)
         refreshed_positions = normalize_positions(gateway.get_agent_positions())
+        refresh_managed_positions_from_db(config)
         refreshed_orders = normalize_orders(gateway.get_agent_orders())
         safe_write_daily_snapshot(
             paths,

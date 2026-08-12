@@ -157,6 +157,8 @@ def _reference_command() -> list[str]:
         "refresh_reference_data.py",
         "--sleep",
         "0.2",
+        "--symbol-timeout-seconds",
+        os.getenv("REFERENCE_SYMBOL_TIMEOUT_SECONDS", "300"),
     ]
 
 
@@ -189,6 +191,7 @@ def start_reference_batch() -> dict[str, Any]:
     environment = {
         "TZ": "UTC",
         "PAPER_DB_URL": settings.paper_db_url or "",
+        "REFERENCE_SYMBOL_TIMEOUT_SECONDS": os.getenv("REFERENCE_SYMBOL_TIMEOUT_SECONDS", "300"),
     }
     app_db_url = os.getenv("APP_DB_URL")
     if app_db_url:

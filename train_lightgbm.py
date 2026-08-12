@@ -40,6 +40,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--threshold", type=float, default=0.5, help="Classification threshold.")
     parser.add_argument("--top-k", type=int, default=20, help="Number of top inference picks to print.")
+    parser.add_argument(
+        "--objective",
+        choices=("binary", "regression"),
+        default="binary",
+        help="Binary preserves the existing short-profile behavior; regression predicts future_return.",
+    )
+    parser.add_argument(
+        "--cross-sectional-target",
+        action="store_true",
+        help="Demean regression targets within each trade date so the model learns relative A-share returns.",
+    )
     return parser.parse_args()
 
 
@@ -199,6 +210,39 @@ def compute_metrics(y_true: pd.Series, prob: pd.Series, threshold: float) -> dic
     }
 
 
+def cross_sectional_demean(values: np.ndarray, dates: np.ndarray) -> np.ndarray:
+    """Remove each trade date's mean without using data from another date."""
+    frame = pd.DataFrame({"date": pd.to_datetime(dates), "value": values.astype(np.float64, copy=False)})
+    means = frame.groupby("date", sort=False)["value"].transform("mean").to_numpy(dtype=np.float64)
+    return (frame["value"].to_numpy(dtype=np.float64) - means).astype(np.float32)
+
+
+def percentile_rank_scores(values: np.ndarray) -> np.ndarray:
+    """Convert a cross-sectional model output to a stable 0..1 score."""
+    return pd.Series(values).rank(method="average", pct=True).to_numpy(dtype=np.float32)
+
+
+def compute_regression_metrics(y_true: np.ndarray, prediction: np.ndarray) -> dict[str, float]:
+    actual = np.asarray(y_true, dtype=np.float64)
+    forecast = np.asarray(prediction, dtype=np.float64)
+    finite = np.isfinite(actual) & np.isfinite(forecast)
+    actual = actual[finite]
+    forecast = forecast[finite]
+    if not len(actual):
+        return {"mae": 0.0, "rmse": 0.0, "ic": 0.0, "rank_ic": 0.0}
+    errors = forecast - actual
+    ic = float(np.corrcoef(actual, forecast)[0, 1]) if len(actual) > 1 else 0.0
+    actual_rank = pd.Series(actual).rank(method="average").to_numpy(dtype=np.float64)
+    forecast_rank = pd.Series(forecast).rank(method="average").to_numpy(dtype=np.float64)
+    rank_ic = float(np.corrcoef(actual_rank, forecast_rank)[0, 1]) if len(actual) > 1 else 0.0
+    return {
+        "mae": float(np.mean(np.abs(errors))),
+        "rmse": float(np.sqrt(np.mean(np.square(errors)))),
+        "ic": ic if np.isfinite(ic) else 0.0,
+        "rank_ic": rank_ic if np.isfinite(rank_ic) else 0.0,
+    }
+
+
 def log(message: str) -> None:
     print(message, flush=True)
 
@@ -224,7 +268,8 @@ def main() -> int:
 
     train_column_types = load_parquet_column_types(train_path)
     feature_cols, categorical_cols = choose_feature_columns_from_schema(train_column_types)
-    identity_columns = ["date", "label"]
+    target_column = "future_return" if args.objective == "regression" else "label"
+    identity_columns = ["date", target_column]
     if "name" in train_column_types:
         identity_columns.append("name")
     train_columns = list(dict.fromkeys([*identity_columns, *feature_cols]))
@@ -260,9 +305,16 @@ def main() -> int:
     valid_rows = int(valid_mask.sum())
     log(f"Train/validation split completed: train={train_rows:,}, valid={valid_rows:,}")
 
-    label_values = train_df["label"].to_numpy(dtype=np.int8, na_value=0)
-    y_train = label_values[train_mask]
-    y_valid = label_values[valid_mask]
+    if args.objective == "regression":
+        target_values = pd.to_numeric(train_df[target_column], errors="coerce").to_numpy(dtype=np.float32, na_value=np.nan)
+        if args.cross_sectional_target:
+            target_values = cross_sectional_demean(target_values, date_values)
+        y_train = target_values[train_mask]
+        y_valid = target_values[valid_mask]
+    else:
+        target_values = train_df[target_column].to_numpy(dtype=np.int8, na_value=0)
+        y_train = target_values[train_mask]
+        y_valid = target_values[valid_mask]
 
     log("Building training and validation feature matrices...")
     X_train, X_valid = build_split_feature_frames(
@@ -280,36 +332,44 @@ def main() -> int:
     del train_mask
     del valid_mask
     del date_values
-    del label_values
+    del target_values
     del train_df
     gc.collect()
 
     log(f"Feature matrices completed: X_train={X_train.shape}, X_valid={X_valid.shape}")
 
-    model = lgb.LGBMClassifier(
-        objective="binary",
-        n_estimators=500,
-        learning_rate=0.05,
-        num_leaves=63,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        force_col_wise=True,
-        random_state=42,
-        class_weight="balanced",
-    )
+    common_model_params = {
+        "n_estimators": 500,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "force_col_wise": True,
+        "random_state": 42,
+    }
+    if args.objective == "regression":
+        model = lgb.LGBMRegressor(objective="regression_l1", **common_model_params)
+        eval_metric = "l1"
+    else:
+        model = lgb.LGBMClassifier(objective="binary", class_weight="balanced", **common_model_params)
+        eval_metric = "auc"
 
     log("Starting LightGBM training...")
     model.fit(
         X_train,
         y_train,
         eval_set=[(X_valid, y_valid)],
-        eval_metric="auc",
+        eval_metric=eval_metric,
         categorical_feature=categorical_cols,
         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(50)],
     )
 
-    valid_prob = pd.Series(model.predict_proba(X_valid)[:, 1])
-    metrics = compute_metrics(y_valid, valid_prob, args.threshold)
+    if args.objective == "regression":
+        valid_raw_score = np.asarray(model.predict(X_valid), dtype=np.float32)
+        metrics = compute_regression_metrics(y_valid, valid_raw_score)
+    else:
+        valid_prob = pd.Series(model.predict_proba(X_valid)[:, 1])
+        metrics = compute_metrics(y_valid, valid_prob, args.threshold)
     log("Training completed, writing model and metrics...")
 
     model.booster_.save_model(str(model_dir / "lightgbm_model.txt"))
@@ -334,6 +394,11 @@ def main() -> int:
         "feature_metadata_path": str(feature_metadata_path(train_path)) if feature_metadata else None,
         "valid_days": args.valid_days,
         "threshold": args.threshold,
+        "model_objective": args.objective,
+        "target_column": target_column,
+        "cross_sectional_target": bool(args.cross_sectional_target),
+        "score_kind": "percentile_rank" if args.objective == "regression" else "probability",
+        "return_mode": feature_metadata.get("return_mode", "close_to_close"),
         "exclude_st_from_model_candidates": exclude_st,
         "metrics": metrics,
         "train_rows": int(len(X_train)),
@@ -360,14 +425,23 @@ def main() -> int:
     gc.collect()
 
     inference_scored = inference_df.copy()
-    inference_scored["score"] = model.predict_proba(X_inference)[:, 1]
+    if args.objective == "regression":
+        inference_scored["raw_score"] = np.asarray(model.predict(X_inference), dtype=np.float32)
+        inference_scored["score"] = (
+            inference_scored.groupby("date", sort=False)["raw_score"].rank(method="average", pct=True).astype("float32")
+        )
+    else:
+        inference_scored["score"] = model.predict_proba(X_inference)[:, 1]
     inference_scored = inference_scored.sort_values("score", ascending=False).reset_index(drop=True)
     inference_scored.to_parquet(model_dir / "inference_scores_latest.parquet", index=False)
 
     print("Training completed.")
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
     print(f"Model directory: {model_dir}")
-    print(inference_scored[["date", "code", "name", "industry", "score"]].head(args.top_k).to_string())
+    output_columns = ["date", "code", "name", "industry", "score"]
+    if "raw_score" in inference_scored.columns:
+        output_columns.append("raw_score")
+    print(inference_scored[output_columns].head(args.top_k).to_string())
     return 0
 
 

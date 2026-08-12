@@ -12,8 +12,8 @@ from app.serializers import records_to_json, to_jsonable
 from app.services.benchmark import BENCHMARK_CODE, BENCHMARK_NAME, benchmark_history_path
 from app.services.model import get_latest_picks
 from app.services.paper import (
+    get_paper_trading_daily_history,
     get_paper_trading_overview,
-    get_paper_trading_performance,
     get_paper_trading_targets,
 )
 
@@ -142,15 +142,16 @@ def _pending_counts(target_rows: list[dict[str, Any]]) -> tuple[int, int]:
     return pending_buy, pending_sell
 
 
-def _history_equity(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _daily_history_equity(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for row in rows:
-        total_assets = _as_number(row.get("total_assets"))
-        recorded_at = row.get("recorded_at")
+        summary = _as_record(row.get("summary"))
+        total_assets = _first_number(summary.get("total_assets"), row.get("total_assets"))
+        recorded_at = row.get("trade_date") or row.get("generated_at")
         if total_assets is None or not recorded_at:
             continue
         points.append({"date": to_jsonable(recorded_at), "total_assets": total_assets})
-    return points
+    return sorted(points, key=lambda point: pd.Timestamp(point["date"]))
 
 
 def _today_pnl(points: list[dict[str, Any]], current_total_assets: float | None) -> tuple[float | None, float | None]:
@@ -246,7 +247,7 @@ def get_portfolio_overview() -> dict[str, Any]:
     generated_at = datetime.now(tz=UTC).isoformat()
 
     paper_overview = get_paper_trading_overview()
-    performance = get_paper_trading_performance(limit=500)
+    daily_history = get_paper_trading_daily_history(limit=500)
     targets = get_paper_trading_targets(limit=200)
     picks = get_latest_picks(limit=200)
 
@@ -255,8 +256,8 @@ def get_portfolio_overview() -> dict[str, Any]:
     state = _as_record(paper_overview.get("state"))
     balance_metrics = _as_record(state.get("balance_metrics"))
     plan_summary = _as_record(state.get("plan_summary"))
-    snapshots = performance.get("snapshots") if isinstance(performance.get("snapshots"), list) else []
-    history_points = _history_equity(snapshots)
+    daily_rows = daily_history.get("daily") if isinstance(daily_history.get("daily"), list) else []
+    history_points = _daily_history_equity(daily_rows)
     latest_history = history_points[-1] if history_points else {}
 
     total_assets = _first_number(
@@ -266,7 +267,8 @@ def get_portfolio_overview() -> dict[str, Any]:
     )
     cash = _as_number(balance_metrics.get("cash"))
     market_value = _first_number(live_summary.get("market_value"), plan_summary.get("current_market_value"))
-    total_pnl = _first_number(live_summary.get("total_pnl"), _as_record(snapshots[-1] if snapshots else {}).get("total_pnl"))
+    latest_daily_summary = _as_record(daily_rows[0].get("summary")) if daily_rows else {}
+    total_pnl = _first_number(live_summary.get("total_pnl"), latest_daily_summary.get("total_pnl"))
     today_pnl, today_pnl_pct = _today_pnl(history_points, total_assets)
     if today_pnl is None:
         warnings.append("today_pnl is unavailable because no previous trading-day account snapshot was found.")

@@ -25,7 +25,15 @@ run/*.pid.root-old
 run/*_logger.pid
 run/*.json
 run/*.lock
+run/*.log
+run/*.container
 run/full_pipeline_state.json
 run/pipeline_auto_run_state.json
 run/panel.env
 run/panel_users.json
+
+# Terraform local state and provider cache. Keep .terraform.lock.hcl tracked.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+deploy/terraform/terraform.tfvars

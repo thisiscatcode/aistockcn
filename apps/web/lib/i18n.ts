@@ -19,6 +19,7 @@ type Messages = {
     admin: string;
     investor: string;
     nav: {
+      research: string;
       overview: string;
       systemMonitor: string;
       batch: string;
@@ -218,6 +219,7 @@ const messages: Messages = {
     admin: "Admin",
     investor: "Investor",
     nav: {
+      research: "Research Copilot",
       overview: "Overview",
       systemMonitor: "System Monitor",
       batch: "Pipeline",

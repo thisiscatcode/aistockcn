@@ -367,6 +367,7 @@ export default async function ModelsPage({
                   const name = String(profile.name ?? "");
                   const label = String(profile.label ?? name);
                   const isActive = name === activeProfile;
+                  const isResearch = String(profile.deployment_status ?? "available") !== "available";
                   return (
                     <tr key={name}>
                       <td>{name}</td>
@@ -378,6 +379,8 @@ export default async function ModelsPage({
                       <td>
                         {isActive ? (
                           <span className="pill live">Active</span>
+                        ) : isResearch ? (
+                          <span className="pill warn">Research only</span>
                         ) : user.role === "admin" ? (
                           <form action="/models/activate" method="post">
                             <input type="hidden" name="profile" value={name} />

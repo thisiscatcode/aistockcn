@@ -51,6 +51,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="Only use the first N stocks; 0 means all.")
     parser.add_argument("--label-threshold", type=float, default=0.02, help="Positive label threshold.")
     parser.add_argument("--label-horizon", type=int, default=5, help="Future return horizon in trading days.")
+    parser.add_argument(
+        "--return-mode",
+        choices=("close_to_close", "next_open_to_close"),
+        default="close_to_close",
+        help="Price convention used to build future_return. Existing short profiles use close_to_close.",
+    )
     parser.add_argument("--profile-name", default="", help="Optional model profile name to stamp into metadata.")
     return parser.parse_args()
 
@@ -140,12 +146,14 @@ def build_features(
     label_threshold: float,
     *,
     include_labels: bool = True,
+    return_mode: str = "close_to_close",
 ) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(["exchange", "code", "date"]).reset_index(drop=True)
     df = df.merge(stock_df[["code", "exchange", "name", "industry"]], on=["code", "exchange"], how="left")
 
     grouped_close = df.groupby(["exchange", "code"])["close"]
+    grouped_open = df.groupby(["exchange", "code"])["open"]
     grouped_turnover = df.groupby(["exchange", "code"])["turnover"]
     grouped_volume = df.groupby(["exchange", "code"])["volume"]
 
@@ -164,7 +172,14 @@ def build_features(
     df["close_to_low_20d"] = df["close"] / grouped_close.transform(lambda x: x.rolling(20).min()) - 1
 
     if include_labels:
-        df["future_return"] = grouped_close.transform(lambda x: x.shift(-label_horizon) / x - 1)
+        future_close = grouped_close.transform(lambda x: x.shift(-label_horizon))
+        if return_mode == "next_open_to_close":
+            executable_entry = grouped_open.transform(lambda x: x.shift(-1))
+            df["future_return"] = future_close / executable_entry - 1
+        elif return_mode == "close_to_close":
+            df["future_return"] = future_close / df["close"] - 1
+        else:
+            raise ValueError(f"unsupported return_mode: {return_mode}")
         df["label"] = np.where(df["future_return"] > label_threshold, 1, 0)
 
     return df
@@ -249,6 +264,7 @@ def main() -> int:
             single_stock_df,
             label_horizon=args.label_horizon,
             label_threshold=args.label_threshold,
+            return_mode=args.return_mode,
         )
         train_ready_df = clean_features(features_df, clip_outliers=False)
         if train_ready_df.empty:
@@ -300,6 +316,7 @@ def main() -> int:
         "profile_name": args.profile_name.strip() or None,
         "label_horizon": int(args.label_horizon),
         "label_threshold": float(args.label_threshold),
+        "return_mode": args.return_mode,
         "limit": int(args.limit),
         "train_rows": int(total_train_rows),
         "train_codes": int(total_train_codes),

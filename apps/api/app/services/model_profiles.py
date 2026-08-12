@@ -72,6 +72,25 @@ DEFAULT_PROFILES: list[dict[str, Any]] = [
         "backtest_rebalance_every": 5,
         "backtest_top_k": 5,
     },
+    {
+        "name": "medium_10d_v2",
+        "label": "10D A-Share V2",
+        "label_horizon": 10,
+        "label_threshold": 0.0,
+        "return_mode": "next_open_to_close",
+        "model_objective": "regression",
+        "cross_sectional_target": True,
+        "valid_days": 120,
+        "score_threshold": 0.8,
+        "score_top_k": 50,
+        "backtest_min_train_days": 504,
+        "backtest_retrain_every": 4,
+        "backtest_rebalance_every": 5,
+        "backtest_top_k": 20,
+        "backtest_max_drop": 4,
+        "backtest_budget_total": 1_000_000.0,
+        "deployment_status": "available",
+    },
 ]
 
 
@@ -84,11 +103,20 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any] | None:
     if not name:
         return None
     label = str(raw.get("label") or name).strip() or name
+    model_objective = str(raw.get("model_objective") or "binary").strip().lower()
+    if model_objective not in {"binary", "regression"}:
+        model_objective = "binary"
+    return_mode = str(raw.get("return_mode") or "close_to_close").strip().lower()
+    if return_mode not in {"close_to_close", "next_open_to_close"}:
+        return_mode = "close_to_close"
     return {
         "name": name,
         "label": label,
         "label_horizon": max(int(raw.get("label_horizon") or 5), 1),
-        "label_threshold": float(raw.get("label_threshold") or 0.02),
+        "label_threshold": float(raw["label_threshold"]) if raw.get("label_threshold") is not None else 0.02,
+        "return_mode": return_mode,
+        "model_objective": model_objective,
+        "cross_sectional_target": bool(raw.get("cross_sectional_target", False)),
         "valid_days": max(int(raw.get("valid_days") or 60), 1),
         "score_threshold": float(raw.get("score_threshold") or 0.5),
         "score_top_k": max(int(raw.get("score_top_k") or 20), 1),
@@ -96,6 +124,9 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any] | None:
         "backtest_retrain_every": max(int(raw.get("backtest_retrain_every") or 20), 1),
         "backtest_rebalance_every": max(int(raw.get("backtest_rebalance_every") or 5), 1),
         "backtest_top_k": max(int(raw.get("backtest_top_k") or 5), 1),
+        "backtest_max_drop": max(int(raw.get("backtest_max_drop") or 0), 0),
+        "backtest_budget_total": max(float(raw.get("backtest_budget_total") or 50_000.0), 1.0),
+        "deployment_status": str(raw.get("deployment_status") or "available").strip() or "available",
     }
 
 

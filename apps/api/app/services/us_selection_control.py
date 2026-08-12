@@ -610,7 +610,7 @@ def _maybe_start_scheduled_lane(mode: str, target_date: date | None, state_key: 
         result = start_us_selection(mode, target_date=target_date, scheduled=True)
         return {
             **state,
-            f"last_{state_key}": target_date.isoformat() if target_date else _ny_now().date().isoformat(),
+            f"last_attempted_{state_key}": target_date.isoformat() if target_date else _ny_now().date().isoformat(),
             "last_triggered_at": _now_iso(),
             "last_triggered_mode": mode,
             "last_result": {"ok": True, "code": result.get("code"), "container_name": result.get("container_name")},

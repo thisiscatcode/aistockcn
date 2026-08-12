@@ -1,6 +1,6 @@
 {
   "default_profile": "short_5d",
-  "active_profile": "short_1d",
+  "active_profile": "short_3d",
   "profiles": [
     {
       "name": "short_1d",
@@ -66,6 +66,25 @@
       "backtest_retrain_every": 20,
       "backtest_rebalance_every": 5,
       "backtest_top_k": 5
+    },
+    {
+      "name": "medium_10d_v2",
+      "label": "10D A-Share V2",
+      "label_horizon": 10,
+      "label_threshold": 0.0,
+      "return_mode": "next_open_to_close",
+      "model_objective": "regression",
+      "cross_sectional_target": true,
+      "valid_days": 120,
+      "score_threshold": 0.8,
+      "score_top_k": 50,
+      "backtest_min_train_days": 504,
+      "backtest_retrain_every": 4,
+      "backtest_rebalance_every": 5,
+      "backtest_top_k": 20,
+      "backtest_max_drop": 4,
+      "backtest_budget_total": 1000000.0,
+      "deployment_status": "available"
     }
   ]
 }

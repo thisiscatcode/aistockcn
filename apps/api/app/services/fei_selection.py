@@ -6,7 +6,6 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json
-from app.services.fei_db_sync import get_published_trade_date
 
 try:
     import psycopg
@@ -82,15 +81,59 @@ keyworded as (
   from stock_key_map
   group by code, exchange
 ),
-shareholder_latest as (
-  select distinct on (code, exchange)
+shareholder_ranked as (
+  select
     code,
     exchange,
-    report_date as shareholder_report_date,
-    holder_total_num as shareholder_total_num,
-    hold_focus as shareholder_hold_focus
+    report_date,
+    holder_total_num,
+    hold_focus,
+    row_number() over (
+      partition by code, exchange
+      order by report_date desc
+    ) as rn
   from stock_shareholder_research
-  order by code, exchange, report_date desc
+),
+shareholder_latest as (
+  select
+    code,
+    exchange,
+    max(report_date) filter (where rn = 1) as shareholder_report_date,
+    max(holder_total_num) filter (where rn = 1) as shareholder_total_num,
+    max(hold_focus) filter (where rn = 1) as shareholder_hold_focus,
+    max(report_date) filter (where rn = 2) as shareholder_previous_report_date,
+    max(holder_total_num) filter (where rn = 2) as shareholder_previous_total_num
+  from shareholder_ranked
+  where rn <= 2
+  group by code, exchange
+),
+shareholder_peak_ranked as (
+  select
+    sr.code,
+    sr.exchange,
+    sr.report_date,
+    sr.holder_total_num,
+    row_number() over (
+      partition by sr.code, sr.exchange
+      order by sr.holder_total_num desc nulls last, sr.report_date desc
+    ) as rn
+  from stock_shareholder_research sr
+  join shareholder_latest sh
+    on sh.code = sr.code
+   and sh.exchange = sr.exchange
+  where sh.shareholder_report_date is not null
+    and sr.report_date between sh.shareholder_report_date - interval '90 days' and sh.shareholder_report_date
+    and sr.holder_total_num is not null
+),
+shareholder_peak as (
+  select
+    code,
+    exchange,
+    max(report_date) filter (where rn = 1) as shareholder_peak_report_date,
+    max(holder_total_num) filter (where rn = 1) as shareholder_peak_total_num
+  from shareholder_peak_ranked
+  where rn = 1
+  group by code, exchange
 ),
 scored as (
   select
@@ -105,6 +148,36 @@ scored as (
     sh.shareholder_report_date,
     sh.shareholder_total_num,
     sh.shareholder_hold_focus,
+    sh.shareholder_previous_report_date,
+    sh.shareholder_previous_total_num,
+    sp.shareholder_peak_report_date,
+    sp.shareholder_peak_total_num,
+    case
+      when sh.shareholder_total_num is null
+        or sh.shareholder_previous_total_num is null
+      then null
+      else sh.shareholder_total_num - sh.shareholder_previous_total_num
+    end as shareholder_total_num_change,
+    case
+      when sh.shareholder_total_num is null
+        or sh.shareholder_previous_total_num is null
+        or sh.shareholder_previous_total_num = 0
+      then null
+      else ((sh.shareholder_total_num - sh.shareholder_previous_total_num) / sh.shareholder_previous_total_num) * 100
+    end as shareholder_total_num_change_pct,
+    case
+      when sh.shareholder_total_num is null
+        or sp.shareholder_peak_total_num is null
+      then null
+      else sh.shareholder_total_num - sp.shareholder_peak_total_num
+    end as shareholder_total_num_from_peak_change,
+    case
+      when sh.shareholder_total_num is null
+        or sp.shareholder_peak_total_num is null
+        or sp.shareholder_peak_total_num = 0
+      then null
+      else ((sh.shareholder_total_num - sp.shareholder_peak_total_num) * 100.0) / sp.shareholder_peak_total_num
+    end as shareholder_total_num_from_peak_change_pct,
     case
       when p.close is null
         or p.close_3d_base is null
@@ -142,6 +215,9 @@ scored as (
   left join shareholder_latest sh
     on sh.code = p.code
    and sh.exchange = p.exchange
+  left join shareholder_peak sp
+    on sp.code = p.code
+   and sp.exchange = p.exchange
 ),
 signaled as (
   select
@@ -229,6 +305,14 @@ select
   s.shareholder_report_date,
   s.shareholder_total_num,
   s.shareholder_hold_focus,
+  s.shareholder_previous_report_date,
+  s.shareholder_previous_total_num,
+  s.shareholder_total_num_change,
+  s.shareholder_total_num_change_pct,
+  s.shareholder_peak_report_date,
+  s.shareholder_peak_total_num,
+  s.shareholder_total_num_from_peak_change,
+  s.shareholder_total_num_from_peak_change_pct,
   s.industry_code,
   s.industry_name,
   s.industry_short_name,
@@ -294,6 +378,55 @@ order by report_date desc
 limit %s
 """
 
+STOCK_SIGNAL_VISUALIZER_SQL = """
+with recent_metrics as (
+  select
+    trade_date,
+    close,
+    volume,
+    amount,
+    turnover,
+    average_trade
+  from stock_daily_metrics
+  where code = %s
+    and exchange = %s
+    and (%s::date is null or trade_date <= %s::date)
+  order by trade_date desc
+  limit %s
+),
+snapshot_ranks as (
+  select
+    trade_date,
+    max(rank) filter (where list_type = 'cat') as cat_rank,
+    max(score) filter (where list_type = 'cat') as cat_score,
+    max(rank) filter (where list_type = 'lobster') as lobster_rank,
+    max(score) filter (where list_type = 'lobster') as lobster_score,
+    max(rank) filter (where list_type = 'quant') as quant_rank,
+    max(score) filter (where list_type = 'quant') as quant_score
+  from fei_selection_daily_snapshots
+  where code = %s
+    and exchange = %s
+  group by trade_date
+)
+select
+  m.trade_date,
+  m.close,
+  m.volume,
+  m.amount,
+  m.turnover,
+  m.average_trade,
+  r.cat_rank,
+  r.cat_score,
+  r.lobster_rank,
+  r.lobster_score,
+  r.quant_rank,
+  r.quant_score
+from recent_metrics m
+left join snapshot_ranks r
+  on r.trade_date = m.trade_date
+order by m.trade_date asc
+"""
+
 
 def _connect(settings: Settings, *, read_only: bool = True):
     if not settings.paper_db_url:
@@ -317,20 +450,23 @@ def _numeric_jsonable(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def get_fei_selection(*, limit: int = 6000) -> dict[str, Any]:
+def get_fei_selection_rows(*, as_of_date: str | None = None, limit: int = 6000) -> list[dict[str, Any]]:
     settings = get_settings()
+    with _connect(settings) as conn:
+        with conn.cursor() as cur:
+            cur.execute(SELECTION_SQL, [as_of_date, as_of_date, limit])
+            return [dict(row) for row in cur.fetchall()]
+
+
+def get_fei_selection(*, limit: int = 6000) -> dict[str, Any]:
     try:
-        published_trade_date = get_published_trade_date()
-        with _connect(settings) as conn:
-            with conn.cursor() as cur:
-                cur.execute(SELECTION_SQL, [published_trade_date, published_trade_date, limit])
-                rows = [dict(row) for row in cur.fetchall()]
+        rows = get_fei_selection_rows(limit=limit)
         selections = records_to_json([_numeric_jsonable(row) for row in rows])
         latest_date = max((row.get("trade_date") for row in selections if row.get("trade_date")), default=None)
         return {
             "rows": len(selections),
             "latest_date": latest_date,
-            "published_trade_date": published_trade_date,
+            "published_trade_date": latest_date,
             "selections": selections,
             "error": None,
         }
@@ -368,7 +504,6 @@ def get_fei_stock_detail(*, code: str, exchange: str | None = None, limit: int =
         normalized_code = _normalize_code(code)
         normalized_exchange = _normalize_exchange(exchange)
         limit = max(1, min(int(limit), 1000))
-        published_trade_date = get_published_trade_date()
 
         with _connect(settings) as conn:
             with conn.cursor() as cur:
@@ -415,7 +550,7 @@ def get_fei_stock_detail(*, code: str, exchange: str | None = None, limit: int =
 
                 cur.execute(
                     STOCK_DETAIL_HISTORY_SQL,
-                    [normalized_code, resolved_exchange, published_trade_date, published_trade_date, limit],
+                    [normalized_code, resolved_exchange, None, None, limit],
                 )
                 history = [dict(row) for row in cur.fetchall()]
 
@@ -437,6 +572,72 @@ def get_fei_stock_detail(*, code: str, exchange: str | None = None, limit: int =
             "history": [],
             "shareholder_research": [],
             "rows": 0,
+            "error": str(exc),
+        }
+
+
+def get_fei_stock_signal_visualizer(*, code: str, exchange: str | None = None, limit: int = 63) -> dict[str, Any]:
+    settings = get_settings()
+    try:
+        normalized_code = _normalize_code(code)
+        normalized_exchange = _normalize_exchange(exchange)
+        limit = max(1, min(int(limit), 1000))
+
+        with _connect(settings) as conn:
+            with conn.cursor() as cur:
+                if normalized_exchange:
+                    cur.execute(
+                        """
+                        select *
+                        from stock_master
+                        where code = %s
+                          and exchange = %s
+                        """,
+                        [normalized_code, normalized_exchange],
+                    )
+                else:
+                    cur.execute(
+                        """
+                        select *
+                        from stock_master
+                        where code = %s
+                        order by exchange asc
+                        """,
+                        [normalized_code],
+                    )
+                matches = [dict(row) for row in cur.fetchall()]
+                if not matches:
+                    raise FeiSelectionError("stock_not_found")
+                if len(matches) > 1:
+                    raise FeiSelectionError("ambiguous_exchange")
+
+                stock = matches[0]
+                resolved_exchange = str(stock.get("exchange") or "")
+                cur.execute(
+                    STOCK_SIGNAL_VISUALIZER_SQL,
+                    [
+                        normalized_code,
+                        resolved_exchange,
+                        None,
+                        None,
+                        limit,
+                        normalized_code,
+                        resolved_exchange,
+                    ],
+                )
+                rows = [dict(row) for row in cur.fetchall()]
+
+        return {
+            "stock": records_to_json([_numeric_jsonable(stock)])[0],
+            "rows": len(rows),
+            "data": records_to_json([_numeric_jsonable(row) for row in rows]),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "stock": None,
+            "rows": 0,
+            "data": [],
             "error": str(exc),
         }
 

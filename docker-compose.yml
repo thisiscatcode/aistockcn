@@ -39,11 +39,60 @@ services:
     ports:
       - "127.0.0.1:8001:8000"
 
+  research-api:
+    image: aistockcn-research-api:20260810-mvp
+    restart: unless-stopped
+    working_dir: /app
+    command: uvicorn app.research_main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./run/panel.env
+    environment:
+      PROJECT_ROOT: /workspace
+      PANEL_API_ALLOWED_CIDRS: ${RESEARCH_API_ALLOWED_CIDRS:-127.0.0.1/32,::1/128}
+      PANEL_API_ALLOWED_SERVICE_NAMES: panel-web-research
+      RESEARCH_UPLOAD_DIR: /data/research_uploads
+      RESEARCH_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      RESEARCH_RERANKER_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+      RESEARCH_MODEL_CACHE_DIR: /models/sentence-transformers
+      RESEARCH_INLINE_INDEXING: "false"
+      RESEARCH_S3_BUCKET: ${RESEARCH_S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-eu-west-2}
+    volumes:
+      - research-uploads:/data/research_uploads
+      - sentence-transformers-models:/models/sentence-transformers
+    networks:
+      - default
+      - paper-db
+      - ai-services
+    ports:
+      - "127.0.0.1:8003:8000"
+
+  research-worker:
+    image: aistockcn-research-api:20260810-mvp
+    restart: unless-stopped
+    working_dir: /app
+    command: python -m app.research_worker
+    env_file:
+      - ./run/panel.env
+    environment:
+      PROJECT_ROOT: /workspace
+      RESEARCH_UPLOAD_DIR: /data/research_uploads
+      RESEARCH_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      RESEARCH_RERANKER_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+      RESEARCH_MODEL_CACHE_DIR: /models/sentence-transformers
+      RESEARCH_S3_BUCKET: ${RESEARCH_S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-eu-west-2}
+    volumes:
+      - research-uploads:/data/research_uploads
+      - sentence-transformers-models:/models/sentence-transformers
+    networks:
+      - default
+      - paper-db
+
   panel-web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    image: aistockcn-panel-web:latest
+    # Customer-facing production is deliberately pinned. Research development
+    # runs as a separate service so rebuilding it cannot change aistockcn.com.
+    image: aistockcn-panel-web:stable-client-20260806
     restart: unless-stopped
     working_dir: /app
     depends_on:
@@ -56,6 +105,23 @@ services:
       - ./run:/run-config:ro
     ports:
       - "127.0.0.1:3030:3000"
+
+  panel-web-research:
+    image: aistockcn-research-web:20260810-mvp
+    restart: unless-stopped
+    working_dir: /app
+    depends_on:
+      - research-api
+    env_file:
+      - ./run/panel.env
+    environment:
+      API_BASE_URL: http://research-api:8000
+      PANEL_PUBLIC_URL: https://research.aistockcn.com
+      PANEL_PUBLIC_HOSTS: research.aistockcn.com
+    volumes:
+      - ./run:/run-config:ro
+    ports:
+      - "127.0.0.1:3032:3000"
 
   panel-web-fei:
     build:
@@ -82,3 +148,12 @@ networks:
   paper-db:
     external: true
     name: ${PAPER_DB_NETWORK:-elearn_default}
+  ai-services:
+    external: true
+    name: ai_services
+
+volumes:
+  research-uploads:
+  sentence-transformers-models:
+    external: true
+    name: enterprise-agent-platform_sentence-transformers-models

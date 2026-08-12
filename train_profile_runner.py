@@ -118,12 +118,13 @@ def main() -> int:
                 str(profile.get("label_threshold", 0.02)),
                 "--label-horizon",
                 str(profile.get("label_horizon", 5)),
+                "--return-mode",
+                str(profile.get("return_mode", "close_to_close")),
                 "--profile-name",
                 profile_name,
             ]
         )
-        run_command(
-            [
+        train_command = [
                 sys.executable,
                 "train_lightgbm.py",
                 "--train-path",
@@ -138,8 +139,12 @@ def main() -> int:
                 str(profile.get("score_threshold", 0.5)),
                 "--top-k",
                 str(profile.get("score_top_k", 20)),
+                "--objective",
+                str(profile.get("model_objective", "binary")),
             ]
-        )
+        if bool(profile.get("cross_sectional_target", False)):
+            train_command.append("--cross-sectional-target")
+        run_command(train_command)
 
     if args.sync_active:
         profiles = profiles_by_name(catalog)

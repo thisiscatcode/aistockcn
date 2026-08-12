@@ -5,8 +5,8 @@ import { ReactNode } from "react";
 import { PageRestoreCleanup } from "@/components/page-restore-cleanup";
 
 export const metadata: Metadata = {
-  title: "Aistock Quant Platform",
-  description: "Public showcase and secure control panel for an end-to-end A-share quant research system."
+  title: "AiStockCN Research Copilot",
+  description: "Evidence-grounded research across live US equity data, deterministic calculations and model inference."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

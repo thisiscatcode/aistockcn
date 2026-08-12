@@ -15,7 +15,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from train_lightgbm import build_category_mappings, build_feature_frame, choose_feature_columns, compute_metrics, load_frame
+from train_lightgbm import (
+    build_category_mappings,
+    build_feature_frame,
+    choose_feature_columns,
+    compute_metrics,
+    compute_regression_metrics,
+    cross_sectional_demean,
+    load_frame,
+    percentile_rank_scores,
+)
 from execution_model import (
     DEFAULT_EXECUTION_MODEL,
     REALISTIC_BACKTEST_METHOD_VERSION,
@@ -49,6 +58,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rebalance-every", type=int, default=5, help="Rebalance every N trade dates.")
     parser.add_argument("--top-k", type=int, default=5, help="Hold top K stocks on each rebalance date.")
     parser.add_argument("--threshold", type=float, default=0.5, help="Classification threshold for OOS metrics.")
+    parser.add_argument("--objective", choices=("binary", "regression"), default="binary")
+    parser.add_argument("--cross-sectional-target", action="store_true")
+    parser.add_argument("--max-drop", type=int, default=0, help="Maximum held symbols replaced per rebalance. 0 preserves legacy full Top-K replacement.")
     parser.add_argument("--profile-name", default="", help="Optional model profile name for this backtest run.")
     parser.add_argument("--profile-label", default="", help="Optional display label for this backtest run.")
     parser.add_argument("--label-horizon", type=int, default=0, help="Optional label horizon metadata for this run.")
@@ -66,18 +78,57 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_model_params(*, scale_pos_weight: float) -> dict[str, object]:
-    return {
-        "objective": "binary",
+def build_model_params(*, objective: str, scale_pos_weight: float = 1.0) -> dict[str, object]:
+    params: dict[str, object] = {
+        "objective": "regression_l1" if objective == "regression" else "binary",
         "learning_rate": 0.05,
         "num_leaves": 63,
         "colsample_bytree": 0.8,
         "force_col_wise": True,
         "num_threads": 1,
         "random_state": 42,
-        "scale_pos_weight": scale_pos_weight,
         "verbosity": -1,
     }
+    if objective == "binary":
+        params["scale_pos_weight"] = scale_pos_weight
+    return params
+
+
+def select_topk_drop_picks(
+    scored: pd.DataFrame,
+    *,
+    held_symbols: set[str],
+    top_k: int,
+    max_drop: int,
+) -> pd.DataFrame:
+    """Choose Top-K while replacing at most max_drop currently held symbols."""
+    ranked = scored.copy()
+    ranked["code"] = ranked["code"].astype(str)
+    ranked = ranked.sort_values("score", ascending=False, kind="stable").drop_duplicates("code", keep="first")
+    target_size = max(int(top_k), 1)
+    drop_limit = max(int(max_drop), 0)
+    if drop_limit <= 0 or not held_symbols:
+        return ranked.head(target_size).copy()
+
+    rank_by_symbol = {symbol: rank for rank, symbol in enumerate(ranked["code"].tolist())}
+    available_held = [symbol for symbol in held_symbols if symbol in rank_by_symbol]
+    must_drop_for_size = max(len(available_held) - target_size, 0)
+    allowed_drop = max(drop_limit, must_drop_for_size)
+    outside_topk = [symbol for symbol in available_held if rank_by_symbol[symbol] >= target_size]
+    drop_symbols = set(
+        sorted(outside_topk, key=lambda symbol: rank_by_symbol[symbol], reverse=True)[:allowed_drop]
+    )
+    retained = {symbol for symbol in available_held if symbol not in drop_symbols}
+
+    selected: list[str] = list(retained)
+    for symbol in ranked["code"]:
+        if symbol in retained:
+            continue
+        selected.append(symbol)
+        if len(selected) >= target_size:
+            break
+    selected_set = set(selected[:target_size])
+    return ranked[ranked["code"].isin(selected_set)].head(target_size).copy()
 
 
 def max_drawdown(equity_curve: pd.Series) -> float:
@@ -238,6 +289,7 @@ def main() -> int:
     cash_buffer_pct = max(min(float(args.cash_buffer_pct), 0.95), 0.0)
     lot_size = max(int(args.lot_size), 1)
     max_buy_order_qty = max(int(args.max_buy_order_qty), 0)
+    max_drop = max(int(args.max_drop), 0)
     execution_model: ExecutionModel = DEFAULT_EXECUTION_MODEL
     train_path = Path(args.train_path)
     output_dir = Path(args.output_dir)
@@ -253,13 +305,19 @@ def main() -> int:
     date_values = df["date"].to_numpy()
     label_values = pd.to_numeric(df["label"], errors="coerce").fillna(0).to_numpy(dtype=np.int8)
     future_return_values = pd.to_numeric(df["future_return"], errors="coerce").astype(np.float32).to_numpy()
+    if args.objective == "regression":
+        target_values = future_return_values.copy()
+        if args.cross_sectional_target:
+            target_values = cross_sectional_demean(target_values, date_values)
+    else:
+        target_values = label_values
     summary_stats = {
         "num_rows": int(len(df)),
         "num_codes": int(df["code"].nunique()),
         "num_trade_dates": int(df["date"].nunique()),
     }
     meta_cols = [col for col in ["date", "code", "name", "industry"] if col in df.columns]
-    prediction_cols = meta_cols + ["label", "future_return", "score"]
+    prediction_cols = meta_cols + ["label", "future_return", "raw_score", "score"]
     trade_cols = ["rebalance_date"] + [col for col in ["code", "name", "industry"] if col in df.columns] + [
         "action",
         "score",
@@ -295,7 +353,7 @@ def main() -> int:
     summary_tmp_path = output_dir / "summary.tmp.json"
     prediction_writer = IncrementalParquetWriter(prediction_tmp_path)
     trade_log_writer = IncrementalParquetWriter(trade_log_tmp_path)
-    metric_label_chunks: list[np.ndarray] = []
+    metric_target_chunks: list[np.ndarray] = []
     metric_score_chunks: list[np.ndarray] = []
     equity_rows: list[dict[str, object]] = []
 
@@ -334,10 +392,13 @@ def main() -> int:
                     continue
                 train_slice = df.iloc[:train_end]
                 X_train = build_feature_frame(train_slice, feature_cols, categorical_cols, category_mappings)
-                y_train = label_values[:train_end]
-                positive_count = int(y_train.sum())
-                negative_count = int(len(y_train) - positive_count)
-                scale_pos_weight = negative_count / max(positive_count, 1)
+                y_train = target_values[:train_end]
+                if args.objective == "binary":
+                    positive_count = int(y_train.sum())
+                    negative_count = int(len(y_train) - positive_count)
+                    scale_pos_weight = negative_count / max(positive_count, 1)
+                else:
+                    scale_pos_weight = 1.0
 
                 print(
                     f"retrain on {pd.Timestamp(rebalance_date).date()}: "
@@ -356,7 +417,7 @@ def main() -> int:
                 del y_train
                 gc.collect()
                 model = lgb.train(
-                    build_model_params(scale_pos_weight=scale_pos_weight),
+                    build_model_params(objective=args.objective, scale_pos_weight=scale_pos_weight),
                     train_data,
                     num_boost_round=500,
                     callbacks=[lgb.log_evaluation(0)],
@@ -366,16 +427,23 @@ def main() -> int:
 
             test_slice = df.iloc[test_start:test_end]
             X_test = build_feature_frame(test_slice, feature_cols, categorical_cols, category_mappings)
-            score_values = model.predict(X_test).astype(np.float32, copy=False)
+            raw_score_values = model.predict(X_test).astype(np.float32, copy=False)
+            score_values = percentile_rank_scores(raw_score_values) if args.objective == "regression" else raw_score_values
             scored = test_slice.loc[:, meta_cols].copy()
             scored["label"] = label_values[test_start:test_end]
             scored["future_return"] = future_return_values[test_start:test_end]
+            scored["raw_score"] = raw_score_values
             scored["score"] = score_values
             prediction_writer.write(scored.loc[:, prediction_cols].copy())
-            metric_label_chunks.append(label_values[test_start:test_end].copy())
-            metric_score_chunks.append(score_values.copy())
+            metric_target_chunks.append(target_values[test_start:test_end].copy())
+            metric_score_chunks.append(raw_score_values.copy())
 
-            picks = scored.nlargest(args.top_k, "score").copy()
+            picks = select_topk_drop_picks(
+                scored,
+                held_symbols={symbol for symbol, quantity in positions.items() if quantity > 0},
+                top_k=args.top_k,
+                max_drop=max_drop,
+            )
             execution_slice = df.iloc[execution_start:execution_end]
             execution_rows_by_code = {str(row["code"]): row for row in execution_slice.to_dict(orient="records")}
             signal_rows_by_code = {str(row["code"]): row for row in test_slice.to_dict(orient="records")}
@@ -400,6 +468,9 @@ def main() -> int:
 
             for _, pick in picks.iterrows():
                 symbol = str(pick.get("code"))
+                if max_drop > 0 and int(positions.get(symbol, 0)) > 0:
+                    target_qty_by_symbol[symbol] = int(positions[symbol])
+                    continue
                 execution_row = execution_rows_by_code.get(symbol)
                 buy_base_price = row_price(execution_row, column="open")
                 buy_price = slippage_price(buy_base_price, "BUY", execution_model)
@@ -643,6 +714,7 @@ def main() -> int:
             del test_slice
             del X_test
             del score_values
+            del raw_score_values
             del scored
             del picks
             gc.collect()
@@ -650,17 +722,16 @@ def main() -> int:
         prediction_writer.close()
         trade_log_writer.close()
 
-    if not metric_label_chunks or not equity_rows:
+    if not metric_target_chunks or not equity_rows:
         raise SystemExit("Backtest produced no predictions.")
 
-    metric_labels = np.concatenate(metric_label_chunks)
+    metric_targets = np.concatenate(metric_target_chunks)
     metric_scores = np.concatenate(metric_score_chunks)
-    metrics = compute_metrics(
-        pd.Series(metric_labels),
-        pd.Series(metric_scores),
-        args.threshold,
-    )
-    del metric_labels
+    if args.objective == "regression":
+        metrics = compute_regression_metrics(metric_targets, metric_scores)
+    else:
+        metrics = compute_metrics(pd.Series(metric_targets), pd.Series(metric_scores), args.threshold)
+    del metric_targets
     del metric_scores
     gc.collect()
 
@@ -671,7 +742,10 @@ def main() -> int:
         "profile_name": args.profile_name.strip() or None,
         "profile_label": args.profile_label.strip() or None,
         "label_horizon": args.label_horizon if args.label_horizon > 0 else None,
-        "label_threshold": args.label_threshold if args.label_threshold > 0 else None,
+        "label_threshold": args.label_threshold if args.objective == "regression" or args.label_threshold > 0 else None,
+        "model_objective": args.objective,
+        "cross_sectional_target": bool(args.cross_sectional_target),
+        "score_kind": "percentile_rank" if args.objective == "regression" else "probability",
         "method_version": BACKTEST_METHOD_VERSION,
         "purge_days": int(max(args.label_horizon, 0)),
         "execution_assumption": "Realistic T+1 open-proxy execution simulation with conservative slippage, fees, target-value lot sizing, cash buffer, optional max buy quantity cap, liquidity caps, and price-limit skip rules.",
@@ -695,6 +769,7 @@ def main() -> int:
         "retrain_every": args.retrain_every,
         "rebalance_every": args.rebalance_every,
         "top_k": args.top_k,
+        "max_drop": max_drop,
         "threshold": args.threshold,
         "num_rebalances": int(len(equity_df)),
         "oos_metrics": metrics,

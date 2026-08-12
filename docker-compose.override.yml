@@ -1,5 +1,6 @@
 services:
   panel-api:
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - ./apps/api:/app
+    # Keep the production API process as PID 1. With Uvicorn's reload parent,
+    # an import failure can kill the serving child while Docker still sees the
+    # container as healthy/running and therefore never applies restart policy.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
