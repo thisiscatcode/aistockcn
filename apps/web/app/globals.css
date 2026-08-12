@@ -6864,6 +6864,218 @@ select {
   color: #fda4af;
 }
 
+/* Customer homepage: larger reading type with a denser operating overview. */
+.customer-home-shell {
+  max-width: 1440px;
+  padding: 24px 24px 32px;
+}
+
+.customer-home-hero .hero-landing-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr);
+  gap: 28px;
+  align-items: stretch;
+}
+
+.customer-home-hero .hero-panel-copy-wrap {
+  gap: 10px;
+  padding-left: 0;
+}
+
+.customer-home-hero .hero-dark-eyebrow {
+  font-size: 0.95rem;
+}
+
+.customer-home-hero .hero-landing h1,
+.customer-home-hero h1 {
+  margin-top: -2px;
+  font-size: clamp(3.8rem, 6vw, 5.25rem);
+}
+
+.customer-home-hero .hero-platform-title {
+  margin-top: -5px;
+  font-size: 1.8rem;
+}
+
+.customer-home-hero .hero-panel-copy-lead {
+  font-size: 1.24rem;
+  line-height: 1.48;
+}
+
+.customer-home-hero .hero-panel-note {
+  padding-top: 12px;
+  font-size: 1.04rem;
+  line-height: 1.48;
+}
+
+.customer-home-hero .hero-visual-stack {
+  gap: 12px;
+}
+
+.customer-home-hero .hero-snapshot-heading {
+  padding: 18px 20px;
+}
+
+.customer-home-hero .hero-panel-kicker,
+.customer-home-hero .hero-panel-metric > span {
+  font-size: 0.86rem;
+  line-height: 1.3;
+}
+
+.customer-home-hero .hero-landing h2,
+.customer-home-hero h2 {
+  margin-top: 5px;
+  font-size: 1.6rem;
+}
+
+.customer-home-hero .hero-panel-grid {
+  gap: 12px;
+}
+
+.customer-home-hero .hero-panel-metric {
+  min-height: 112px !important;
+  padding: 16px;
+}
+
+.customer-home-hero .hero-panel-metric > strong {
+  margin-top: 7px;
+  font-size: 2rem;
+}
+
+.customer-home-hero .hero-login-meta {
+  font-size: 0.7rem;
+}
+
+.customer-home-hero .hero-login-label {
+  font-size: 1.1rem;
+}
+
+.customer-home-content,
+.customer-home-shell .page-content {
+  margin-top: 22px;
+  gap: 16px;
+}
+
+.customer-home-shell .two-col-grid {
+  gap: 16px;
+}
+
+.customer-home-shell .two-col-grid .panel {
+  padding: 18px;
+  border-radius: 12px;
+}
+
+.customer-home-shell .two-col-grid .panel-header {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.customer-home-shell .two-col-grid .panel h2 {
+  font-size: 1.3rem;
+}
+
+.customer-home-shell .status-meta {
+  gap: 7px 18px;
+  margin-bottom: 12px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.customer-home-shell .log-console {
+  min-height: 240px;
+  padding: 14px;
+  font-size: 0.92rem;
+  line-height: 1.48;
+}
+
+.customer-home-shell .data-table th {
+  padding: 9px 10px;
+  font-size: 0.85rem;
+}
+
+.customer-home-shell .data-table td {
+  padding: 9px 10px;
+  font-size: 0.98rem;
+}
+
+@media (max-width: 1000px) {
+  .customer-home-hero .hero-landing-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+@media (max-width: 720px) {
+  .customer-home-shell {
+    padding: 14px 14px 24px;
+  }
+
+  .customer-home-hero .hero-panel-copy-wrap {
+    gap: 9px;
+  }
+
+  .customer-home-hero .hero-dark-eyebrow {
+    font-size: 0.84rem;
+  }
+
+  .customer-home-hero .hero-landing h1,
+  .customer-home-hero h1 {
+    font-size: 3.25rem;
+  }
+
+  .customer-home-hero .hero-platform-title {
+    font-size: 1.3rem;
+  }
+
+  .customer-home-hero .hero-panel-copy-lead {
+    font-size: 1.08rem;
+    line-height: 1.46;
+  }
+
+  .customer-home-hero .hero-panel-note {
+    padding-top: 10px;
+    font-size: 1rem;
+  }
+
+  .customer-home-hero .hero-snapshot-heading {
+    padding: 14px;
+  }
+
+  .customer-home-hero .hero-panel-grid {
+    gap: 8px;
+  }
+
+  .customer-home-hero .hero-panel-metric {
+    min-height: 104px !important;
+    padding: 14px 12px !important;
+  }
+
+  .customer-home-hero .hero-panel-metric > span {
+    font-size: 0.82rem;
+  }
+
+  .customer-home-hero .hero-panel-metric > strong {
+    font-size: 1.55rem;
+  }
+
+  .customer-home-content,
+  .customer-home-shell .page-content {
+    margin-top: 14px;
+  }
+
+  .customer-home-shell .two-col-grid .panel {
+    padding: 14px;
+  }
+
+  .customer-home-shell .status-meta {
+    font-size: 0.82rem;
+  }
+
+  .customer-home-shell .log-console {
+    min-height: 190px;
+    font-size: 0.86rem;
+  }
+}
+
 .research-document-list article > p {
   grid-column: 1 / -1;
   margin: 0;

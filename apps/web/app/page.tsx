@@ -3,18 +3,35 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { CaseStudyContent } from "@/components/case-study-content";
+import { CustomerHomePage } from "@/components/customer-home-page";
 import { getResearchCompanies, getResearchDocuments } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { formatNumber } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "AiStockCN Research Copilot — Evidence-grounded equity research",
-  description: "Research US public companies with live market data, deterministic calculations and clearly separated evidence and inference."
-};
+const isResearchSurface = (process.env.PANEL_PUBLIC_HOSTS ?? "")
+  .split(",")
+  .some((host) => host.trim().toLowerCase().startsWith("research."));
+
+export function generateMetadata(): Metadata {
+  if (!isResearchSurface) {
+    return {
+      title: "AiStockCN — Systematic Equity Research Platform",
+      description: "Live market data, quantitative research, model signals and paper-trading operations."
+    };
+  }
+  return {
+    title: "AiStockCN Research Copilot — Evidence-grounded equity research",
+    description: "Research US public companies with live market data, deterministic calculations and clearly separated evidence and inference."
+  };
+}
 
 export default async function HomePage() {
+  if (!isResearchSurface) {
+    return <CustomerHomePage />;
+  }
+
   const user = await getCurrentUser();
   if (user) {
     redirect("/research");

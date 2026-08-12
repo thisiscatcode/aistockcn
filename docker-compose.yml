@@ -92,7 +92,7 @@ services:
   panel-web:
     # Customer-facing production is deliberately pinned. Research development
     # runs as a separate service so rebuilding it cannot change aistockcn.com.
-    image: aistockcn-panel-web:stable-client-20260806
+    image: aistockcn-panel-web:customer-home-20260812
     restart: unless-stopped
     working_dir: /app
     depends_on:
