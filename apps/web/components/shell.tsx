@@ -30,8 +30,8 @@ export function Shell({
   const isDark = tone === "dark";
   const navItem = (href: Route, label: string) => ({ href, label });
   const navItems: Array<{ href: Route; label: string }> = [
-    navItem("/research" as Route, copy.shell.nav.research),
     navItem("/overview", copy.shell.nav.overview),
+    navItem("/research" as Route, copy.shell.nav.research),
     navItem("/system-monitor", copy.shell.nav.systemMonitor),
     navItem("/batch", copy.shell.nav.batch),
     navItem("/data", copy.shell.nav.data),

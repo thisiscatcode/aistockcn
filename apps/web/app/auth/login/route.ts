@@ -5,7 +5,7 @@ import { SESSION_COOKIE, appOrigin, authenticateUser, createSessionToken, sessio
 function safeReturnTo(value: FormDataEntryValue | null) {
   const path = String(value ?? "").trim();
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
-    return "/research";
+    return "/overview";
   }
   return path;
 }

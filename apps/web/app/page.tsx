@@ -34,7 +34,7 @@ export default async function HomePage() {
 
   const user = await getCurrentUser();
   if (user) {
-    redirect("/research");
+    redirect("/overview");
   }
 
   const [usCompanies, jpmDocuments] = await Promise.all([
@@ -79,7 +79,7 @@ export default async function HomePage() {
                     <h2>Live Research Surface</h2>
                   </div>
                   <Link
-                    href="/login?return_to=/research"
+                    href="/login?return_to=/overview"
                     className="nav-link hero-login-button"
                     aria-label="Login to open AiStockCN Research Copilot"
                   >

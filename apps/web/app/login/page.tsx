@@ -12,14 +12,14 @@ export default async function LoginPage({
 }) {
   const user = await getCurrentUser();
   if (user) {
-    redirect("/research");
+    redirect("/overview");
   }
 
   const params = (await searchParams) ?? {};
   const showError = params.error === "invalid";
   const returnTo = params.return_to?.startsWith("/") && !params.return_to.startsWith("//")
     ? params.return_to
-    : "/research";
+    : "/overview";
   const en = getMessages("en");
 
   return (
