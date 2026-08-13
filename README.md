@@ -176,7 +176,7 @@ npm --prefix apps/web run build
 
 Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`. Never use example credentials unchanged.
 
-`apps/web-fei` is an operationally protected frontend. US product development does not modify or rebuild it, does not change its API contracts, and does not alter the tables it consumes.
+Web-Fei is an operationally protected frontend maintained in the separate private [aistockcn-web-fei](https://github.com/thisiscatcode/aistockcn-web-fei) repository. Its current production checkout remains in `apps/web-fei`; US product development does not modify or rebuild it, change its API contracts, or alter the tables it consumes.
 
 ## Documentation
 

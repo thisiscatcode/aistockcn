@@ -19,7 +19,7 @@ The initial US market-data gate requires at least 504 trading dates. Until that 
 
 ## Web-Fei Protection Boundary
 
-`apps/web-fei` is outside the US product scope. Its source, container image, runtime configuration, API contracts and database semantics must remain unchanged. US deployments target only the dedicated US API/workers and the main `apps/web` frontend.
+Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.com/thisiscatcode/aistockcn-web-fei) repository and is outside the US product scope. The current production checkout remains at `apps/web-fei`; its container image, runtime configuration, API contracts and database semantics must remain unchanged. US deployments target only the dedicated US API/workers and the main `apps/web` frontend.
 
 ## Main Components
 
