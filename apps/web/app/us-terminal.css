@@ -168,11 +168,87 @@
 }
 
 .us-terminal-sidebar .navigation-feedback {
-  position: static;
-  margin: 6px 8px 0;
-  color: #93a4bb;
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 244px;
+  z-index: 1200;
+  display: block;
+  width: auto;
+  height: 3px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  color: transparent;
   background: transparent;
   box-shadow: none;
+  font-size: 0;
+  line-height: 0;
+  transform: none;
+}
+
+.us-terminal-sidebar .navigation-feedback::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.us-terminal-sidebar .navigation-feedback::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 36%;
+  height: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(90deg, #2563eb 0%, #38bdf8 72%, #93c5fd 100%);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.72);
+  animation: us-navigation-progress 1.05s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.us-terminal-sidebar .navigation-feedback-spinner,
+.us-terminal-sidebar .navigation-feedback > span:last-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.us-terminal-sidebar .nav-link-pending {
+  color: #dbeafe;
+  background: #14233a;
+}
+
+.us-terminal-sidebar .nav-link-pending .nav-link-label {
+  color: inherit;
+  background: transparent;
+}
+
+.us-terminal-sidebar .nav-link-pending .nav-link-icon {
+  border-color: rgba(96, 165, 250, 0.48);
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.24);
+}
+
+@keyframes us-navigation-progress {
+  0% {
+    transform: translateX(-105%);
+  }
+  58% {
+    width: 48%;
+  }
+  100% {
+    width: 28%;
+    transform: translateX(365%);
+  }
 }
 
 .us-terminal-sidebar-footer {
@@ -1518,6 +1594,10 @@
     width: 210px;
   }
 
+  .us-terminal-sidebar .navigation-feedback {
+    left: 210px;
+  }
+
   .us-terminal-heading p {
     display: none;
   }
@@ -1578,7 +1658,9 @@
   }
 
   .us-terminal-sidebar .navigation-feedback {
-    display: none;
+    right: 0;
+    left: 0;
+    display: block;
   }
 
   .us-terminal-topbar {
@@ -1627,5 +1709,14 @@
 
   .us-terminal-root .research-inline-search {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .us-terminal-sidebar .navigation-feedback::before {
+    width: 100%;
+    opacity: 0.72;
+    animation: none;
+    transform: none;
   }
 }
