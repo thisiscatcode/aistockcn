@@ -47,7 +47,7 @@ export default async function UsOverviewPage() {
           ]} />
         </Panel>
 
-        <Panel title="Product Status" aside={<span className="pill">Transparent gates</span>}>
+        <Panel title="Product Status">
           <div className="summary-list">
             <div><span>Market data</span><strong>Live</strong></div>
             <div><span>Rules-based screening</span><strong>Live</strong></div>

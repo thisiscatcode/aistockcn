@@ -72,8 +72,7 @@ export function ResearchFinancials({
     <section className="research-financials-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Standardized financial evidence</p>
-          <h2>SEC XBRL Company Facts</h2>
+          <h2>SEC Financials</h2>
         </div>
         <button type="button" onClick={sync} disabled={syncing}>
           {syncing ? "Syncing SEC…" : financials?.coverage.fact_rows ? "Refresh financials" : "Sync financials"}

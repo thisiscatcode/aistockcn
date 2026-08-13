@@ -69,7 +69,6 @@ export function Shell({
               <span><strong>AiStockCN</strong><small>US Intelligence</small></span>
             </div>
 
-            <div className="us-terminal-nav-label">Workspace</div>
             <NavTabs items={navItems} />
 
             <div className="us-terminal-sidebar-footer">

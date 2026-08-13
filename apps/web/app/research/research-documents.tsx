@@ -123,8 +123,7 @@ export function ResearchDocuments({
     <section className="research-documents-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Source documents</p>
-          <h2>{symbol} filing workspace</h2>
+          <h2>{symbol} Filings</h2>
         </div>
         <span>{documents.length}</span>
       </div>
@@ -133,7 +132,7 @@ export function ResearchDocuments({
         <div className="research-sec-sync">
           <div>
             <strong>SEC EDGAR</strong>
-            <small>Fetch two filing periods for 10-K, 10-Q and 8-K directly from the official archive.</small>
+            <small>10-K · 10-Q · 8-K</small>
           </div>
           <button type="button" disabled={syncingSEC} onClick={syncSEC}>
             {syncingSEC ? "Syncing SEC…" : "Sync latest SEC filings"}

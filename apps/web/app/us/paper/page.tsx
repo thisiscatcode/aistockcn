@@ -14,11 +14,11 @@ export default async function UsPaperPage() {
   return (
     <UsShell user={user} title="US Paper Trading" subtitle="USD simulation account">
       <section className="metrics-grid">
-        <MetricCard label="Account" value="Not connected" hint="No US broker account is active" />
-        <MetricCard label="Positions" value={formatNumber(paper.positions.length, user.locale)} hint="No CN holdings are shown here" />
-        <MetricCard label="Orders" value={formatNumber(paper.orders.length, user.locale)} hint="Order generation is disabled" />
-        <MetricCard label="Currency" value="USD" hint="Never combined with CNY" />
-        <MetricCard label="Status" value="Validation gated" hint="Safety by design" />
+        <MetricCard label="Account" value="Not connected" />
+        <MetricCard label="Positions" value={formatNumber(paper.positions.length, user.locale)} />
+        <MetricCard label="Orders" value={formatNumber(paper.orders.length, user.locale)} />
+        <MetricCard label="Currency" value="USD" />
+        <MetricCard label="Status" value="Validation gated" />
       </section>
 
       <Panel title="Activation Gate" aside={<span className="pill">Disabled</span>}>

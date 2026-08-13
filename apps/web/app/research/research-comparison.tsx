@@ -58,8 +58,7 @@ export function ResearchComparisonPanel({ symbol }: { symbol: string }) {
     <section className="research-comparison-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Multi-company task</p>
-          <h2>Compare two or three companies</h2>
+          <h2>Compare Companies</h2>
         </div>
         <span>Agent</span>
       </div>

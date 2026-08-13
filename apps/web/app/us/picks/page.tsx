@@ -33,8 +33,8 @@ export default async function UsPicksPage({
         <a className={type === "lobster" ? "is-active" : ""} href="/us/picks?type=lobster">Lobster selection</a>
       </div>
       <div className="us-evidence-note">
-        <strong>Selection method: rules-based.</strong>
-        <span>These are not `us_5d_v1` model predictions. The ML picks will appear only after training and walk-forward validation.</span>
+        <strong>Rules-based selection</strong>
+        <span>ML picks appear after walk-forward validation.</span>
       </div>
       <Panel title={`${type === "cat" ? "Cat" : "Lobster"} Selection`} aside={<span className="pill">{formatDate(response.data_freshness?.selection, user.locale)}</span>}>
         <DataTable

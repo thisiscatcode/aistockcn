@@ -35,10 +35,10 @@ export default async function UsDataPage({
   return (
     <UsShell user={user} title="US Market Data" subtitle="NASDAQ and NYSE universe">
       <section className="metrics-grid">
-        <MetricCard label="Active Companies" value={formatNumber(summary.coverage.active_symbols, user.locale)} hint="Common stocks in the active universe" />
+        <MetricCard label="Active Companies" value={formatNumber(summary.coverage.active_symbols, user.locale)} />
         <MetricCard label="Stored Bars" value={formatNumber(summary.coverage.total_bars, user.locale)} hint="Daily observations" />
         <MetricCard label="Date Range" value={`${formatDate(summary.coverage.first_trade_date, user.locale)} → ${formatDate(summary.coverage.latest_trade_date, user.locale)}`} hint={`${summary.coverage.trading_dates} trading days`} />
-        <MetricCard label="Latest Coverage" value={`${formatNumber(summary.coverage.latest_coverage_pct, user.locale, { maximumFractionDigits: 1 })}%`} hint="Active universe coverage" />
+        <MetricCard label="Latest Coverage" value={`${formatNumber(summary.coverage.latest_coverage_pct, user.locale, { maximumFractionDigits: 1 })}%`} />
       </section>
 
       <Panel title="Company Search" aside={<span className="pill">{formatNumber(response.total, user.locale)} matches</span>}>

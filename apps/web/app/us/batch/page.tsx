@@ -38,13 +38,6 @@ export default async function UsBatchPage() {
           );
         })}
       </section>
-
-      <Panel title="Operations Boundary">
-        <div className="us-evidence-note">
-          <strong>US jobs are isolated.</strong>
-          <span>This page observes United States ingestion only. It does not start, stop or alter any A-share or Web-Fei workflow.</span>
-        </div>
-      </Panel>
     </UsShell>
   );
 }

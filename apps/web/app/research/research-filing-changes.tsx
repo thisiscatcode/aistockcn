@@ -209,8 +209,7 @@ export function ResearchFilingChanges({
     <section className="filing-change-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Filing Change Detection</p>
-          <h2>Compare two annual reports with bilateral evidence</h2>
+          <h2>Compare Annual Filings</h2>
         </div>
         <span>{runs.length}</span>
       </div>
@@ -252,7 +251,7 @@ export function ResearchFilingChanges({
           <div className="filing-change-history">
             <div>
               <strong>Run history</strong>
-              <small>Every rerun is retained with its algorithm version and review progress.</small>
+              <small>Versioned · reviewable</small>
             </div>
             <div className="filing-change-run-list">
               {runs.map((run) => (

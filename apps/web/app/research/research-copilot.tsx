@@ -117,7 +117,6 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
       {answer ? (
         <div className="research-answer" aria-live="polite">
           <article className="research-answer-summary">
-            <p className="research-kicker">Answer</p>
             <p>{answer.answer}</p>
           </article>
 
