@@ -129,9 +129,9 @@ The Compose configuration intentionally joins the existing `paper-db` and `ai-se
 ## User workflow
 
 1. Sign in to `aistockcn.com`, open Company Research and search by ticker or company name.
-2. Selecting a company opens its Overview first. This is the decision dashboard: market snapshot, latest annual performance, common research questions, latest filings and the most recent saved filing comparison.
-3. Choose one task from the company navigation: Overview, Ask Copilot, Financials, Filings, Changes or Compare. Only the selected workspace is displayed; operational ingestion state is not mixed into the customer page.
-4. In Ask Copilot, enter a focused company question or use a suggested task. The answer separates Document evidence, Model inference and Limitations. The execution trace is available under the collapsed “How this answer was produced” disclosure.
+2. Selecting a company opens its Summary first: one compact security strip, an immediately usable AI question box, annual financials, latest filings and the most recent saved filing comparison.
+3. Choose one task from the company navigation: Summary, Ask AI, Financials, Filings, Changes or Compare. Only the selected workspace is displayed; operational ingestion state is not mixed into the customer page.
+4. In Ask AI, enter a focused company question or use a suggested task. The answer separates Document evidence, Model inference and Limitations. The execution trace is available under the collapsed “How this answer was produced” disclosure.
 5. In Financials, inspect normalized SEC facts and their original taxonomy and filing lineage. In Filings, open or add source documents when required.
 6. In Changes, compare two indexed annual reports. Each proposed change carries the older and newer source passage, saved algorithm version and review status; rerunning creates a linked historical result.
 7. In Compare, analyse two or three companies using the same evidence and deterministic financial-data boundary.

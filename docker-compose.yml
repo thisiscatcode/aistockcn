@@ -133,7 +133,7 @@ services:
       - paper-db
 
   panel-web:
-    image: aistockcn-panel-web:20260813-research-nav-v1
+    image: aistockcn-panel-web:20260813-research-polish-v2
     restart: unless-stopped
     working_dir: /app
     depends_on:

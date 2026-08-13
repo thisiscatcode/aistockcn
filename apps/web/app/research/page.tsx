@@ -28,8 +28,8 @@ export const metadata: Metadata = {
 };
 
 const RESEARCH_VIEWS = [
-  ["overview", "Overview"],
-  ["ask", "Ask Copilot"],
+  ["overview", "Summary"],
+  ["ask", "Ask AI"],
   ["financials", "Financials"],
   ["filings", "Filings"],
   ["changes", "Changes"],
@@ -148,7 +148,7 @@ export default async function ResearchPage({
   return (
     <Shell
       title="Company Research"
-      subtitle="Analyse filings, financial performance and material changes with verifiable sources."
+      subtitle="US equities · financials · filings"
       locale={user.locale}
       username={user.displayName}
       role={user.role}
@@ -159,14 +159,12 @@ export default async function ResearchPage({
           <>
             <section className="research-command-panel research-start-panel">
               <div>
-                <p className="research-kicker">Company research</p>
-                <h2>Which company would you like to investigate?</h2>
-                <p>Search by ticker or company name. You can then review its financials, filings, material changes or ask a sourced question.</p>
+                <h2>Research a company</h2>
               </div>
               <form className="research-search-form" action="/research" method="get">
-                <label htmlFor="research-company-search">Company or ticker</label>
+                <label className="sr-only" htmlFor="research-company-search">Company or ticker</label>
                 <div>
-                  <input id="research-company-search" name="q" type="search" defaultValue={query} placeholder="Try NVDA, Microsoft or JPMorgan" autoComplete="off" autoFocus />
+                  <input id="research-company-search" name="q" type="search" defaultValue={query} placeholder="Ticker or company name" autoComplete="off" autoFocus />
                   <button type="submit">Search</button>
                 </div>
               </form>
@@ -175,8 +173,7 @@ export default async function ResearchPage({
             <section className="research-company-panel research-company-browser">
               <div className="research-section-heading">
                 <div>
-                  <p className="research-kicker">{query ? "Search results" : "Quick start"}</p>
-                  <h2>{query ? `Companies matching “${query}”` : "Frequently researched companies"}</h2>
+                  <h2>{query ? `Results for “${query}”` : "Popular companies"}</h2>
                 </div>
                 <span>{searchResult.rows}</span>
               </div>
@@ -208,7 +205,6 @@ export default async function ResearchPage({
 
             <section className="research-company-hero research-product-hero">
               <div>
-                <p className="research-kicker">{company.market || "US equity"}</p>
                 <h2>{company.symbol} <span>{displayName(company)}</span></h2>
                 <p>{company.stock_industry_en || company.stock_industry || "Industry classification pending"}</p>
               </div>
@@ -219,14 +215,11 @@ export default async function ResearchPage({
                 </span>
                 <small>As of {formatDate(company.trade_date)}</small>
               </div>
-            </section>
-
-            <section className="research-metric-grid research-product-metrics">
-              <article><span>Last price</span><strong>{formatMetric(company.close, { minimumFractionDigits: 2 })}</strong></article>
-              <article><span>Daily change</span><strong className={priceDiff !== null && priceDiff < 0 ? "is-negative" : "is-positive"}>{priceDiff === null ? "—" : `${priceDiff >= 0 ? "+" : ""}${formatMetric(priceDiff)}`}</strong></article>
-              <article><span>P/E ratio</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
-              <article><span>EPS (TTM)</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
-              <article><span>Volume</span><strong>{formatMetric(company.volume, { notation: "compact" })}</strong></article>
+              <div className="research-security-stats">
+                <article><span>P/E</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
+                <article><span>EPS</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
+                <article><span>Volume</span><strong>{formatMetric(company.volume, { notation: "compact" })}</strong></article>
+              </div>
             </section>
 
             <nav className="research-view-tabs" aria-label={`${company.symbol} research sections`}>
@@ -242,45 +235,42 @@ export default async function ResearchPage({
             <main className="research-view-content">
               {view === "overview" ? (
                 <div className="research-overview-dashboard">
-                  <section className="research-overview-lead">
-                    <div>
-                      <p className="research-kicker">Start here</p>
-                      <h2>What do you want to understand about {company.symbol}?</h2>
-                      <p>Ask a focused question and receive an answer that keeps company evidence separate from interpretation.</p>
-                    </div>
-                    <Link href={viewHref(company.symbol, "ask")} className="research-primary-action">Ask Copilot</Link>
-                  </section>
-
-                  <section className="research-overview-section">
-                    <div className="research-overview-heading">
-                      <div><p className="research-kicker">Latest annual performance</p><h2>{latestAnnual ? `FY${latestAnnual.fiscal_year ?? "—"} financial snapshot` : "Financial snapshot"}</h2></div>
-                      <Link href={viewHref(company.symbol, "financials")}>View all financials</Link>
-                    </div>
-                    {latestAnnual ? (
-                      <div className="research-overview-financials">
-                        <article><span>Revenue</span><strong>{formatFinancial(revenue)}</strong><small>{formatChange(financialResult?.annual_changes.revenue)}</small></article>
-                        <article><span>Net income</span><strong>{formatFinancial(netIncome)}</strong><small>{formatChange(financialResult?.annual_changes.net_income)}</small></article>
-                        <article><span>Operating margin</span><strong>{operatingMargin === null ? "—" : `${formatMetric(operatingMargin)}%`}</strong><small>Calculated from filed facts</small></article>
-                        <article><span>Free cash flow</span><strong>{formatFinancialValue(latestAnnual.derived.free_cash_flow, operatingCashFlow?.unit)}</strong><small>Operating cash flow less capex</small></article>
-                      </div>
-                    ) : <p className="research-business-empty">Standardised annual financials are not available for this company yet.</p>}
-                  </section>
-
-                  <section className="research-overview-section">
-                    <div className="research-overview-heading"><div><p className="research-kicker">Suggested questions</p><h2>Common research tasks</h2></div></div>
-                    <div className="research-question-shortcuts">
+                  <section className="research-query-panel">
+                    <form className="research-query-form" action="/research" method="get">
+                      <input type="hidden" name="symbol" value={company.symbol} />
+                      <input type="hidden" name="view" value="ask" />
+                      <label className="sr-only" htmlFor="research-overview-question">Ask about {company.symbol}</label>
+                      <input id="research-overview-question" name="question" type="search" placeholder={`Ask about ${company.symbol}: revenue, margins, risks or guidance`} autoComplete="off" />
+                      <button type="submit">Ask AI</button>
+                    </form>
+                    <div className="research-query-shortcuts" aria-label="Common research questions">
                       {OVERVIEW_QUESTIONS.map((question, index) => (
                         <Link key={question} href={viewHref(company.symbol, "ask", question)}>
-                          <span>{String(index + 1).padStart(2, "0")}</span><strong>{index === 0 ? "Investment summary" : index === 1 ? "Financial performance" : "Material risks"}</strong><small>{question}</small>
+                          {index === 0 ? "Investment summary" : index === 1 ? "Financial trends" : "Material risks"}
                         </Link>
                       ))}
                     </div>
                   </section>
 
+                  <section className="research-overview-section">
+                    <div className="research-overview-heading">
+                      <h2>{latestAnnual ? `FY${latestAnnual.fiscal_year ?? "—"} Financials` : "Financials"}</h2>
+                      <Link href={viewHref(company.symbol, "financials")}>View all</Link>
+                    </div>
+                    {latestAnnual ? (
+                      <div className="research-overview-financials">
+                        <article><span>Revenue</span><strong>{formatFinancial(revenue)}</strong><small>{formatChange(financialResult?.annual_changes.revenue)}</small></article>
+                        <article><span>Net income</span><strong>{formatFinancial(netIncome)}</strong><small>{formatChange(financialResult?.annual_changes.net_income)}</small></article>
+                        <article><span>Operating margin</span><strong>{operatingMargin === null ? "—" : `${formatMetric(operatingMargin)}%`}</strong><small>Filed facts</small></article>
+                        <article><span>Free cash flow</span><strong>{formatFinancialValue(latestAnnual.derived.free_cash_flow, operatingCashFlow?.unit)}</strong><small>OCF − capex</small></article>
+                      </div>
+                    ) : <p className="research-business-empty">Standardised annual financials are not available for this company yet.</p>}
+                  </section>
+
                   <div className="research-overview-two-column">
                     <section className="research-overview-section">
                       <div className="research-overview-heading">
-                        <div><p className="research-kicker">Source documents</p><h2>Latest filings</h2></div>
+                        <h2>Latest Filings</h2>
                         <Link href={viewHref(company.symbol, "filings")}>View all</Link>
                       </div>
                       <div className="research-overview-filings">
@@ -295,8 +285,8 @@ export default async function ResearchPage({
 
                     <section className="research-overview-section">
                       <div className="research-overview-heading">
-                        <div><p className="research-kicker">Disclosure monitoring</p><h2>Annual filing changes</h2></div>
-                        <Link href={viewHref(company.symbol, "changes")}>Open changes</Link>
+                        <h2>Filing Changes</h2>
+                        <Link href={viewHref(company.symbol, "changes")}>Open</Link>
                       </div>
                       {latestChangeRun ? (
                         <div className="research-change-summary">

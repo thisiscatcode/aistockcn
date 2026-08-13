@@ -19,7 +19,7 @@ function sourceLabel(item: ResearchAnswer["data_evidence"][number]) {
 
 
 export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: string; initialQuestion?: string }) {
-  const [question, setQuestion] = useState(initialQuestion || SUGGESTIONS[0].question);
+  const [question, setQuestion] = useState(initialQuestion);
   const [answer, setAnswer] = useState<ResearchAnswer | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,10 +80,9 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
     <section className="research-copilot-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Company research assistant</p>
-          <h2>What would you like to know about {symbol}?</h2>
+          <h2>Ask {symbol}</h2>
         </div>
-        <span className="research-beta-badge">Sources included</span>
+        <span className="research-beta-badge">Cited</span>
       </div>
 
       <div className="research-suggestions">
@@ -95,18 +94,18 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
       </div>
 
       <form className="research-question-form" onSubmit={submit}>
-        <label htmlFor="research-question">Research question</label>
+        <label className="sr-only" htmlFor="research-question">Research question</label>
         <textarea
           id="research-question"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
+          placeholder="Ask about revenue, margins, risks or guidance"
           maxLength={800}
           rows={2}
         />
         <div>
-          <small>Your answer will cite company filings and financial data, and clearly label interpretation.</small>
           <button type="submit" disabled={loading || !question.trim()}>
-            {loading ? "Researching…" : "Ask Copilot"}
+            {loading ? "Researching…" : "Ask"}
           </button>
         </div>
       </form>
