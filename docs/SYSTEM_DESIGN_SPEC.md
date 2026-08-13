@@ -35,6 +35,8 @@ Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.
   - walk-forward historical evaluation
 - `paper_trade_futu.py` and `paper_trade_daemon.py`
   - paper-trading orchestration
+- `apps/api/app/services/model_registry.py`
+  - model version registration, validation, atomic activation, rollback and audit
 - `apps/api`
   - operational API layer
 - `apps/web`
@@ -42,16 +44,36 @@ Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.
 
 ## Architecture
 
-The system is organized around local parquet artifacts and deterministic workflow steps.
+The system is organized around immutable parquet/model artifacts, deterministic workflow steps and a PostgreSQL control plane for model deployment state.
 
 1. Step 1 refreshes the stock universe and raw market data.
 2. Step 2 converts raw data into the training panel.
 3. Step 3 builds the latest inference snapshot.
-4. Step 4 trains the model and writes scores.
+4. Step 4 trains each profile, writes scores and publishes an immutable candidate under `quant_data/model_registry/<market>/<model_version>`.
 5. Step 5 runs backtests on historical windows.
-6. Step 6 consumes scored snapshots and reconciles paper-trading intent.
+6. An operator records validation results and atomically activates an eligible candidate in PostgreSQL.
+7. Models, Picks and Paper Trading resolve the same active deployment row; Paper verifies the artifact checksums before each cycle.
+8. Paper Trading consumes the resolved score snapshot and reconciles trading intent.
 
-The API and dashboard sit on top of those artifacts and runtime logs rather than duplicating state in a separate application database.
+`run/model_profiles.json` is only a training-profile catalog. It does not contain active deployment state. `quant_data/models` is retained as a migration artifact but is no longer read or overwritten by activation.
+
+## Model Registry
+
+```mermaid
+flowchart LR
+    T["Train profile"] --> I["Immutable artifact directory\nmanifest + checksums"]
+    I --> V["model_versions\nvalidation status"]
+    V --> A["Atomic activation transaction"]
+    A --> D["model_deployments\none active row per market"]
+    A --> E["model_activation_events\naudit and rollback history"]
+    D --> M["Models"]
+    D --> P["Picks"]
+    D --> R["Paper Trading"]
+```
+
+Each `model_versions` row records market, version, profile, artifact path, SHA-256 manifest, training dates, validation status and metrics. `model_deployments` contains exactly one active model per market plus the paper-enabled flag and monotonic revision. Activation updates the deployment and inserts its audit event in one database transaction; it never copies files.
+
+The initial migration selected the artifact actually consumed by production—`medium_10d_v2`—instead of the stale `short_3d` catalog value. This preserved live behavior while removing the contradictory state.
 
 ## Deployment Model
 

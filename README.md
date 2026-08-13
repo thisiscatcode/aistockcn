@@ -98,6 +98,9 @@ The operational product has a second isolated path: the main Next.js frontend ca
 | Next.js research UI | `apps/web/app/research/` |
 | US market product UI | `apps/web/app/us/` |
 | Isolated US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
+| Model Registry and atomic activation | `apps/api/app/services/model_registry.py`, `scripts/create_model_registry.sql` |
+| Immutable trained-model snapshots | `model_registry_artifacts.py`, `train_profile_runner.py` |
+| Registry-resolved paper execution | `paper_trade_futu.py` |
 | Docker environment | `docker-compose.yml`, `apps/api/Dockerfile.research` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 
@@ -118,6 +121,7 @@ The original platform remains part of the same repository and provides the produ
 - feature engineering and inference snapshots;
 - LightGBM training, scoring and model profiles;
 - expanding-window walk-forward backtesting;
+- a PostgreSQL Model Registry that atomically controls the active model used by Models, Picks and Paper Trading;
 - selection snapshots and operational monitoring;
 - paper-trading reconciliation through an external gateway;
 - FastAPI and Next.js control surfaces;

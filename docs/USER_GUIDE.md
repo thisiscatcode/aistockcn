@@ -39,6 +39,7 @@ The web panel is built for operators and product users who need to inspect the c
 - latest training metrics
 - backtest summary
 - feature importance
+- active market/model version, validation state and activation history from Model Registry
 
 ### Picks
 
@@ -50,6 +51,7 @@ The web panel is built for operators and product users who need to inspect the c
 - paper-trading daemon status
 - gateway health
 - target holdings, live positions, and order history
+- exact model version and deployment revision used for the latest reconciliation
 
 ### Admin
 

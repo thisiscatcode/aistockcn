@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 import sys
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, time as dt_time, timezone
 from pathlib import Path
 from typing import Any
@@ -373,7 +374,7 @@ def active_rebalance_profile(scores_path: Path) -> dict[str, Any]:
     profiles = catalog.get("profiles") if isinstance(catalog.get("profiles"), list) else []
 
     if not profile_name:
-        profile_name = str(catalog.get("active_profile") or catalog.get("default_profile") or "").strip()
+        profile_name = str(catalog.get("default_profile") or "").strip()
 
     for profile in profiles:
         if isinstance(profile, dict) and str(profile.get("name") or "").strip() == profile_name:
@@ -517,6 +518,74 @@ class SyncConfig:
 
 class GatewayError(RuntimeError):
     pass
+
+
+def _artifact_digest(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return {"sha256": digest.hexdigest(), "size": path.stat().st_size}
+
+
+def resolve_paper_model(config: SyncConfig) -> tuple[SyncConfig, dict[str, Any]]:
+    """Resolve and verify one registry deployment for the entire reconciliation cycle."""
+    if not config.paper_db_url:
+        return config, {"source": "explicit_scores_path", "artifact_path": str(config.scores_path)}
+    if psycopg is None:
+        raise RuntimeError("psycopg is required to resolve the active paper model")
+    with psycopg.connect(config.paper_db_url, connect_timeout=5) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                select d.market, d.paper_enabled, d.revision, d.activated_at,
+                       v.id, v.model_version, v.profile, v.artifact_path,
+                       v.artifact_manifest, v.validation_status, v.trained_at
+                from model_deployments d
+                join model_versions v on v.id = d.active_model_id
+                where d.market = %s
+                """,
+                (config.market.upper(),),
+            )
+            columns = [column.name for column in cursor.description]
+            values = cursor.fetchone()
+    if values is None:
+        raise RuntimeError(f"no active {config.market.upper()} model deployment exists")
+    model = dict(zip(columns, values, strict=True))
+    if not bool(model["paper_enabled"]):
+        raise RuntimeError(f"paper trading is disabled for {model['market']} model deployment")
+    if str(model["validation_status"]) not in {"passed", "legacy_unreviewed"}:
+        raise RuntimeError(
+            f"active model {model['model_version']} has validation status {model['validation_status']}"
+        )
+    project_root = Path.cwd().resolve()
+    artifact_dir = (project_root / str(model["artifact_path"])).resolve()
+    try:
+        artifact_dir.relative_to(project_root)
+    except ValueError as exc:
+        raise RuntimeError(f"model artifact path escapes project root: {artifact_dir}") from exc
+    manifest = model["artifact_manifest"] if isinstance(model["artifact_manifest"], dict) else {}
+    for name, expected in manifest.items():
+        artifact = artifact_dir / str(name)
+        if not artifact.is_file() or _artifact_digest(artifact) != expected:
+            raise RuntimeError(f"model artifact checksum mismatch for {name}")
+    scores_path = artifact_dir / "inference_scores_latest.parquet"
+    metadata_path = artifact_dir / "training_metadata.json"
+    if not scores_path.is_file() or not metadata_path.is_file():
+        raise RuntimeError(f"active model {model['model_version']} is missing required artifacts")
+    context = {
+        "source": "postgresql_model_registry",
+        "market": model["market"],
+        "model_id": str(model["id"]),
+        "model_version": model["model_version"],
+        "profile": model["profile"],
+        "artifact_path": str(model["artifact_path"]),
+        "validation_status": model["validation_status"],
+        "deployment_revision": int(model["revision"]),
+        "activated_at": model["activated_at"],
+        "trained_at": model["trained_at"],
+    }
+    return replace(config, scores_path=scores_path), context
 
 
 class GatewayClient:
@@ -2072,9 +2141,11 @@ def execute_plan(
 def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
     paths = ensure_dirs(config.state_dir)
     state = read_json(paths["state"])
-    gateway = GatewayClient(config)
     last_signal_date = None
     try:
+        config, model_context = resolve_paper_model(config)
+        state = update_state(paths, active_model=model_context)
+        gateway = GatewayClient(config)
         latest_scores, signal_date, signature = load_latest_scores(config)
         last_signal_date = signal_date
         previous_signature = str(state.get("last_score_signature") or "")
@@ -2110,7 +2181,7 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
             signal_date=signal_date,
             force=config.force,
         )
-        plan_summary = {**plan_summary, **rebalance}
+        plan_summary = {**plan_summary, **rebalance, "active_model": model_context}
         planned_target_snapshot = target_snapshot_rows(plan)
 
         if not config.force and previous_signature == signature:

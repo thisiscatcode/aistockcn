@@ -20,6 +20,7 @@ COPY feature_engineering.py .
 COPY build_inference_features.py .
 COPY train_lightgbm.py .
 COPY train_profile_runner.py .
+COPY model_registry_artifacts.py .
 COPY backtest_walk_forward.py .
 COPY batch_download_all_a.py .
 COPY repair_valuation_reference_fields.py .

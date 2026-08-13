@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import get_settings
-from app.services.files import read_json, write_json_atomic
+from app.services.files import read_json
 
 DEFAULT_PROFILE_NAME = "short_5d"
 DEFAULT_PROFILES: list[dict[str, Any]] = [
@@ -152,13 +152,8 @@ def get_model_profile_catalog() -> dict[str, Any]:
     default_profile = str(raw_catalog.get("default_profile") or DEFAULT_PROFILE_NAME).strip() or DEFAULT_PROFILE_NAME
     if default_profile not in {profile["name"] for profile in normalized_profiles}:
         default_profile = normalized_profiles[0]["name"]
-    active_profile = str(raw_catalog.get("active_profile") or default_profile).strip() or default_profile
-    if active_profile not in {profile["name"] for profile in normalized_profiles}:
-        active_profile = default_profile
-
     return {
         "default_profile": default_profile,
-        "active_profile": active_profile,
         "profiles": normalized_profiles,
         "path": str(_catalog_path()),
     }
@@ -181,22 +176,3 @@ def resolve_model_profile(profile_name: str | None = None) -> dict[str, Any]:
         if profile["name"] == default_name:
             return profile
     return profiles[0]
-
-
-def get_active_model_profile() -> dict[str, Any]:
-    catalog = get_model_profile_catalog()
-    return resolve_model_profile(str(catalog.get("active_profile") or catalog.get("default_profile") or ""))
-
-
-def set_active_model_profile(profile_name: str) -> dict[str, Any]:
-    profile = resolve_model_profile(profile_name)
-    path = _catalog_path()
-    raw_catalog = read_json(path)
-    catalog = get_model_profile_catalog()
-    payload = {
-        "default_profile": raw_catalog.get("default_profile") or catalog["default_profile"],
-        "active_profile": profile["name"],
-        "profiles": raw_catalog.get("profiles") if isinstance(raw_catalog.get("profiles"), list) else catalog["profiles"],
-    }
-    write_json_atomic(path, payload, ensure_ascii=False)
-    return profile

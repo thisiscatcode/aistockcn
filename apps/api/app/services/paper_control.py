@@ -222,8 +222,6 @@ def _paper_command() -> list[str]:
     settings = get_settings()
     command = [
         "paper_trade_daemon.py",
-        "--scores-path",
-        "quant_data/models/inference_scores_latest.parquet",
         "--state-dir",
         "quant_data/paper_trading",
         "--gateway-base-url",

@@ -23,7 +23,17 @@ Outputs include:
 
 ### Training And Scoring
 
-`train_lightgbm.py` trains the current model, saves metadata, and writes ranked inference scores for the latest snapshot.
+`train_lightgbm.py` trains a profile, saves metadata, and writes ranked inference scores. `train_profile_runner.py` then publishes those files as a new immutable Model Registry candidate with a checksum manifest. Training does not activate a model.
+
+### Validation And Activation
+
+PostgreSQL is the single source of truth for deployment state:
+
+- `model_versions` stores immutable candidates and validation results;
+- `model_deployments` stores one active version per market and whether Paper Trading may use it;
+- `model_activation_events` stores actor, reason, previous/new version and revision for audit and rollback.
+
+The Models and Picks APIs resolve this deployment row. The admin activation endpoint changes it in one transaction. No model files are copied and the training-profile catalog is never used as active state.
 
 ### Backtesting
 
@@ -31,7 +41,7 @@ Outputs include:
 
 ### Paper Trading
 
-`paper_trade_futu.py` converts ranked signals into target holdings and simulated orders for an external Futu gateway.
+`paper_trade_futu.py` resolves the paper-enabled deployment from PostgreSQL, verifies all artifact checksums, and converts that exact score snapshot into target holdings and simulated orders for an external Futu gateway. One resolved version is held for the entire reconciliation cycle.
 
 `paper_trade_daemon.py` keeps watching for new score snapshots and only reconciles when a new signal set appears.
 
@@ -49,10 +59,11 @@ The repository includes dedicated runner scripts for stable container naming, lo
 
 ## Artifact Philosophy
 
-This project relies on simple, inspectable artifacts instead of hiding state behind multiple services:
+This project uses inspectable immutable artifacts for data/model payloads and a small transactional database control plane for state that must be consistent:
 
 - parquet datasets for core pipeline outputs
-- JSON metadata for model and runtime state
+- JSON metadata embedded with each model artifact
+- PostgreSQL for model validation, activation, paper enablement and audit history
 - log files for batch and daemon visibility
 
 That choice makes the system easier to inspect, validate, and operate in a small-team environment.

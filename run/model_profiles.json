@@ -1,6 +1,5 @@
 {
   "default_profile": "short_5d",
-  "active_profile": "short_3d",
   "profiles": [
     {
       "name": "short_1d",

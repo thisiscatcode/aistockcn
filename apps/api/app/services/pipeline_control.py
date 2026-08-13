@@ -125,7 +125,6 @@ STEP_CONTROL_SPECS: dict[str, StepControlSpec] = {
             "all",
             "--inference-path",
             "quant_data/inference_features_latest.parquet",
-            "--sync-active",
         ),
     ),
     "step5": StepControlSpec(

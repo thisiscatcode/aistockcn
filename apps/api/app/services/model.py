@@ -12,7 +12,17 @@ from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
 from app.services.admin_settings import filter_model_candidate_rows
-from app.services.model_profiles import get_model_profile_catalog, resolve_model_profile, set_active_model_profile
+from app.services.model_profiles import get_model_profile_catalog, resolve_model_profile
+from app.services.model_registry import (
+    ModelRegistryError,
+    activate_model,
+    get_active_deployment,
+    get_latest_model_for_profile,
+    list_activation_events,
+    list_model_versions,
+    resolve_artifact_path,
+    sync_model_registry,
+)
 
 REALISTIC_BACKTEST_METHOD_VERSIONS = {"realistic_execution_v1"}
 RESEARCH_BACKTEST_METHOD_VERSIONS = {
@@ -115,35 +125,6 @@ def _profile_model_dir(profile_name: str | None) -> Path | None:
     if not profile_name:
         return None
     return get_settings().quant_dir / "model_profiles" / profile_name / "models"
-
-
-def _production_model_dir() -> Path:
-    return get_settings().models_dir
-
-
-def _copy_file_if_exists(source: Path, destination: Path) -> bool:
-    if not source.exists():
-        return False
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(source.read_bytes())
-    return True
-
-
-def _sync_profile_to_production(profile_name: str) -> dict[str, Any]:
-    profile_dir = _profile_model_dir(profile_name)
-    if profile_dir is None:
-        raise ValueError("profile name is required")
-    production_dir = _production_model_dir()
-    copied: list[str] = []
-    missing: list[str] = []
-    for name in ["lightgbm_model.txt", "feature_importance.csv", "training_metadata.json", "inference_scores_latest.parquet"]:
-        if _copy_file_if_exists(profile_dir / name, production_dir / name):
-            copied.append(name)
-        else:
-            missing.append(name)
-    if "inference_scores_latest.parquet" in missing or "training_metadata.json" in missing:
-        raise FileNotFoundError(f"profile {profile_name} is missing required model artifacts: {', '.join(missing)}")
-    return {"copied": copied, "missing": missing}
 
 
 def _parquet_date_max(path: Path, *, column: str) -> str | None:
@@ -331,23 +312,25 @@ def _backtest_run_rows() -> list[dict[str, Any]]:
 
 def get_model_overview(profile_name: str | None = None) -> dict[str, Any]:
     settings = get_settings()
-    production_metadata = read_json(settings.models_dir / "training_metadata.json")
+    sync_model_registry(settings)
     profile_catalog = get_model_profile_catalog()
-    active_profile = _profile_name(profile_catalog.get("active_profile")) or profile_catalog["default_profile"]
-    production_training_profile = _profile_name(production_metadata.get("profile_name")) or active_profile
+    deployment = get_active_deployment("CN", settings=settings, sync=False)
+    if deployment is None:
+        raise ModelRegistryError("no active CN model deployment")
+    active_profile = str(deployment["profile"])
+    production_training_profile = active_profile
     profile_names = {profile["name"] for profile in profile_catalog["profiles"]}
     selected_profile = _profile_name(profile_name)
     if selected_profile not in profile_names:
         selected_profile = active_profile
     selected_profile_label = _profile_label(selected_profile, profile_catalog["profiles"])
-    profile_model_dir = _profile_model_dir(selected_profile)
+    selected_model = deployment if selected_profile == active_profile else get_latest_model_for_profile(
+        "CN", selected_profile, settings=settings, sync=False
+    )
+    profile_model_dir = resolve_artifact_path(selected_model["artifact_path"], settings) if selected_model else None
     profile_training_metadata_path = profile_model_dir / "training_metadata.json" if profile_model_dir is not None else None
     profile_feature_importance_path = profile_model_dir / "feature_importance.csv" if profile_model_dir is not None else None
     profile_metadata = read_json(profile_training_metadata_path) if profile_training_metadata_path is not None else {}
-    if not profile_metadata and selected_profile == production_training_profile:
-        profile_metadata = production_metadata
-        profile_training_metadata_path = settings.models_dir / "training_metadata.json"
-        profile_feature_importance_path = settings.models_dir / "feature_importance.csv"
     selected_training = profile_metadata
     backtest, backtest_summary_path = _backtest_summary_entry_for_profile(selected_profile, profile_catalog["profiles"])
     equity_curve, equity_curve_path = _backtest_equity_curve(backtest_summary_path)
@@ -383,27 +366,30 @@ def get_model_overview(profile_name: str | None = None) -> dict[str, Any]:
         "backtest_runs": backtest_runs,
         "model_profiles": profile_catalog["profiles"],
         "default_profile": profile_catalog["default_profile"],
-        "active_profile_artifact_status": _artifact_status(settings.models_dir / "inference_scores_latest.parquet"),
+        "active_profile_artifact_status": _artifact_status(
+            resolve_artifact_path(deployment["artifact_path"], settings) / "inference_scores_latest.parquet"
+        ),
+        "active_model": deployment,
+        "model_versions": list_model_versions("CN", settings=settings, sync=False),
+        "activation_events": list_activation_events("CN", limit=20, settings=settings),
+        "registry_source": "postgresql",
         "top_features": top_features,
     }
 
 
 def _scores_path_for_profile(profile_name: str | None) -> tuple[str | None, Path]:
     settings = get_settings()
-    catalog = get_model_profile_catalog()
-    profile_names = {profile["name"] for profile in catalog["profiles"]}
     selected_profile = _profile_name(profile_name)
-    active_profile = _profile_name(catalog.get("active_profile")) or catalog["default_profile"]
-    if selected_profile in profile_names:
-        profile_dir = _profile_model_dir(selected_profile)
-        profile_scores_path = profile_dir / "inference_scores_latest.parquet" if profile_dir is not None else None
-        if profile_scores_path is not None and profile_scores_path.exists():
-            return selected_profile, profile_scores_path
-        if selected_profile == active_profile:
-            return selected_profile, settings.models_dir / "inference_scores_latest.parquet"
-        if profile_scores_path is not None:
-            return selected_profile, profile_scores_path
-    return active_profile, settings.models_dir / "inference_scores_latest.parquet"
+    if selected_profile:
+        model = get_latest_model_for_profile("CN", selected_profile, settings=settings, sync=False)
+        if model is None:
+            raise ModelRegistryError(f"no registered model for profile {selected_profile}")
+    else:
+        model = get_active_deployment("CN", settings=settings, sync=False)
+        if model is None:
+            raise ModelRegistryError("no active CN model deployment")
+    artifact_dir = resolve_artifact_path(model["artifact_path"], settings)
+    return str(model["profile"]), artifact_dir / "inference_scores_latest.parquet"
 
 
 def get_latest_picks(*, limit: int = 25, profile_name: str | None = None) -> dict[str, Any]:
@@ -667,16 +653,29 @@ def get_lobster_picks(*, limit: int = 100) -> dict[str, Any]:
     return _slice_lobster_payload(payload, limit)
 
 
-def activate_model_for_paper(profile_name: str) -> dict[str, Any]:
+def activate_model_for_paper(
+    profile_name: str,
+    *,
+    actor: str = "panel_admin",
+    reason: str = "Activated from the control panel.",
+) -> dict[str, Any]:
     profile = resolve_model_profile(profile_name)
     if str(profile.get("deployment_status") or "available") != "available":
         raise ValueError(f"profile {profile['name']} is research-only and cannot be activated for paper trading yet")
-    sync_result = _sync_profile_to_production(str(profile["name"]))
-    profile = set_active_model_profile(profile_name)
+    deployment = activate_model(
+        market="CN",
+        profile=str(profile["name"]),
+        paper_enabled=True,
+        actor=actor,
+        reason=reason,
+    )
     return {
         "ok": True,
         "profile_name": profile["name"],
         "profile_label": profile["label"],
-        "synced_to": str(_production_model_dir()),
-        **sync_result,
+        "model_version": deployment["model_version"],
+        "market": deployment["market"],
+        "paper_enabled": deployment["paper_enabled"],
+        "revision": deployment["revision"],
+        "activated_at": deployment["activated_at"],
     }

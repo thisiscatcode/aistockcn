@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from model_registry_artifacts import create_model_registry_snapshot
 
 
 DEFAULT_CATALOG = "run/model_profiles.json"
@@ -21,8 +22,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--catalog-path", default=DEFAULT_CATALOG)
     parser.add_argument("--data-dir", default="quant_data")
     parser.add_argument("--inference-path", default="quant_data/inference_features_latest.parquet")
-    parser.add_argument("--sync-active", action="store_true", help="Copy active profile artifacts into quant_data/models.")
-    parser.add_argument("--active-profile", default="", help="Override active profile for the sync step.")
+    # Accepted as no-ops so a pipeline coordinator that was already running during
+    # this migration cannot fall back to the former mutable file-copy deployment.
+    parser.add_argument("--sync-active", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--active-profile", default="", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -70,24 +73,10 @@ def run_command(args: list[str]) -> None:
     subprocess.run(args, check=True)
 
 
-def sync_active_profile(*, data_dir: Path, active_profile: str) -> None:
-    source_dir = data_dir / "model_profiles" / active_profile / "models"
-    destination_dir = data_dir / "models"
-    required = ["training_metadata.json", "inference_scores_latest.parquet"]
-    missing_required = [name for name in required if not (source_dir / name).exists()]
-    if missing_required:
-        raise SystemExit(f"active profile {active_profile} is missing required artifacts: {', '.join(missing_required)}")
-
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    for name in ["lightgbm_model.txt", "feature_importance.csv", "training_metadata.json", "inference_scores_latest.parquet"]:
-        source = source_dir / name
-        if source.exists():
-            shutil.copy2(source, destination_dir / name)
-            print(f"synced active artifact: {source} -> {destination_dir / name}", flush=True)
-
-
 def main() -> int:
     args = parse_args()
+    if args.sync_active or args.active_profile:
+        print("Legacy active-profile sync flags are ignored; activate candidates through Model Registry.", flush=True)
     root_dir = Path.cwd()
     catalog_path = root_dir / args.catalog_path
     catalog = read_catalog(catalog_path)
@@ -145,13 +134,11 @@ def main() -> int:
         if bool(profile.get("cross_sectional_target", False)):
             train_command.append("--cross-sectional-target")
         run_command(train_command)
-
-    if args.sync_active:
-        profiles = profiles_by_name(catalog)
-        active_profile = str(args.active_profile or catalog.get("active_profile") or catalog.get("default_profile") or "").strip()
-        if active_profile not in profiles:
-            active_profile = next(iter(profiles))
-        sync_active_profile(data_dir=data_dir, active_profile=active_profile)
+        snapshot = create_model_registry_snapshot(data_dir=data_dir, profile=profile_name, market="CN")
+        print(
+            f"registered immutable candidate {snapshot['model_version']} at {snapshot['artifact_path']}",
+            flush=True,
+        )
 
     print("Profile training completed.", flush=True)
     return 0

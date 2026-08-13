@@ -60,7 +60,6 @@ fi
 
 ARGS+=(
   "--entrypoint" "python" "data-prep" "paper_trade_daemon.py"
-  "--scores-path" "quant_data/models/inference_scores_latest.parquet"
   "--state-dir" "quant_data/paper_trading"
   "--gateway-base-url" "$GATEWAY_BASE_URL"
   "--market" "$GATEWAY_MARKET"

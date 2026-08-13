@@ -31,10 +31,12 @@ from app.services.us_selection_snapshots import (
     start_snapshot_scheduler as start_us_snapshot_scheduler,
     stop_snapshot_scheduler as stop_us_snapshot_scheduler,
 )
+from app.services.model_registry import sync_model_registry
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    sync_model_registry()
     start_auto_pipeline_scheduler()
     start_fei_db_sync_scheduler()
     start_snapshot_scheduler()
@@ -170,6 +172,9 @@ def root() -> dict[str, object]:
             "/api/model/latest",
             "/api/model/picks",
             "/api/model/lobster-picks",
+            "/api/model/registry",
+            "/api/model/deployment",
+            "/api/model/activation-events",
             "/api/overview/portfolio",
             "/api/overview/benchmark",
             "/api/overview/benchmark/refresh",

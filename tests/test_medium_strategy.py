@@ -90,7 +90,7 @@ class MediumStrategyTests(unittest.TestCase):
 
         self.assertEqual(set(picks["code"]), {"A", "C", "D", "E"})
 
-    def test_catalog_adds_medium_profile_without_changing_active_profile(self) -> None:
+    def test_catalog_adds_medium_profile_without_a_second_active_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp)
             (run_dir / "model_profiles.json").write_text(
@@ -102,7 +102,7 @@ class MediumStrategyTests(unittest.TestCase):
                 catalog = model_profiles_service.get_model_profile_catalog()
 
         profile = next(item for item in catalog["profiles"] if item["name"] == "medium_10d_v2")
-        self.assertEqual(catalog["active_profile"], "short_3d")
+        self.assertNotIn("active_profile", catalog)
         self.assertEqual(profile["model_objective"], "regression")
         self.assertEqual(profile["label_threshold"], 0.0)
         self.assertEqual(profile["backtest_max_drop"], 4)

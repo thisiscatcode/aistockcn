@@ -77,6 +77,39 @@ from app.services.us_selection_control import _parse_time
 
 class PipelineRepairTests(unittest.TestCase):
     @staticmethod
+    def _mock_model_registry(settings: SimpleNamespace):
+        metadata_path = settings.models_dir / "training_metadata.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        active_profile = str(metadata.get("profile_name") or "short_5d")
+        deployment = {
+            "market": "CN",
+            "model_id": "active-model",
+            "model_version": f"cn-{active_profile}-test",
+            "profile": active_profile,
+            "artifact_path": str(settings.models_dir),
+            "artifact_manifest": {},
+            "paper_enabled": True,
+            "validation_status": "legacy_unreviewed",
+            "revision": 1,
+        }
+
+        def latest(_market: str, profile: str, **_kwargs: object) -> dict[str, object] | None:
+            artifact_dir = settings.quant_dir / "model_profiles" / profile / "models"
+            if not artifact_dir.exists():
+                return None
+            return {**deployment, "model_id": f"{profile}-model", "model_version": f"cn-{profile}-test", "profile": profile, "artifact_path": str(artifact_dir)}
+
+        return mock.patch.multiple(
+            model_service,
+            get_active_deployment=mock.Mock(return_value=deployment),
+            get_latest_model_for_profile=mock.Mock(side_effect=latest),
+            list_model_versions=mock.Mock(return_value=[deployment]),
+            list_activation_events=mock.Mock(return_value=[]),
+            sync_model_registry=mock.Mock(return_value={"registered": 0, "deployment": deployment}),
+            resolve_artifact_path=mock.Mock(side_effect=lambda value, _settings: Path(str(value))),
+        )
+
+    @staticmethod
     def _paper_sync_config(scores_path: Path, state_dir: Path, *, force: bool = False) -> SyncConfig:
         return SyncConfig(
             scores_path=scores_path,
@@ -2331,7 +2364,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview(profile_name="short_3d")
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview(profile_name="short_3d")
 
         self.assertEqual(overview["backtest_summary"]["profile_name"], "short_3d")
         self.assertEqual([row["equity"] for row in overview["backtest_equity_curve"]], [1.1, 1.32])
@@ -2369,7 +2403,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview(profile_name="short_3d")
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview(profile_name="short_3d")
 
         self.assertFalse(overview["backtest_summary"]["is_trustworthy"])
         self.assertFalse(overview["backtest_summary"]["is_realistic_execution"])
@@ -2409,7 +2444,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview(profile_name="short_3d")
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview(profile_name="short_3d")
 
         self.assertTrue(overview["backtest_summary"]["is_trustworthy"])
         self.assertTrue(overview["backtest_summary"]["is_realistic_execution"])
@@ -2453,7 +2489,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview()
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview()
 
         self.assertEqual(overview["current_profile"], "short_5d")
         self.assertEqual(overview["backtest_summary"], {})
@@ -2491,7 +2528,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview(profile_name="short_3d")
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview(profile_name="short_3d")
 
         self.assertEqual(overview["current_profile"], "short_3d")
         self.assertEqual(overview["training_metadata"]["profile_name"], "short_3d")
@@ -2526,12 +2564,17 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    picks = model_service.get_latest_picks(limit=1, profile_name="short_3d")
+                    with mock.patch.object(
+                        model_service,
+                        "_scores_path_for_profile",
+                        return_value=("short_3d", profile_model_dir / "inference_scores_latest.parquet"),
+                    ):
+                        picks = model_service.get_latest_picks(limit=1, profile_name="short_3d")
 
         self.assertEqual(picks["profile_name"], "short_3d")
         self.assertEqual(picks["picks"][0]["code"], "000002")
 
-    def test_activate_model_for_paper_syncs_profile_artifacts(self) -> None:
+    def test_activate_model_for_paper_uses_atomic_registry_activation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             models_dir = root / "quant_data" / "models"
@@ -2561,12 +2604,30 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    result = model_service.activate_model_for_paper("short_3d")
+                    with mock.patch.object(
+                        model_service,
+                        "activate_model",
+                        return_value={
+                            "model_version": "cn-short-3d-v1",
+                            "market": "CN",
+                            "paper_enabled": True,
+                            "revision": 2,
+                            "activated_at": "2026-08-13T00:00:00+00:00",
+                        },
+                    ) as activate:
+                        result = model_service.activate_model_for_paper("short_3d")
 
             self.assertEqual(result["profile_name"], "short_3d")
-            self.assertEqual((models_dir / "training_metadata.json").read_text(encoding="utf-8").strip(), '{"profile_name":"short_3d"}')
-            self.assertEqual((models_dir / "inference_scores_latest.parquet").read_bytes(), b"score-bytes")
-            self.assertEqual(json.loads((run_dir / "model_profiles.json").read_text(encoding="utf-8"))["active_profile"], "short_3d")
+            self.assertEqual(result["model_version"], "cn-short-3d-v1")
+            self.assertFalse((models_dir / "training_metadata.json").exists())
+            self.assertNotIn("active_profile", json.loads((run_dir / "model_profiles.json").read_text(encoding="utf-8")))
+            activate.assert_called_once_with(
+                market="CN",
+                profile="short_3d",
+                paper_enabled=True,
+                actor="panel_admin",
+                reason="Activated from the control panel.",
+            )
 
     def test_model_overview_does_not_default_unprofiled_backtest_to_current_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2589,7 +2650,8 @@ class PipelineRepairTests(unittest.TestCase):
 
             with mock.patch.object(model_service, "get_settings", return_value=settings):
                 with mock.patch.object(model_profiles_service, "get_settings", return_value=settings):
-                    overview = model_service.get_model_overview()
+                    with self._mock_model_registry(settings):
+                        overview = model_service.get_model_overview()
 
         self.assertEqual(overview["current_profile"], "short_5d")
         self.assertEqual(overview["backtest_summary"], {})

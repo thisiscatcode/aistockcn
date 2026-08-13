@@ -10,7 +10,6 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 
 INFERENCE_PATH="${INFERENCE_PATH:-quant_data/inference_features_latest.parquet}"
 PROFILES="${PROFILES:-all}"
-ACTIVE_PROFILE="${ACTIVE_PROFILE:-}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/step4_train_score_${TIMESTAMP}.log"
 PID_FILE="$PID_DIR/step4_train_score.pid"
@@ -23,12 +22,7 @@ ARGS=(
   "run" "-d" "--name" "$CONTAINER_NAME" "--entrypoint" "python" "data-prep" "train_profile_runner.py"
   "--profiles" "$PROFILES"
   "--inference-path" "$INFERENCE_PATH"
-  "--sync-active"
 )
-
-if [[ -n "$ACTIVE_PROFILE" ]]; then
-  ARGS+=("--active-profile" "$ACTIVE_PROFILE")
-fi
 
 cd "$ROOT_DIR"
 docker compose build data-prep

@@ -608,7 +608,7 @@ def get_workflow_status() -> dict[str, Any]:
             step=4,
             key="train_and_score",
             runner_script="bash run_step4_train_score.sh",
-            command_hint="python train_profile_runner.py --profiles all --inference-path quant_data/inference_features_latest.parquet --sync-active",
+            command_hint="python train_profile_runner.py --profiles all --inference-path quant_data/inference_features_latest.parquet",
             pid_file_names=["step4_train_score.pid", "step5_train_score.pid"],
             log_patterns=["step4_train_score_*.log", "step5_train_score_*.log"],
             name_prefixes=["aistockcn-step4-train-score-", "aistockcn-step5-train-score-"],
