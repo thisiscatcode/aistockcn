@@ -22,6 +22,10 @@ def _candidate(row: dict[str, Any]) -> dict[str, Any]:
         "fiscal_year": row["fiscal_year"],
         "source_url": row["source_url"],
         "page_number": row["page_number"],
+        "locator_type": row.get("locator_type") or "page",
+        "locator": row.get("locator") or f"page {row['page_number']}",
+        "native_page_numbers": bool(row.get("native_page_numbers", True)),
+        "source_format": row.get("source_format") or "pdf",
         "content": row["content"],
     }
 
@@ -70,8 +74,9 @@ def retrieve_document_evidence(
     query_vector = _vector_literal(embeddings[0])
 
     select_fields = """
-      c.id as chunk_id, c.document_id, c.page_number, c.content,
-      d.filename, d.document_type, d.filing_date, d.fiscal_year, d.source_url
+      c.id as chunk_id, c.document_id, c.page_number, c.locator_type, c.locator, c.content,
+      d.filename, d.document_type, d.filing_date, d.fiscal_year, d.source_url,
+      d.native_page_numbers, d.source_format
     """
     with _write_connection() as conn:
         with conn.cursor() as cur:

@@ -6,7 +6,7 @@ import time
 
 from app.services.research_documents import (
     claim_next_uploaded_document,
-    index_pdf_document_safely,
+    index_research_document_safely,
     init_research_document_schema,
 )
 
@@ -30,7 +30,7 @@ def main() -> None:
         document_id = claim_next_uploaded_document()
         if document_id:
             LOGGER.info("indexing document id=%s", document_id)
-            index_pdf_document_safely(document_id)
+            index_research_document_safely(document_id)
             continue
         time.sleep(2.0)
     LOGGER.info("research document worker stopped")

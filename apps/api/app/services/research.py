@@ -262,7 +262,7 @@ def _call_local_json_model(*, prompt: str, settings: Settings) -> dict[str, Any]
         "model": settings.research_llm_model,
         "stream": False,
         "format": "json",
-        "options": {"temperature": 0.1},
+        "options": {"temperature": 0.1, "num_predict": 320},
         "prompt": prompt,
     }
     request = Request(
@@ -282,7 +282,10 @@ def _call_local_json_model(*, prompt: str, settings: Settings) -> dict[str, Any]
             last_error = exc
             if exc.code < 500:
                 break
-        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except TimeoutError as exc:
+            last_error = exc
+            break
+        except (URLError, json.JSONDecodeError) as exc:
             last_error = exc
         if attempt < 2:
             time.sleep(0.25 * (2 ** attempt))
@@ -351,9 +354,18 @@ def _generate_research_synthesis(
     document_context: list[dict[str, Any]],
     settings: Settings,
 ) -> dict[str, Any]:
+    prompt_documents = [
+        {
+            "filename": item.get("filename"),
+            "locator": item.get("locator") or f"page {item.get('page_number')}",
+            "source_url": item.get("source_url"),
+            "content": str(item.get("content") or "")[:700],
+        }
+        for item in document_context[:4]
+    ]
     filing_instruction = (
-        "Use filing claims only when directly supported by the supplied document passages, and cite the page "
-        "in the prose as [filename, p. N]."
+        "Use filing claims only when directly supported by the supplied document passages, and cite the exact "
+        "supplied locator in the prose as [filename, locator]. Never describe an HTML passage as a PDF page."
         if document_context
         else
         "The SEC filing corpus returned no relevant passages, so do not claim knowledge of revenue, earnings "
@@ -369,7 +381,7 @@ def _generate_research_synthesis(
             f"Question: {question}\n"
             f"Company context: {json.dumps(company, default=str)}\n"
             f"Deterministic calculations: {json.dumps(calculations, default=str)}\n"
-            f"Retrieved document passages: {json.dumps(document_context, default=str)}"
+            f"Retrieved document passages: {json.dumps(prompt_documents, default=str)}"
         ),
     )
     answer = str(generated.get("answer") or "").strip()
@@ -470,8 +482,9 @@ def answer_research_question(
                 "document_id": item["document_id"],
                 "claim": item["content"],
                 "source": item["filename"],
-                "locator": f"page {item['page_number']}",
-                "page_number": item["page_number"],
+                "locator": item.get("locator") or f"page {item['page_number']}",
+                "locator_type": item.get("locator_type") or "page",
+                "page_number": item["page_number"] if item.get("native_page_numbers", True) else None,
                 "source_url": item.get("source_url"),
                 "reranker_score": item.get("reranker_score"),
             }
@@ -535,15 +548,16 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
         calculations = _market_calculations(snapshot["history"])
         companies.append({"symbol": symbol, "company": snapshot["company"], "calculations": calculations})
         retrieval = _retrieve_document_evidence(symbol=symbol, question=normalized_question)
-        for item in list(retrieval.get("results") or [])[:3]:
+        for item in list(retrieval.get("results") or [])[:2]:
             document_evidence.append({
                 "symbol": symbol,
                 "id": item["chunk_id"],
                 "document_id": item["document_id"],
                 "claim": item["content"],
                 "source": item["filename"],
-                "locator": f"page {item['page_number']}",
-                "page_number": item["page_number"],
+                "locator": item.get("locator") or f"page {item['page_number']}",
+                "locator_type": item.get("locator_type") or "page",
+                "page_number": item["page_number"] if item.get("native_page_numbers", True) else None,
                 "source_url": item.get("source_url"),
                 "reranker_score": item.get("reranker_score"),
             })
@@ -555,10 +569,17 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
             "You are an equity comparison agent. Compare only the supplied companies and evidence. "
             "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "
             "only with answer (string) and model_inference (array of at most 3 strings). Cite document claims "
-            "as [SYMBOL, filename, p. N].\n"
+            "using the exact supplied locator as [SYMBOL, filename, locator]. Never call an HTML passage a page.\n"
             f"Question: {normalized_question}\n"
             f"Company data and calculations: {json.dumps(companies, default=str)}\n"
-            f"Document evidence: {json.dumps(document_evidence, default=str)}"
+            "Document evidence: "
+            + json.dumps(
+                [
+                    {**item, "claim": str(item.get("claim") or "")[:700]}
+                    for item in document_evidence
+                ],
+                default=str,
+            )
         ),
     )
     answer = str(generated.get("answer") or "").strip()

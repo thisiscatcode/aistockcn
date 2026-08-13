@@ -21,6 +21,30 @@ The initial US market-data gate requires at least 504 trading dates. Until that 
 
 Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.com/thisiscatcode/aistockcn-web-fei) repository and is outside the US product scope. The current production checkout remains at `apps/web-fei`; its container image, runtime configuration, API contracts and database semantics must remain unchanged. US deployments target only the dedicated US API/workers and the main `apps/web` frontend.
 
+## Research Copilot Architecture
+
+The Research Copilot is an isolated product service over the existing US equity data plane. Its ingestion API can discover and download official SEC 10-K, 10-Q and 8-K filings, while continuing to accept customer-supplied PDFs. A PostgreSQL queue is claimed atomically by the background worker. The worker extracts source-aware text, creates overlapping chunks, generates BGE embeddings and stores them in `pgvector`.
+
+```mermaid
+flowchart LR
+    U["Authenticated user"] --> W["Next.js research UI"]
+    W --> A["FastAPI research API"]
+    A --> E["SEC EDGAR"]
+    A --> Q["PostgreSQL document queue"]
+    Q --> K["Ingestion worker"]
+    K --> V["PostgreSQL FTS + pgvector"]
+    A --> H["Hybrid retrieval + RRF"]
+    V --> H
+    H --> R["PyTorch cross-encoder reranker"]
+    A --> M["US market data + calculations"]
+    A --> L["Local structured agent"]
+    R --> L
+    M --> L
+    L --> O["Evidence + inference + limitations + trace"]
+```
+
+Citation metadata remains server-owned. PDFs retain native page numbers. SEC HTML records its CIK, accession number, primary document and original archive URL, and uses explicit HTML passage locators because the source does not have stable native pages.
+
 ## Main Components
 
 - `download_data.py` and `batch_download_all_a.py`

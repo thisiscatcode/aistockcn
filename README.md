@@ -37,8 +37,9 @@ The US workspace is served by a dedicated `us-market-api`. It reads the existing
 ## Research Copilot capabilities
 
 - Search and select companies from the existing US equity universe.
+- Sync the latest 10-K, 10-Q and 8-K filings directly from the official SEC EDGAR archive, with no paid data API key.
 - Upload annual reports and company filings as PDFs.
-- Preserve document, filename and page metadata throughout ingestion and retrieval.
+- Preserve SEC accession lineage, original URLs and honest source locators throughout ingestion and retrieval. PDFs use native page numbers; SEC HTML uses passage locators and is never presented as paginated.
 - Ask company-specific questions in natural language with streamed progress events.
 - Compare two or three companies through a structured multi-step agent workflow.
 - Query market data and run deterministic return and volatility calculations through server-side tools.
@@ -64,11 +65,13 @@ flowchart LR
     W --> A["FastAPI research API"]
     A --> L["Structured agent planner and synthesis\nOllama qwen2.5:3b"]
     A --> M["AiStockCN US market data\nPostgreSQL"]
+    A --> S["SEC EDGAR\nsubmissions + filing archive"]
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder reranker"]
     A --> Q["PostgreSQL ingestion queue\nSKIP LOCKED"]
-    Q --> K["Background PDF worker"]
-    K --> V["Pages, chunks and vectors\nPostgreSQL / pgvector"]
+    Q --> K["Background document worker"]
+    S --> K
+    K --> V["Source locators, chunks and vectors\nPostgreSQL / pgvector"]
     V --> H
     A --> O["Structured logs, traces\nand evaluation runs"]
 ```
@@ -91,7 +94,8 @@ The operational product has a second isolated path: the main Next.js frontend ca
 | --- | --- |
 | FastAPI and streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
 | Multi-step agent and tool calling | `apps/api/app/services/research.py` |
-| PDF ingestion and background work | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
+| SEC discovery and filing sync | `apps/api/app/services/research_sec.py` |
+| PDF/HTML ingestion and background work | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
 | Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
 | PyTorch reranking | `apps/api/app/services/research_models.py` |
 | Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
@@ -107,9 +111,9 @@ The operational product has a second isolated path: the main Next.js frontend ca
 ## Typical research workflow
 
 1. Select a US-listed company.
-2. Upload an annual report or company filing and wait for indexing to complete.
+2. Sync the latest SEC filings, or upload a PDF, and wait for indexing to complete.
 3. Ask about revenue, profitability, risks or changes in management commentary.
-4. Inspect the cited filename, page and original passage alongside the model inference.
+4. Inspect the cited filename, exact page or HTML passage locator, and original source alongside the model inference.
 5. Compare two or three companies using the same document, market-data and calculation tools.
 6. Review retrieval quality through the evaluation page when maintaining or changing the search pipeline.
 
@@ -160,8 +164,8 @@ Local setup connects to existing platform services and does not seed market data
 cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 
-docker build -t aistockcn-research-api:20260810-mvp -f apps/api/Dockerfile.research .
-docker build -t aistockcn-research-web:20260810-mvp -f apps/web/Dockerfile .
+docker build -t aistockcn-research-api:20260813-sec-v1 -f apps/api/Dockerfile.research .
+docker build -t aistockcn-research-web:20260813-sec-v1 -f apps/web/Dockerfile .
 docker compose up -d research-api research-worker panel-web-research
 docker compose ps research-api research-worker panel-web-research
 ```

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -12,9 +13,66 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.services import research as research_service
 from app.services import research_chunking as research_chunking_service
+from app.services import research_sec as research_sec_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_sec_html_extraction_omits_hidden_and_executable_content(self) -> None:
+        payload = b"""
+        <html><body>
+          <h1>Risk Factors</h1>
+          <script>secret_script_text()</script>
+          <div style="display: none"><span>hidden fact</span></div>
+          <ix:hidden><span>hidden xbrl fact</span></ix:hidden>
+          <p>Revenue declined because demand softened.</p>
+        </body></html>
+        """
+        text = research_sec_service.extract_sec_filing_text(payload)
+        self.assertIn("Risk Factors", text)
+        self.assertIn("Revenue declined because demand softened.", text)
+        self.assertNotIn("secret_script_text", text)
+        self.assertNotIn("hidden fact", text)
+        self.assertNotIn("hidden xbrl fact", text)
+
+    def test_sec_discovery_builds_official_archive_lineage(self) -> None:
+        submissions = {
+            "name": "Example Corporation",
+            "filings": {
+                "recent": {
+                    "accessionNumber": ["0000320193-25-000079", "0000320193-25-000057"],
+                    "filingDate": ["2025-10-31", "2025-08-01"],
+                    "reportDate": ["2025-09-27", "2025-06-28"],
+                    "form": ["10-K", "10-Q"],
+                    "primaryDocument": ["example-20250927.htm", "example-20250628.htm"],
+                    "primaryDocDescription": ["10-K", "10-Q"],
+                    "isXBRL": [1, 1],
+                    "isInlineXBRL": [1, 1],
+                }
+            },
+        }
+        with (
+            mock.patch.object(research_sec_service, "_ticker_cik_map", return_value={"AAPL": "0000320193"}),
+            mock.patch.object(
+                research_sec_service,
+                "_sec_request",
+                return_value=json.dumps(submissions).encode("utf-8"),
+            ) as request_mock,
+        ):
+            result = research_sec_service.discover_sec_filings(
+                symbol="aapl", forms=["10-k", "10-q"], limit_per_form=1
+            )
+
+        self.assertEqual(result["symbol"], "AAPL")
+        self.assertEqual(len(result["filings"]), 2)
+        annual = result["filings"][0]
+        self.assertEqual(annual["accession_number"], "0000320193-25-000079")
+        self.assertEqual(annual["fiscal_year"], 2025)
+        self.assertEqual(
+            annual["source_url"],
+            "https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/example-20250927.htm",
+        )
+        self.assertIn("CIK0000320193.json", request_mock.call_args.args[0])
+
     def test_page_chunking_preserves_page_boundaries_and_overlap(self) -> None:
         text = " ".join(f"token-{index}" for index in range(500))
         chunks = research_chunking_service.chunk_page_text(text, chunk_size=180, overlap=30)
@@ -59,7 +117,20 @@ class ResearchServiceTests(unittest.TestCase):
             mock.patch.object(
                 research_service,
                 "_retrieve_document_evidence",
-                return_value={"results": [], "retrieval": {"indexed_documents": 0}},
+                return_value={
+                    "results": [{
+                        "chunk_id": "chunk-sec-1",
+                        "document_id": "doc-sec-1",
+                        "content": "Revenue increased year over year.",
+                        "filename": "NVDA-10-K.html",
+                        "page_number": 0,
+                        "locator": "SEC filing HTML · passage 14",
+                        "locator_type": "html_passage",
+                        "native_page_numbers": False,
+                        "source_url": "https://www.sec.gov/example.htm",
+                        "reranker_score": 0.91,
+                    }], "retrieval": {"indexed_documents": 1}
+                },
             ),
             mock.patch.object(
                 research_service,
@@ -78,7 +149,9 @@ class ResearchServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(result["symbol"], "NVDA")
-        self.assertEqual(result["document_evidence"], [])
+        self.assertEqual(len(result["document_evidence"]), 1)
+        self.assertEqual(result["document_evidence"][0]["locator"], "SEC filing HTML · passage 14")
+        self.assertIsNone(result["document_evidence"][0]["page_number"])
         self.assertEqual(len(result["data_evidence"]), 3)
         self.assertEqual(result["model_inference"], ["Momentum is positive."])
         self.assertEqual([step["tool"] for step in result["agent_steps"]], [
@@ -105,6 +178,36 @@ class ResearchServiceTests(unittest.TestCase):
             )
         self.assertEqual(plan["tools"], ["company_lookup", "hybrid_document_search"])
         self.assertNotIn("shell_exec", plan["tools"])
+
+    def test_synthesis_compacts_model_context_without_changing_evidence(self) -> None:
+        passages = [
+            {
+                "filename": f"filing-{index}.html",
+                "locator": f"SEC filing HTML · passage {index}",
+                "source_url": "https://www.sec.gov/example.htm",
+                "content": f"evidence-{index}-" + ("x" * 1400),
+            }
+            for index in range(6)
+        ]
+        with mock.patch.object(
+            research_service,
+            "_call_local_json_model",
+            return_value={"answer": "Grounded answer.", "model_inference": []},
+        ) as model_mock:
+            result = research_service._generate_research_synthesis(
+                question="What changed?",
+                company={"symbol": "AAPL"},
+                calculations={},
+                document_context=passages,
+                settings=SimpleNamespace(),
+            )
+
+        prompt = model_mock.call_args.kwargs["prompt"]
+        self.assertEqual(result["answer"], "Grounded answer.")
+        self.assertIn("evidence-0-", prompt)
+        self.assertIn("evidence-3-", prompt)
+        self.assertNotIn("evidence-4-", prompt)
+        self.assertLess(len(prompt), 5000)
 
 
 if __name__ == "__main__":

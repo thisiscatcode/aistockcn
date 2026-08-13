@@ -23,6 +23,7 @@ from app.services.research_documents import (
     ResearchDocumentError,
     get_research_document,
     get_research_document_file,
+    index_research_document_safely,
     index_pdf_document_safely,
     list_research_documents,
     save_uploaded_pdf,
@@ -30,6 +31,7 @@ from app.services.research_documents import (
 from app.services.research_evaluation import list_evaluation_runs, run_reranker_evaluation
 from app.services.research_observability import record_agent_run
 from app.services.research_retrieval import retrieve_document_evidence
+from app.services.research_sec import discover_sec_filings, sync_sec_filings
 
 
 router = APIRouter(prefix="/api/research", tags=["research"])
@@ -49,6 +51,12 @@ class ResearchRetrieveRequest(BaseModel):
 class ResearchComparisonRequest(BaseModel):
     symbols: list[str] = Field(min_length=2, max_length=3)
     question: str = Field(min_length=1, max_length=800)
+
+
+class ResearchSECFilingRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=15)
+    forms: list[str] = Field(default_factory=lambda: ["10-K", "10-Q", "8-K"], min_length=1, max_length=3)
+    limit_per_form: int = Field(default=1, ge=1, le=5)
 
 
 @router.get("/documents")
@@ -91,6 +99,42 @@ async def upload_research_document(
         raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
 
 
+@router.post("/documents/sec/discover")
+def discover_research_sec_filings(request: ResearchSECFilingRequest) -> dict[str, object]:
+    try:
+        return discover_sec_filings(
+            symbol=request.symbol,
+            forms=request.forms,
+            limit_per_form=request.limit_per_form,
+        )
+    except ResearchDocumentError as exc:
+        code = str(exc)
+        status_code = 404 if code == "sec_cik_not_found" else 502 if code == "sec_request_failed" else 400
+        raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
+@router.post("/documents/sec/sync", status_code=status.HTTP_202_ACCEPTED)
+def sync_research_sec_filings(
+    request: ResearchSECFilingRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, object]:
+    try:
+        result = sync_sec_filings(
+            symbol=request.symbol,
+            forms=request.forms,
+            limit_per_form=request.limit_per_form,
+        )
+        if get_settings().research_inline_indexing:
+            for document in result.get("documents", []):
+                if not document.get("duplicate") and document.get("status") == "uploaded":
+                    background_tasks.add_task(index_research_document_safely, str(document["id"]))
+        return result
+    except ResearchDocumentError as exc:
+        code = str(exc)
+        status_code = 404 if code == "sec_cik_not_found" else 502 if code == "sec_request_failed" else 400
+        raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
 @router.get("/documents/{document_id}")
 def research_document(document_id: str) -> dict[str, object]:
     try:
@@ -104,11 +148,11 @@ def research_document(document_id: str) -> dict[str, object]:
 @router.get("/documents/{document_id}/file")
 def research_document_file(document_id: str) -> FileResponse:
     try:
-        path, filename = get_research_document_file(document_id)
+        path, filename, media_type = get_research_document_file(document_id)
         safe_filename = filename.replace('"', "")
         return FileResponse(
             path,
-            media_type="application/pdf",
+            media_type=media_type,
             headers={"Content-Disposition": f'inline; filename="{safe_filename}"'},
         )
     except ResearchDocumentError as exc:

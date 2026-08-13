@@ -132,6 +132,8 @@ def root() -> dict[str, object]:
             "POST /api/research/ask",
             "GET /api/research/documents",
             "POST /api/research/documents/upload",
+            "POST /api/research/documents/sec/discover",
+            "POST /api/research/documents/sec/sync",
             "POST /api/research/retrieve",
         ],
     }

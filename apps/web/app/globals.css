@@ -6734,6 +6734,57 @@ select {
   padding: 0 16px 16px;
 }
 
+.research-sec-sync {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 9px;
+  background: rgba(8, 30, 48, 0.62);
+}
+
+.research-sec-sync > div {
+  display: grid;
+  gap: 2px;
+}
+
+.research-sec-sync strong {
+  color: #e7f8fb;
+  font-size: 0.9rem;
+}
+
+.research-sec-sync small {
+  color: #91a8bd;
+  font-size: 0.78rem;
+}
+
+.research-sec-sync button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(34, 211, 238, 0.34);
+  border-radius: 8px;
+  background: rgba(14, 159, 186, 0.15);
+  color: #b8f2f7;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.research-sec-sync button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.research-success {
+  margin: 0;
+  color: #72ddb2;
+  font-size: 0.82rem;
+}
+
 .research-document-upload {
   display: grid;
   grid-template-columns: minmax(220px, 1.5fr) minmax(170px, 0.8fr) 110px auto;
@@ -6808,6 +6859,19 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 8px;
   background: rgba(4, 14, 29, 0.55);
+}
+
+.research-document-list article > a {
+  grid-column: 1 / -1;
+  width: fit-content;
+  color: #7bdde8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.research-document-list article > a:hover {
+  text-decoration: underline;
 }
 
 .research-document-list article > div:first-child {
@@ -7291,6 +7355,11 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .research-sec-sync {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .research-document-stats {
     flex-wrap: wrap;
   }
@@ -7312,6 +7381,33 @@ select {
   background: rgba(255, 253, 248, 0.92);
   color: var(--text);
   box-shadow: 0 14px 34px rgba(92, 69, 37, 0.1);
+}
+
+.theme-shell-root[data-theme="bright"] .research-sec-sync {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: #edf8f5;
+}
+
+.theme-shell-root[data-theme="bright"] .research-sec-sync strong {
+  color: #283a34;
+}
+
+.theme-shell-root[data-theme="bright"] .research-sec-sync small {
+  color: #62766e;
+}
+
+.theme-shell-root[data-theme="bright"] .research-sec-sync button {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: #ffffff;
+  color: #0f766e;
+}
+
+.theme-shell-root[data-theme="bright"] .research-success {
+  color: #0f6b55;
+}
+
+.theme-shell-root[data-theme="bright"] .research-document-list article > a {
+  color: #0f766e;
 }
 
 .theme-shell-root[data-theme="bright"] .research-home-search > div,

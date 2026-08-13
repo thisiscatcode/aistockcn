@@ -59,6 +59,14 @@ create index if not exists research_documents_symbol_idx
   on research_documents(symbol, filing_date desc nulls last, created_at desc);
 create index if not exists research_documents_status_idx on research_documents(status);
 alter table research_documents add column if not exists object_key text;
+alter table research_documents add column if not exists source_format text not null default 'pdf';
+alter table research_documents add column if not exists native_page_numbers boolean not null default true;
+alter table research_documents add column if not exists sec_cik text;
+alter table research_documents add column if not exists sec_accession_number text;
+alter table research_documents add column if not exists sec_primary_document text;
+alter table research_documents add column if not exists source_metadata jsonb not null default '{}'::jsonb;
+create unique index if not exists research_documents_sec_accession_idx
+  on research_documents(sec_accession_number) where sec_accession_number is not null;
 
 create table if not exists research_document_pages (
   id text primary key,
@@ -86,6 +94,8 @@ create table if not exists research_document_chunks (
 
 create index if not exists research_chunks_document_idx
   on research_document_chunks(document_id, page_number, chunk_index);
+alter table research_document_chunks add column if not exists locator_type text not null default 'page';
+alter table research_document_chunks add column if not exists locator text;
 create index if not exists research_chunks_search_idx
   on research_document_chunks using gin(search_vector);
 create index if not exists research_chunks_content_trgm_idx
@@ -138,18 +148,20 @@ def _s3_client(settings: Settings) -> Any:
     return boto3.client("s3", region_name=settings.research_aws_region)
 
 
-def _upload_pdf_to_s3(*, settings: Settings, path: Path, object_key: str) -> None:
+def _upload_document_to_s3(
+    *, settings: Settings, path: Path, object_key: str, content_type: str
+) -> None:
     if not settings.research_s3_bucket:
         return
     _s3_client(settings).upload_file(
         str(path),
         settings.research_s3_bucket,
         object_key,
-        ExtraArgs={"ContentType": "application/pdf", "ServerSideEncryption": "AES256"},
+        ExtraArgs={"ContentType": content_type, "ServerSideEncryption": "AES256"},
     )
 
 
-def _ensure_local_pdf(*, settings: Settings, document: dict[str, Any]) -> Path:
+def _ensure_local_document(*, settings: Settings, document: dict[str, Any]) -> Path:
     path = Path(document["storage_path"])
     if path.exists():
         return path
@@ -244,13 +256,19 @@ async def save_uploaded_pdf(
                 return {**dict(existing), "duplicate": True}
             try:
                 if object_key:
-                    _upload_pdf_to_s3(settings=settings, path=storage_path, object_key=object_key)
+                    _upload_document_to_s3(
+                        settings=settings,
+                        path=storage_path,
+                        object_key=object_key,
+                        content_type="application/pdf",
+                    )
                 cur.execute(
                     """
                     insert into research_documents (
                       id, symbol, filename, document_type, filing_date, fiscal_year,
-                      source_url, storage_path, object_key, sha256, size_bytes, status
-                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'uploaded')
+                      source_url, storage_path, object_key, sha256, size_bytes, status,
+                      source_format, native_page_numbers
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'uploaded', 'pdf', true)
                     returning *
                     """,
                     [
@@ -281,7 +299,7 @@ async def save_uploaded_pdf(
                 raise
 
 
-def index_pdf_document(document_id: str) -> dict[str, Any]:
+def index_research_document(document_id: str) -> dict[str, Any]:
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("select * from research_documents where id = %s", [document_id])
@@ -296,20 +314,38 @@ def index_pdf_document(document_id: str) -> dict[str, Any]:
 
     try:
         settings = get_settings()
-        pdf_path = _ensure_local_pdf(settings=settings, document=dict(document))
+        source_path = _ensure_local_document(settings=settings, document=dict(document))
+        source_format = str(document.get("source_format") or "pdf")
         pages: list[tuple[Any, ...]] = []
         chunks: list[tuple[Any, ...]] = []
-        with fitz.open(pdf_path) as pdf:
-            for page_index, page in enumerate(pdf, start=1):
-                text = page.get_text("text").strip()
-                pages.append((str(uuid4()), document_id, page_index, text, len(text)))
-                for chunk_index, content in enumerate(chunk_page_text(text)):
-                    chunks.append(
-                        (str(uuid4()), document_id, page_index, chunk_index, content, len(content))
+        if source_format == "pdf":
+            with fitz.open(source_path) as pdf:
+                for page_index, page in enumerate(pdf, start=1):
+                    text = page.get_text("text").strip()
+                    pages.append((str(uuid4()), document_id, page_index, text, len(text)))
+                    for chunk_index, content in enumerate(chunk_page_text(text)):
+                        chunks.append(
+                            (
+                                str(uuid4()), document_id, page_index, chunk_index, content, len(content),
+                                "page", f"page {page_index}",
+                            )
+                        )
+        elif source_format == "sec_html":
+            from app.services.research_sec import extract_sec_filing_text
+
+            text = extract_sec_filing_text(source_path.read_bytes())
+            for chunk_index, content in enumerate(chunk_page_text(text)):
+                chunks.append(
+                    (
+                        str(uuid4()), document_id, 0, chunk_index, content, len(content),
+                        "html_passage", f"SEC filing HTML · passage {chunk_index + 1}",
                     )
+                )
+        else:
+            raise ResearchDocumentError("unsupported_document_format")
 
         if not chunks:
-            raise ResearchDocumentError("pdf_has_no_extractable_text")
+            raise ResearchDocumentError("document_has_no_extractable_text")
 
         embeddings = embed_texts([str(chunk[4]) for chunk in chunks])
         if len(embeddings) != len(chunks):
@@ -337,8 +373,8 @@ def index_pdf_document(document_id: str) -> dict[str, Any]:
                     """
                     insert into research_document_chunks (
                       id, document_id, page_number, chunk_index, content, char_count,
-                      embedding, embedding_model
-                    ) values (%s, %s, %s, %s, %s, %s, %s::vector, %s)
+                      locator_type, locator, embedding, embedding_model
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s::vector, %s)
                     """,
                     embedded_chunks,
                 )
@@ -350,7 +386,7 @@ def index_pdf_document(document_id: str) -> dict[str, Any]:
                     where id = %s
                     returning *
                     """,
-                    [len(pages), len(chunks), document_id],
+                    [len(pages) if source_format == "pdf" else None, len(chunks), document_id],
                 )
                 result = dict(cur.fetchone())
             conn.commit()
@@ -370,15 +406,24 @@ def index_pdf_document(document_id: str) -> dict[str, Any]:
         raise
 
 
-def index_pdf_document_safely(document_id: str) -> None:
+def index_research_document_safely(document_id: str) -> None:
     try:
-        index_pdf_document(document_id)
+        index_research_document(document_id)
     except Exception:
         return
 
 
+def index_pdf_document(document_id: str) -> dict[str, Any]:
+    """Backward-compatible entry point for existing callers."""
+    return index_research_document(document_id)
+
+
+def index_pdf_document_safely(document_id: str) -> None:
+    index_research_document_safely(document_id)
+
+
 def claim_next_uploaded_document() -> str | None:
-    """Atomically claim one queued PDF so multiple workers cannot process it twice."""
+    """Atomically claim one queued source document so workers cannot process it twice."""
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -421,7 +466,9 @@ def list_research_documents(*, symbol: str | None = None) -> dict[str, Any]:
                 f"""
                 select id, symbol, filename, document_type, filing_date, fiscal_year,
                        source_url, sha256, size_bytes, page_count, chunk_count, status,
-                       error_message, created_at, updated_at
+                       error_message, source_format, native_page_numbers, sec_cik,
+                       sec_accession_number, sec_primary_document, source_metadata,
+                       created_at, updated_at
                 from research_documents
                 {where}
                 order by filing_date desc nulls last, created_at desc
@@ -440,7 +487,9 @@ def get_research_document(document_id: str) -> dict[str, Any]:
                 """
                 select id, symbol, filename, document_type, filing_date, fiscal_year,
                        source_url, sha256, size_bytes, page_count, chunk_count, status,
-                       error_message, created_at, updated_at
+                       error_message, source_format, native_page_numbers, sec_cik,
+                       sec_accession_number, sec_primary_document, source_metadata,
+                       created_at, updated_at
                 from research_documents where id = %s
                 """,
                 [document_id],
@@ -451,7 +500,7 @@ def get_research_document(document_id: str) -> dict[str, Any]:
     return dict(row)
 
 
-def get_research_document_file(document_id: str) -> tuple[Path, str]:
+def get_research_document_file(document_id: str) -> tuple[Path, str, str]:
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("select * from research_documents where id = %s", [document_id])
@@ -459,5 +508,6 @@ def get_research_document_file(document_id: str) -> tuple[Path, str]:
     if not row:
         raise ResearchDocumentError("document_not_found")
     document = dict(row)
-    path = _ensure_local_pdf(settings=get_settings(), document=document)
-    return path, str(document["filename"])
+    path = _ensure_local_document(settings=get_settings(), document=document)
+    media_type = "application/pdf" if str(document.get("source_format") or "pdf") == "pdf" else "text/html"
+    return path, str(document["filename"]), media_type

@@ -51,6 +51,8 @@ class Settings:
     research_inline_indexing: bool
     research_s3_bucket: str | None
     research_aws_region: str
+    research_sec_user_agent: str
+    research_sec_request_interval_seconds: float
     paper_trading_top_k: int
     paper_trading_min_score: float
     paper_trading_lot_size: int
@@ -208,6 +210,14 @@ def get_settings() -> Settings:
         research_inline_indexing=_bool_env("RESEARCH_INLINE_INDEXING", True),
         research_s3_bucket=(os.getenv("RESEARCH_S3_BUCKET") or "").strip() or None,
         research_aws_region=(os.getenv("AWS_REGION", "eu-west-2").strip() or "eu-west-2"),
+        research_sec_user_agent=(
+            os.getenv("RESEARCH_SEC_USER_AGENT", "AiStockCN research@aistockcn.com").strip()
+            or "AiStockCN research@aistockcn.com"
+        ),
+        research_sec_request_interval_seconds=max(
+            _float_env("RESEARCH_SEC_REQUEST_INTERVAL_SECONDS", 0.12),
+            0.10,
+        ),
         paper_trading_top_k=max(_int_env("PAPER_TRADING_TOP_K", 5), 1),
         paper_trading_min_score=_float_env("PAPER_TRADING_MIN_SCORE", 0.5),
         paper_trading_lot_size=max(_int_env("PAPER_TRADING_LOT_SIZE", 100), 1),

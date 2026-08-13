@@ -837,8 +837,14 @@ export type ResearchEvidence = {
   locator: string;
   as_of?: string | null;
   document_id?: string;
-  page_number?: number;
+  page_number?: number | null;
   source_url?: string | null;
+  source_format?: "pdf" | "sec_html" | string;
+  native_page_numbers?: boolean;
+  sec_cik?: string | null;
+  sec_accession_number?: string | null;
+  sec_primary_document?: string | null;
+  source_metadata?: Record<string, unknown>;
   reranker_score?: number;
 };
 
@@ -917,6 +923,12 @@ export type ResearchDocument = {
   filing_date?: string | null;
   fiscal_year?: number | null;
   source_url?: string | null;
+  source_format?: "pdf" | "sec_html" | string;
+  native_page_numbers?: boolean;
+  sec_cik?: string | null;
+  sec_accession_number?: string | null;
+  sec_primary_document?: string | null;
+  source_metadata?: Record<string, unknown>;
   sha256: string;
   size_bytes: number;
   page_count?: number | null;
