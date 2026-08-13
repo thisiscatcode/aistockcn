@@ -19,9 +19,9 @@ Operational state is deliberately separated from the customer research workflow.
 
 ## US product interface
 
-The US equity product uses a dedicated workstation shell and does not alter the A-share interface. Global US navigation lives in one persistent left rail; the top bar contains only the current page title and New York time. Company Research has one secondary navigation level for the selected security: Summary, Ask AI, Financials, Filings, Changes and Compare. This prevents product navigation and company tasks from appearing as two competing headers.
+The US equity product uses a dedicated workstation shell and does not alter the A-share interface. Global US navigation lives in one persistent left rail. Repeated page-title chrome is omitted, and New York time remains available in the sidebar account area. Company Research has one secondary navigation level for the selected security: Summary, Ask AI, Financials, Filings, Changes and Compare. This prevents product navigation and company tasks from appearing as two competing headers.
 
-The interface uses a neutral cool-grey canvas, white analytical surfaces, navy navigation, blue primary actions and conventional green/red financial state colours. Tables, inputs and buttons share one compact scale across Research, Market Overview, Explorer, Picks, Paper and US administration. On narrow screens the left rail becomes a horizontally scrollable bottom navigation while the company task tabs remain independently scrollable.
+The interface uses a neutral cool-grey canvas, white analytical surfaces and navy navigation. Functional colour is consistent: blue for market context and primary actions, violet for AI, cyan for financial data, amber for filings, red for risks and disclosure changes, and green for comparison or positive status. Tables, inputs and buttons share one compact scale across Research, Market Overview, Explorer, Picks, Paper and US administration. On narrow screens the left rail becomes a horizontally scrollable bottom navigation, New York time moves to a thin utility row, and company task tabs remain independently scrollable.
 
 ## Deployment status
 

@@ -34,10 +34,10 @@ export function Shell({
   const navItem = (href: Route, label: string, icon?: string) => ({ href, label, icon });
   const businessNavItems: Array<{ href: Route; label: string; icon?: string }> = market === "US"
     ? [
-        navItem("/us/overview" as Route, copy.shell.nav.overview, "O"),
-        navItem("/research" as Route, copy.shell.nav.research, "AI"),
-        navItem("/us/data" as Route, copy.shell.nav.data, "E"),
-        navItem("/us/picks" as Route, copy.shell.nav.picks, "P"),
+        navItem("/us/overview" as Route, copy.shell.nav.overview, "◫"),
+        navItem("/research" as Route, copy.shell.nav.research, "✦"),
+        navItem("/us/data" as Route, copy.shell.nav.data, "⌕"),
+        navItem("/us/picks" as Route, copy.shell.nav.picks, "◆"),
         navItem("/us/paper" as Route, copy.shell.nav.paper, "$")
       ]
     : [
@@ -51,10 +51,10 @@ export function Shell({
     ? market === "US"
       ? [
           ...businessNavItems,
-          navItem("/us/system-monitor" as Route, "System", "S"),
-          navItem("/us/batch" as Route, "Data Jobs", "J"),
-          navItem("/us/models" as Route, "Models", "M"),
-          navItem("/admin", copy.shell.nav.admin, "A")
+          navItem("/us/system-monitor" as Route, "System", "●"),
+          navItem("/us/batch" as Route, "Data Jobs", "↻"),
+          navItem("/us/models" as Route, "Models", "◇"),
+          navItem("/admin", copy.shell.nav.admin, "⚙")
         ]
       : [...businessNavItems, navItem("/admin", copy.shell.nav.admin)]
     : businessNavItems;
@@ -73,6 +73,9 @@ export function Shell({
             <NavTabs items={navItems} />
 
             <div className="us-terminal-sidebar-footer">
+              <div className="us-terminal-sidebar-clock">
+                <ShanghaiTime locale={locale} label="New York" timeZone="America/New_York" />
+              </div>
               <MarketSwitcher market={market} />
               <div className="us-terminal-user">
                 <span className="us-terminal-avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
@@ -86,16 +89,9 @@ export function Shell({
           </aside>
 
           <div className="us-terminal-workspace">
-            <header className="us-terminal-topbar">
-              <div className="us-terminal-heading">
-                <span>US Stocks</span>
-                <h1>{title}</h1>
-                {subtitle ? <p>{subtitle}</p> : null}
-              </div>
-              <div className="us-terminal-clock">
-                <ShanghaiTime locale={locale} label="New York" timeZone="America/New_York" />
-              </div>
-            </header>
+            <div className="us-terminal-mobile-clock">
+              <ShanghaiTime locale={locale} label="New York" timeZone="America/New_York" />
+            </div>
             <main className="page-content us-terminal-content">{children}</main>
           </div>
         </div>

@@ -28,12 +28,12 @@ export const metadata: Metadata = {
 };
 
 const RESEARCH_VIEWS = [
-  ["overview", "Summary"],
-  ["ask", "Ask AI"],
-  ["financials", "Financials"],
-  ["filings", "Filings"],
-  ["changes", "Changes"],
-  ["compare", "Compare"]
+  ["overview", "Summary", "◫"],
+  ["ask", "Ask AI", "✦"],
+  ["financials", "Financials", "▥"],
+  ["filings", "Filings", "▤"],
+  ["changes", "Changes", "↕"],
+  ["compare", "Compare", "⇄"]
 ] as const;
 
 type ResearchView = typeof RESEARCH_VIEWS[number][0];
@@ -223,11 +223,12 @@ export default async function ResearchPage({
             </section>
 
             <nav className="research-view-tabs" aria-label={`${company.symbol} research sections`}>
-              {RESEARCH_VIEWS.map(([key, label]) => (
+              {RESEARCH_VIEWS.map(([key, label, icon]) => (
                 <Link key={key} href={viewHref(company.symbol, key)} className={view === key ? "is-active" : undefined} aria-current={view === key ? "page" : undefined}>
+                  <i className="research-view-icon" aria-hidden="true">{icon}</i>
                   {label}
-                  {key === "filings" && indexedDocuments.length ? <span>{indexedDocuments.length}</span> : null}
-                  {key === "changes" && filingChangeResult.rows ? <span>{filingChangeResult.rows}</span> : null}
+                  {key === "filings" && indexedDocuments.length ? <span className="research-view-count">{indexedDocuments.length}</span> : null}
+                  {key === "changes" && filingChangeResult.rows ? <span className="research-view-count">{filingChangeResult.rows}</span> : null}
                 </Link>
               ))}
             </nav>
@@ -241,7 +242,7 @@ export default async function ResearchPage({
                       <input type="hidden" name="view" value="ask" />
                       <label className="sr-only" htmlFor="research-overview-question">Ask about {company.symbol}</label>
                       <input id="research-overview-question" name="question" type="search" placeholder={`Ask about ${company.symbol}: revenue, margins, risks or guidance`} autoComplete="off" />
-                      <button type="submit">Ask AI</button>
+                      <button type="submit"><span aria-hidden="true">✦</span> Ask AI</button>
                     </form>
                     <div className="research-query-shortcuts" aria-label="Common research questions">
                       {OVERVIEW_QUESTIONS.map((question, index) => (
