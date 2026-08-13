@@ -1024,6 +1024,10 @@ export type ResearchCoverageSummary = {
   generated_at: string;
   target: number;
   status_counts: Record<string, number>;
+  job_status_counts: Record<string, number>;
+  document_status_counts: Record<string, number>;
+  chunk_count: number;
+  financial_fact_count: number;
   queued_documents: number;
   companies: ResearchCompanyCoverage[];
 };

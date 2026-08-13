@@ -3,7 +3,7 @@ import { MetricCard, Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
 import { getModelOverview } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatDateRange, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages, type PanelLocale } from "@/lib/i18n";
 import { ProfileSelector } from "./profile-selector";
@@ -172,7 +172,7 @@ export default async function ModelsPage({
 }: {
   searchParams?: Promise<{ profile?: string }>;
 }) {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const copy = getMessages(user.locale);
   const params = (await searchParams) ?? {};
   const requestedProfile = typeof params.profile === "string" ? params.profile : undefined;

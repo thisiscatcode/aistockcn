@@ -476,6 +476,24 @@ def get_coverage_summary(*, limit: int = 100) -> dict[str, Any]:
             status_counts = {str(row["status"]): int(row["count"]) for row in cur.fetchall()}
             cur.execute(
                 """
+                select status, count(*)::integer as count
+                from research_coverage_jobs group by status order by status
+                """
+            )
+            job_status_counts = {str(row["status"]): int(row["count"]) for row in cur.fetchall()}
+            cur.execute(
+                """
+                select status, count(*)::integer as count
+                from research_documents group by status order by status
+                """
+            )
+            document_status_counts = {str(row["status"]): int(row["count"]) for row in cur.fetchall()}
+            cur.execute("select count(*)::bigint as count from research_document_chunks")
+            chunk_count = int(cur.fetchone()["count"])
+            cur.execute("select count(*)::bigint as count from research_financial_facts")
+            financial_fact_count = int(cur.fetchone()["count"])
+            cur.execute(
+                """
                 select c.*, m.stock_name, m.market,
                        j.status as job_status, j.attempt_count, j.last_error_code as job_error_code
                 from research_company_coverage c
@@ -501,6 +519,10 @@ def get_coverage_summary(*, limit: int = 100) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "target": target,
         "status_counts": status_counts,
+        "job_status_counts": job_status_counts,
+        "document_status_counts": document_status_counts,
+        "chunk_count": chunk_count,
+        "financial_fact_count": financial_fact_count,
         "queued_documents": queued_documents,
         "companies": companies,
     }

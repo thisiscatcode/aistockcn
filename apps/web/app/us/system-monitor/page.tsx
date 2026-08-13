@@ -1,14 +1,14 @@
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { getUsPipelineStatus } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatDate, formatNumber } from "@/lib/format";
 import { UsShell } from "../us-components";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsSystemMonitorPage() {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const status = await getUsPipelineStatus();
   const coverage = status.coverage;
 

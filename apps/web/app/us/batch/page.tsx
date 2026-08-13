@@ -1,13 +1,13 @@
 import { MetricCard, Panel } from "@/components/cards";
 import { getUsPipelineStatus } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { UsShell } from "../us-components";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsBatchPage() {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const status = await getUsPipelineStatus();
   const latestByLane = new Map(status.recent_runs.map((run) => [run.lane, run]));
 

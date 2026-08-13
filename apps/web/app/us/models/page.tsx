@@ -1,13 +1,13 @@
 import { MetricCard, Panel } from "@/components/cards";
 import { getUsModelStatus } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatDate, formatNumber } from "@/lib/format";
 import { GateChecklist, UsShell } from "../us-components";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsModelsPage() {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const model = await getUsModelStatus();
   const gate = model.gate;
   const progress = Math.min((gate.available_trading_dates / gate.required_trading_dates) * 100, 100);

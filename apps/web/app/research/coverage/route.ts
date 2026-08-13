@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ detail: "Forbidden" }, { status: 403 });
   const limit = request.nextUrl.searchParams.get("limit") ?? "100";
   try {
     const response = await fetch(

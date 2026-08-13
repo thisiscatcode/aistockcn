@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ detail: "Forbidden" }, { status: 403 });
   try {
     const response = await fetch(`${RESEARCH_API_BASE_URL}/api/research/evaluations`, { cache: "no-store" });
     return NextResponse.json(await response.json(), { status: response.status });
@@ -19,6 +20,7 @@ export async function GET() {
 export async function POST(_request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
+  if (user.role !== "admin") return NextResponse.json({ detail: "Forbidden" }, { status: 403 });
   try {
     const response = await fetch(`${RESEARCH_API_BASE_URL}/api/research/evaluations/run`, {
       method: "POST",

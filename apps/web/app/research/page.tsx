@@ -6,7 +6,6 @@ import { Shell } from "@/components/shell";
 import {
   getResearchCompanies,
   getResearchCompany,
-  getResearchCoverage,
   getResearchDocuments,
   getResearchFilingChangeRuns,
   getResearchFinancials,
@@ -16,17 +15,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { ResearchCopilot } from "./research-copilot";
 import { ResearchComparisonPanel } from "./research-comparison";
 import { ResearchDocuments } from "./research-documents";
-import { ResearchEvaluationPanel } from "./research-evaluation";
 import { ResearchFinancials } from "./research-financials";
 import { ResearchFilingChanges } from "./research-filing-changes";
-import { ResearchCoverageStatus } from "./research-coverage-status";
 
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Research Copilot — AiStockCN",
-  description: "Source-grounded research across live US equity data with SEC filing ingestion in progress."
+  description: "Source-grounded company research across SEC filings and live US equity data."
 };
 
 
@@ -76,13 +73,12 @@ export default async function ResearchPage({
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
-  const [searchResult, snapshot, documentResult, financialResult, filingChangeResult, coverageResult] = await Promise.all([
+  const [searchResult, snapshot, documentResult, financialResult, filingChangeResult] = await Promise.all([
     getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] })),
     symbol ? getResearchCompany(symbol, 30).catch(() => null) : Promise.resolve(null),
     symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] }),
     symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null),
-    symbol ? getResearchFilingChangeRuns(symbol).catch(() => ({ symbol, rows: 0, runs: [] })) : Promise.resolve({ symbol, rows: 0, runs: [] }),
-    getResearchCoverage(100).catch(() => null)
+    symbol ? getResearchFilingChangeRuns(symbol).catch(() => ({ symbol, rows: 0, runs: [] })) : Promise.resolve({ symbol, rows: 0, runs: [] })
   ]);
 
   const company = snapshot?.company;
@@ -90,8 +86,8 @@ export default async function ResearchPage({
 
   return (
     <Shell
-      title="Research Copilot"
-      subtitle="Investigate US companies with live market evidence, deterministic calculations and traceable model reasoning."
+      title="Company Research"
+      subtitle="Analyse company filings, financial performance and material changes with evidence you can verify."
       locale={user.locale}
       username={user.displayName}
       role={user.role}
@@ -122,8 +118,6 @@ export default async function ResearchPage({
           </div>
         </form>
       </section>
-
-      <ResearchCoverageStatus initialCoverage={coverageResult} selectedSymbol={symbol} />
 
       <section className="research-layout">
         <aside className="research-company-panel">
@@ -193,8 +187,6 @@ export default async function ResearchPage({
               <ResearchCopilot symbol={company.symbol} />
 
               <ResearchComparisonPanel symbol={company.symbol} />
-
-              <ResearchEvaluationPanel />
 
               <section className="research-evidence-panel">
                 <div className="research-section-heading">

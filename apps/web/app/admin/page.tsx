@@ -1,9 +1,11 @@
 import { AutoRefresh } from "@/components/auto-refresh";
+import Link from "next/link";
 import { MetricCard, Panel } from "@/components/cards";
 import { DataTable } from "@/components/table";
 import { Shell } from "@/components/shell";
+import { AdminNavigation } from "@/components/admin-navigation";
 import { getAdminSettings, getPipelineSummary, getBatchStatus, getDataSummary, getModelOverview, getPicks, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getAdminCatalog } from "@/lib/admin";
 import { formatBytes, formatDate, formatDateRange, formatDateTime, formatDisplayValue, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
@@ -62,7 +64,7 @@ function workflowArtifact(step: number, context: {
 }
 
 export default async function AdminPage() {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const isAdmin = user.role === "admin";
   const copy = getMessages(user.locale);
   const admin = getAdminCatalog(user.locale);
@@ -112,6 +114,15 @@ export default async function AdminPage() {
       username={user.username}
       role={user.role}
     >
+      <AdminNavigation active="platform" />
+      <section className="admin-workspace-links" aria-label="Operational workspaces">
+        <Link href="/system-monitor"><strong>A-share monitor</strong><span>Runtime and service health</span></Link>
+        <Link href="/batch"><strong>A-share data pipeline</strong><span>Batch progress and controls</span></Link>
+        <Link href="/models"><strong>A-share models</strong><span>Registry, validation and activation</span></Link>
+        <Link href="/us/system-monitor"><strong>US market monitor</strong><span>Runtime and service health</span></Link>
+        <Link href="/us/batch"><strong>US data pipeline</strong><span>Coverage and batch status</span></Link>
+        <Link href="/us/models"><strong>US model readiness</strong><span>Pipeline and model gates</span></Link>
+      </section>
       <AutoRefresh intervalSeconds={15} />
       <section className="metrics-grid">
         <MetricCard label="Active Universe" value={formatNumber(data.active_stock_count, user.locale)} hint="stock_list.parquet" />

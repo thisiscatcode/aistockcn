@@ -32,28 +32,24 @@ export function Shell({
   const copy = getMessages(locale);
   const isDark = tone === "dark";
   const navItem = (href: Route, label: string) => ({ href, label });
-  const navItems: Array<{ href: Route; label: string }> = market === "US"
+  const businessNavItems: Array<{ href: Route; label: string }> = market === "US"
     ? [
         navItem("/us/overview" as Route, copy.shell.nav.overview),
         navItem("/research" as Route, copy.shell.nav.research),
-        navItem("/us/system-monitor" as Route, copy.shell.nav.systemMonitor),
-        navItem("/us/batch" as Route, copy.shell.nav.batch),
         navItem("/us/data" as Route, copy.shell.nav.data),
-        navItem("/us/models" as Route, copy.shell.nav.models),
         navItem("/us/picks" as Route, copy.shell.nav.picks),
         navItem("/us/paper" as Route, copy.shell.nav.paper)
       ]
     : [
         navItem("/overview", copy.shell.nav.overview),
         navItem("/research" as Route, copy.shell.nav.research),
-        navItem("/system-monitor", copy.shell.nav.systemMonitor),
-        navItem("/batch", copy.shell.nav.batch),
         navItem("/data", copy.shell.nav.data),
-        navItem("/models", copy.shell.nav.models),
         navItem("/picks", copy.shell.nav.picks),
-        navItem("/paper", copy.shell.nav.paper),
-        navItem("/admin", copy.shell.nav.admin)
+        navItem("/paper", copy.shell.nav.paper)
       ];
+  const navItems = role === "admin"
+    ? [...businessNavItems, navItem("/admin", copy.shell.nav.admin)]
+    : businessNavItems;
 
   const content = (
     <div className={`shell${isDark ? " shell-dark" : ""}${compact ? " shell-compact" : ""}`}>

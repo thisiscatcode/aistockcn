@@ -2,7 +2,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
 import { getBatchStatus, getModelOverview, getPipelineRunStatus, getReferenceBatchStatus, getWorkflowStatus, type WorkflowRuntimeStep } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatBytes, formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
 import type { ReactNode } from "react";
@@ -270,7 +270,7 @@ export default async function BatchPage({
 }: {
   searchParams?: Promise<{ notice?: string; error?: string; target?: string }>;
 }) {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const copy = getMessages(user.locale);
   const [batchStatus, workflow, pipeline, referenceStatus] = await Promise.all([
     getBatchStatus(),

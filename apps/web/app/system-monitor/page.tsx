@@ -1,7 +1,7 @@
 import { MetricCard, Panel } from "@/components/cards";
 import { Shell } from "@/components/shell";
 import { getBatchLogs, getBatchStatus, getDataSummary, getModelOverview, getPicks, getPipelineRunStatus, getPipelineSummary, getReferenceBatchStatus, getWorkflowStatus } from "@/lib/api";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { formatBytes, formatDate, formatDateTime, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
 import type { ReactNode } from "react";
@@ -44,7 +44,7 @@ function datasetDate(snapshot: { date_min?: string | null; date_max?: string | n
 }
 
 export default async function OverviewPage() {
-  const user = await requireAuth();
+  const user = await requireAdmin();
   const copy = getMessages(user.locale);
 
   const [status, logs, data, model, picks, workflow, pipelineRun, referenceStatus, pipelineSummary] = await Promise.all([
