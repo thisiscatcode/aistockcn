@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -9,7 +9,8 @@ import {
   getResearchDocuments,
   getResearchFilingChangeRuns,
   getResearchFinancials,
-  type ResearchCompany
+  type ResearchCompany,
+  type ResearchFinancialMetric
 } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { ResearchCopilot } from "./research-copilot";
@@ -22,9 +23,26 @@ import { ResearchFilingChanges } from "./research-filing-changes";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Research Copilot — AiStockCN",
+  title: "Company Research — AiStockCN",
   description: "Source-grounded company research across SEC filings and live US equity data."
 };
+
+const RESEARCH_VIEWS = [
+  ["overview", "Overview"],
+  ["ask", "Ask Copilot"],
+  ["financials", "Financials"],
+  ["filings", "Filings"],
+  ["changes", "Changes"],
+  ["compare", "Compare"]
+] as const;
+
+type ResearchView = typeof RESEARCH_VIEWS[number][0];
+
+const OVERVIEW_QUESTIONS = [
+  "Generate an investment research summary covering revenue, profitability, risks, management outlook and current market signals.",
+  "What changed in revenue, profitability and cash flow across the latest comparable periods?",
+  "What are the most material risks in the latest filing, and which ones became more prominent?"
+] as const;
 
 
 function displayName(company: ResearchCompany) {
@@ -40,41 +58,77 @@ function numberValue(value: unknown) {
 
 function formatMetric(value: unknown, options: Intl.NumberFormatOptions = {}) {
   const parsed = numberValue(value);
-  if (parsed === null) {
-    return "—";
-  }
+  if (parsed === null) return "—";
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, ...options }).format(parsed);
 }
 
 
 function formatDate(value: unknown) {
-  if (!value) {
-    return "—";
-  }
+  if (!value) return "—";
   const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
+  if (Number.isNaN(date.getTime())) return String(value);
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+
+function formatFinancialValue(value: unknown, unit?: string) {
+  const parsed = numberValue(value);
+  if (parsed === null) return "—";
+  const formatted = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(parsed);
+  const displayUnit = unit === "USD/shares" ? "USD/share" : unit;
+  return displayUnit ? `${formatted} ${displayUnit}` : formatted;
+}
+
+
+function formatFinancial(metric?: ResearchFinancialMetric) {
+  if (!metric) return "—";
+  return formatFinancialValue(metric.value, metric.unit);
+}
+
+
+function formatChange(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "No comparable period";
+  return `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}% YoY`;
+}
+
+
+function viewHref(symbol: string, view: ResearchView, question?: string) {
+  const params = new URLSearchParams({ symbol, view });
+  if (question) params.set("question", question);
+  return `/research?${params.toString()}` as Route;
+}
+
+
+function normalizeView(value: string): ResearchView {
+  return RESEARCH_VIEWS.some(([key]) => key === value) ? value as ResearchView : "overview";
 }
 
 
 export default async function ResearchPage({
   searchParams
 }: {
-  searchParams?: Promise<{ q?: string; symbol?: string }>;
+  searchParams?: Promise<{ q?: string; symbol?: string; view?: string; question?: string }>;
 }) {
   const params = (await searchParams) ?? {};
   const query = String(params.q ?? "").trim();
   const symbol = String(params.symbol ?? "").trim().toUpperCase();
+  const view = normalizeView(String(params.view ?? "overview"));
+  const initialQuestion = String(params.question ?? "").trim();
   const user = await getCurrentUser();
   if (!user) {
-    const returnTo = `/research${symbol ? `?symbol=${encodeURIComponent(symbol)}` : query ? `?q=${encodeURIComponent(query)}` : ""}`;
+    const returnParams = new URLSearchParams();
+    if (symbol) returnParams.set("symbol", symbol);
+    if (query) returnParams.set("q", query);
+    if (view !== "overview") returnParams.set("view", view);
+    if (initialQuestion) returnParams.set("question", initialQuestion);
+    const returnTo = `/research${returnParams.size ? `?${returnParams.toString()}` : ""}`;
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
   const [searchResult, snapshot, documentResult, financialResult, filingChangeResult] = await Promise.all([
-    getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] })),
+    !symbol || query
+      ? getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] }))
+      : Promise.resolve({ query, rows: 0, total_active: 0, companies: [] }),
     symbol ? getResearchCompany(symbol, 30).catch(() => null) : Promise.resolve(null),
     symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] }),
     symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null),
@@ -83,156 +137,187 @@ export default async function ResearchPage({
 
   const company = snapshot?.company;
   const priceDiff = numberValue(company?.price_diff);
+  const latestAnnual = financialResult?.latest_annual;
+  const revenue = latestAnnual?.metrics.revenue as ResearchFinancialMetric | undefined;
+  const netIncome = latestAnnual?.metrics.net_income as ResearchFinancialMetric | undefined;
+  const operatingCashFlow = latestAnnual?.metrics.operating_cash_flow as ResearchFinancialMetric | undefined;
+  const operatingMargin = numberValue(latestAnnual?.derived.operating_margin_pct);
+  const indexedDocuments = documentResult.documents.filter((document) => document.status === "indexed");
+  const latestChangeRun = filingChangeResult.runs.find((run) => run.status === "completed");
 
   return (
     <Shell
       title="Company Research"
-      subtitle="Analyse company filings, financial performance and material changes with evidence you can verify."
+      subtitle="Analyse filings, financial performance and material changes with verifiable sources."
       locale={user.locale}
       username={user.displayName}
       role={user.role}
       market="US"
     >
-      <div className="research-page">
-      <section className="research-command-panel">
-        <div>
-          <p className="research-kicker">Company intelligence workspace</p>
-          <h2>Start with a company, not a blank chat.</h2>
-          <p>
-            Search the live US equity universe. Each research session stays attached to the selected company,
-            its market data and its source documents.
-          </p>
-        </div>
-        <form className="research-search-form" action="/research" method="get">
-          <label htmlFor="research-company-search">Ticker or company name</label>
-          <div>
-            <input
-              id="research-company-search"
-              name="q"
-              type="search"
-              defaultValue={query}
-              placeholder="NVDA, Microsoft, JPMorgan…"
-              autoComplete="off"
-            />
-            <button type="submit">Find company</button>
-          </div>
-        </form>
-      </section>
-
-      <section className="research-layout">
-        <aside className="research-company-panel">
-          <div className="research-section-heading">
-            <div>
-              <p className="research-kicker">Live universe</p>
-              <h2>{query ? `Results for “${query}”` : "Companies ready to explore"}</h2>
-            </div>
-            <span>{searchResult.rows}</span>
-          </div>
-          <div className="research-company-list">
-            {searchResult.companies.map((item) => (
-              <Link
-                key={item.symbol}
-                href={`/research?symbol=${encodeURIComponent(item.symbol)}`}
-                className={`research-company-row${item.symbol === symbol ? " is-selected" : ""}`}
-              >
-                <span className="research-symbol">{item.symbol}</span>
-                <span>
-                  <strong>{displayName(item)}</strong>
-                  <small>{item.market || "US"} · {item.stock_industry_en || item.stock_industry || "Industry pending"}</small>
-                </span>
-                <span className="research-row-price">{formatMetric(item.close, { minimumFractionDigits: 2 })}</span>
-              </Link>
-            ))}
-            {searchResult.rows === 0 ? (
-              <p className="research-empty">No matching active US company was found.</p>
-            ) : null}
-          </div>
-        </aside>
-
-        <div className="research-workspace">
-          {company && snapshot ? (
-            <>
-              <section className="research-company-hero">
+      <div className="research-page research-product-page">
+        {!company || !snapshot ? (
+          <>
+            <section className="research-command-panel research-start-panel">
+              <div>
+                <p className="research-kicker">Company research</p>
+                <h2>Which company would you like to investigate?</h2>
+                <p>Search by ticker or company name. You can then review its financials, filings, material changes or ask a sourced question.</p>
+              </div>
+              <form className="research-search-form" action="/research" method="get">
+                <label htmlFor="research-company-search">Company or ticker</label>
                 <div>
-                  <p className="research-kicker">{company.market || "US equity"}</p>
-                  <h2>{company.symbol} <span>{displayName(company)}</span></h2>
-                  <p>{company.stock_industry_en || company.stock_industry || "Industry classification pending"}</p>
+                  <input id="research-company-search" name="q" type="search" defaultValue={query} placeholder="Try NVDA, Microsoft or JPMorgan" autoComplete="off" autoFocus />
+                  <button type="submit">Search</button>
                 </div>
-                <div className="research-price-block">
-                  <strong>{formatMetric(company.close, { minimumFractionDigits: 2 })}</strong>
-                  <span className={priceDiff !== null && priceDiff < 0 ? "is-negative" : "is-positive"}>
-                    {priceDiff === null ? "—" : `${priceDiff >= 0 ? "+" : ""}${formatMetric(priceDiff)}`}
-                  </span>
-                  <small>{formatDate(company.trade_date)}</small>
+              </form>
+            </section>
+
+            <section className="research-company-panel research-company-browser">
+              <div className="research-section-heading">
+                <div>
+                  <p className="research-kicker">{query ? "Search results" : "Quick start"}</p>
+                  <h2>{query ? `Companies matching “${query}”` : "Frequently researched companies"}</h2>
                 </div>
-              </section>
+                <span>{searchResult.rows}</span>
+              </div>
+              <div className="research-company-list">
+                {searchResult.companies.map((item) => (
+                  <Link key={item.symbol} href={viewHref(item.symbol, "overview")} className="research-company-row">
+                    <span className="research-symbol">{item.symbol}</span>
+                    <span>
+                      <strong>{displayName(item)}</strong>
+                      <small>{item.stock_industry_en || item.stock_industry || item.market || "US equity"}</small>
+                    </span>
+                    <span className="research-row-price">{formatMetric(item.close, { minimumFractionDigits: 2 })}</span>
+                  </Link>
+                ))}
+                {searchResult.rows === 0 ? <p className="research-empty">No matching active US company was found.</p> : null}
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="research-company-toolbar">
+              <Link href="/research" className="research-back-link">All companies</Link>
+              <form className="research-inline-search" action="/research" method="get">
+                <label className="sr-only" htmlFor="research-change-company">Change company</label>
+                <input id="research-change-company" name="q" type="search" placeholder="Change company or ticker" autoComplete="off" />
+                <button type="submit">Search</button>
+              </form>
+            </section>
 
-              <section className="research-metric-grid">
-                <article><span>P/E ratio</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
-                <article><span>EPS (TTM)</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
-                <article><span>Latest volume</span><strong>{formatMetric(company.volume, { notation: "compact" })}</strong></article>
-                <article><span>Market observations</span><strong>{formatMetric(snapshot.coverage.observations)}</strong></article>
-              </section>
+            <section className="research-company-hero research-product-hero">
+              <div>
+                <p className="research-kicker">{company.market || "US equity"}</p>
+                <h2>{company.symbol} <span>{displayName(company)}</span></h2>
+                <p>{company.stock_industry_en || company.stock_industry || "Industry classification pending"}</p>
+              </div>
+              <div className="research-price-block">
+                <strong>{formatMetric(company.close, { minimumFractionDigits: 2 })}</strong>
+                <span className={priceDiff !== null && priceDiff < 0 ? "is-negative" : "is-positive"}>
+                  {priceDiff === null ? "—" : `${priceDiff >= 0 ? "+" : ""}${formatMetric(priceDiff)}`}
+                </span>
+                <small>As of {formatDate(company.trade_date)}</small>
+              </div>
+            </section>
 
-              <ResearchDocuments symbol={company.symbol} initialDocuments={documentResult.documents} />
+            <section className="research-metric-grid research-product-metrics">
+              <article><span>Last price</span><strong>{formatMetric(company.close, { minimumFractionDigits: 2 })}</strong></article>
+              <article><span>Daily change</span><strong className={priceDiff !== null && priceDiff < 0 ? "is-negative" : "is-positive"}>{priceDiff === null ? "—" : `${priceDiff >= 0 ? "+" : ""}${formatMetric(priceDiff)}`}</strong></article>
+              <article><span>P/E ratio</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
+              <article><span>EPS (TTM)</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
+              <article><span>Volume</span><strong>{formatMetric(company.volume, { notation: "compact" })}</strong></article>
+            </section>
 
-              <ResearchFinancials symbol={company.symbol} initialFinancials={financialResult} />
+            <nav className="research-view-tabs" aria-label={`${company.symbol} research sections`}>
+              {RESEARCH_VIEWS.map(([key, label]) => (
+                <Link key={key} href={viewHref(company.symbol, key)} className={view === key ? "is-active" : undefined} aria-current={view === key ? "page" : undefined}>
+                  {label}
+                  {key === "filings" && indexedDocuments.length ? <span>{indexedDocuments.length}</span> : null}
+                  {key === "changes" && filingChangeResult.rows ? <span>{filingChangeResult.rows}</span> : null}
+                </Link>
+              ))}
+            </nav>
 
-              <ResearchFilingChanges
-                symbol={company.symbol}
-                documents={documentResult.documents}
-                initialRuns={filingChangeResult.runs}
-              />
+            <main className="research-view-content">
+              {view === "overview" ? (
+                <div className="research-overview-dashboard">
+                  <section className="research-overview-lead">
+                    <div>
+                      <p className="research-kicker">Start here</p>
+                      <h2>What do you want to understand about {company.symbol}?</h2>
+                      <p>Ask a focused question and receive an answer that keeps company evidence separate from interpretation.</p>
+                    </div>
+                    <Link href={viewHref(company.symbol, "ask")} className="research-primary-action">Ask Copilot</Link>
+                  </section>
 
-              <ResearchCopilot symbol={company.symbol} />
+                  <section className="research-overview-section">
+                    <div className="research-overview-heading">
+                      <div><p className="research-kicker">Latest annual performance</p><h2>{latestAnnual ? `FY${latestAnnual.fiscal_year ?? "—"} financial snapshot` : "Financial snapshot"}</h2></div>
+                      <Link href={viewHref(company.symbol, "financials")}>View all financials</Link>
+                    </div>
+                    {latestAnnual ? (
+                      <div className="research-overview-financials">
+                        <article><span>Revenue</span><strong>{formatFinancial(revenue)}</strong><small>{formatChange(financialResult?.annual_changes.revenue)}</small></article>
+                        <article><span>Net income</span><strong>{formatFinancial(netIncome)}</strong><small>{formatChange(financialResult?.annual_changes.net_income)}</small></article>
+                        <article><span>Operating margin</span><strong>{operatingMargin === null ? "—" : `${formatMetric(operatingMargin)}%`}</strong><small>Calculated from filed facts</small></article>
+                        <article><span>Free cash flow</span><strong>{formatFinancialValue(latestAnnual.derived.free_cash_flow, operatingCashFlow?.unit)}</strong><small>Operating cash flow less capex</small></article>
+                      </div>
+                    ) : <p className="research-business-empty">Standardised annual financials are not available for this company yet.</p>}
+                  </section>
 
-              <ResearchComparisonPanel symbol={company.symbol} />
+                  <section className="research-overview-section">
+                    <div className="research-overview-heading"><div><p className="research-kicker">Suggested questions</p><h2>Common research tasks</h2></div></div>
+                    <div className="research-question-shortcuts">
+                      {OVERVIEW_QUESTIONS.map((question, index) => (
+                        <Link key={question} href={viewHref(company.symbol, "ask", question)}>
+                          <span>{String(index + 1).padStart(2, "0")}</span><strong>{index === 0 ? "Investment summary" : index === 1 ? "Financial performance" : "Material risks"}</strong><small>{question}</small>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
 
-              <section className="research-evidence-panel">
-                <div className="research-section-heading">
-                  <div>
-                    <p className="research-kicker">Evidence layer</p>
-                    <h2>Research readiness</h2>
+                  <div className="research-overview-two-column">
+                    <section className="research-overview-section">
+                      <div className="research-overview-heading">
+                        <div><p className="research-kicker">Source documents</p><h2>Latest filings</h2></div>
+                        <Link href={viewHref(company.symbol, "filings")}>View all</Link>
+                      </div>
+                      <div className="research-overview-filings">
+                        {indexedDocuments.slice(0, 4).map((document) => (
+                          <a key={document.id} href={`/research/documents/${encodeURIComponent(document.id)}/file`} target="_blank" rel="noreferrer">
+                            <span>{document.document_type.replaceAll("_", " ")}</span><strong>{document.fiscal_year ? `FY${document.fiscal_year}` : formatDate(document.filing_date)}</strong><small>{formatDate(document.filing_date)} ↗</small>
+                          </a>
+                        ))}
+                        {!indexedDocuments.length ? <p className="research-business-empty">No source filings are available yet.</p> : null}
+                      </div>
+                    </section>
+
+                    <section className="research-overview-section">
+                      <div className="research-overview-heading">
+                        <div><p className="research-kicker">Disclosure monitoring</p><h2>Annual filing changes</h2></div>
+                        <Link href={viewHref(company.symbol, "changes")}>Open changes</Link>
+                      </div>
+                      {latestChangeRun ? (
+                        <div className="research-change-summary">
+                          <strong>{latestChangeRun.older_fiscal_year ? `FY${latestChangeRun.older_fiscal_year}` : "Older filing"} → {latestChangeRun.newer_fiscal_year ? `FY${latestChangeRun.newer_fiscal_year}` : "Newer filing"}</strong>
+                          <span>{latestChangeRun.result_count} material changes identified</span>
+                          <small>{latestChangeRun.reviewed_count ?? 0} reviewed · completed {formatDate(latestChangeRun.completed_at)}</small>
+                        </div>
+                      ) : <p className="research-business-empty">No saved annual filing comparison yet.</p>}
+                    </section>
                   </div>
                 </div>
-                <div className="research-readiness-grid">
-                  <article className="is-ready">
-                    <span>01</span><strong>Market data</strong><small>Live · {formatDate(snapshot.coverage.date_max)}</small>
-                  </article>
-                  <article className={documentResult.documents.some((item) => ["text_ready", "indexed"].includes(item.status)) ? "is-ready" : undefined}>
-                    <span>02</span><strong>Company documents</strong><small>{documentResult.rows ? `${documentResult.rows} uploaded` : "Upload PDF to begin"}</small>
-                  </article>
-                  <article className={financialResult?.coverage.fact_rows ? "is-ready" : undefined}>
-                    <span>03</span><strong>Financial facts</strong><small>{financialResult?.coverage.fact_rows ? `${financialResult.coverage.fact_rows} SEC XBRL facts` : "Sync SEC facts to begin"}</small>
-                  </article>
-                  <article className="is-ready">
-                    <span>04</span><strong>Grounded answers</strong><small>Live for market evidence</small>
-                  </article>
-                </div>
-              </section>
+              ) : null}
 
-              <section className="research-task-panel">
-                <p className="research-kicker">Research workflow</p>
-                <h2>Every answer will separate evidence from inference.</h2>
-                <div className="research-task-grid">
-                  <article><strong>Ask about the company</strong><span>Natural-language questions grounded in filings and financial facts.</span></article>
-                  <article><strong>Compare companies</strong><span>Run the same evidence workflow across two or three issuers.</span></article>
-                  <article><strong>Analyse change</strong><span>Track shifts in revenue, profit, risks and management language.</span></article>
-                </div>
-              </section>
-            </>
-          ) : (
-            <section className="research-empty-state">
-              <p className="research-kicker">Research Copilot</p>
-              <h2>Select a US company to open its research workspace.</h2>
-              <p>
-                The company context becomes the boundary for document retrieval, financial tools,
-                comparisons and source-grounded answers.
-              </p>
-            </section>
-          )}
-        </div>
-      </section>
+              {view === "ask" ? <ResearchCopilot symbol={company.symbol} initialQuestion={initialQuestion} /> : null}
+              {view === "financials" ? <ResearchFinancials symbol={company.symbol} initialFinancials={financialResult} /> : null}
+              {view === "filings" ? <ResearchDocuments symbol={company.symbol} initialDocuments={documentResult.documents} /> : null}
+              {view === "changes" ? <ResearchFilingChanges symbol={company.symbol} documents={documentResult.documents} initialRuns={filingChangeResult.runs} /> : null}
+              {view === "compare" ? <ResearchComparisonPanel symbol={company.symbol} /> : null}
+            </main>
+          </>
+        )}
       </div>
     </Shell>
   );

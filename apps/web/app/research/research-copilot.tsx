@@ -6,10 +6,10 @@ import type { ResearchAnswer } from "@/lib/api";
 
 
 const SUGGESTIONS = [
-  "Generate an investment research summary covering revenue, profitability, risks, management outlook and current market signals.",
-  "What changed in revenue, profit, risk language and management outlook across the available reports?",
-  "What changed over the last month, and how volatile has the stock been?",
-  "Which conclusions are directly supported by the current evidence?"
+  { label: "Investment summary", question: "Generate an investment research summary covering revenue, profitability, risks, management outlook and current market signals." },
+  { label: "What changed?", question: "What changed in revenue, profit, risk language and management outlook across the available reports?" },
+  { label: "Market performance", question: "What changed over the last month, and how volatile has the stock been?" },
+  { label: "Evidence check", question: "Which conclusions are directly supported by the current evidence?" }
 ];
 
 
@@ -18,8 +18,8 @@ function sourceLabel(item: ResearchAnswer["data_evidence"][number]) {
 }
 
 
-export function ResearchCopilot({ symbol }: { symbol: string }) {
-  const [question, setQuestion] = useState(SUGGESTIONS[0]);
+export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: string; initialQuestion?: string }) {
+  const [question, setQuestion] = useState(initialQuestion || SUGGESTIONS[0].question);
   const [answer, setAnswer] = useState<ResearchAnswer | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -80,16 +80,16 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
     <section className="research-copilot-panel">
       <div className="research-section-heading">
         <div>
-          <p className="research-kicker">Live research agent</p>
-          <h2>Ask {symbol}</h2>
+          <p className="research-kicker">Company research assistant</p>
+          <h2>What would you like to know about {symbol}?</h2>
         </div>
-        <span className="research-beta-badge">Evidence beta</span>
+        <span className="research-beta-badge">Sources included</span>
       </div>
 
       <div className="research-suggestions">
         {SUGGESTIONS.map((suggestion) => (
-          <button key={suggestion} type="button" onClick={() => setQuestion(suggestion)}>
-            {suggestion}
+          <button key={suggestion.label} type="button" onClick={() => setQuestion(suggestion.question)}>
+            {suggestion.label}
           </button>
         ))}
       </div>
@@ -104,9 +104,9 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
           rows={2}
         />
         <div>
-          <small>Uses live market data, SEC XBRL financial facts and reranked filing passages with source citations.</small>
+          <small>Your answer will cite company filings and financial data, and clearly label interpretation.</small>
           <button type="submit" disabled={loading || !question.trim()}>
-            {loading ? "Agent working…" : "Run research"}
+            {loading ? "Researching…" : "Ask Copilot"}
           </button>
         </div>
       </form>
@@ -169,11 +169,11 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
             </article>
           </div>
 
-          <article className="research-agent-trace">
-            <div>
-              <span>Agent trace</span>
+          <details className="research-agent-trace">
+            <summary>
+              <span>How this answer was produced</span>
               <small>{answer.agent_steps.length} steps{answer.duration_ms ? ` · ${(answer.duration_ms / 1000).toFixed(1)}s` : ""}</small>
-            </div>
+            </summary>
             {answer.tool_plan ? <p className="research-plan-reason">{answer.tool_plan.reason}</p> : null}
             <ol>
               {answer.agent_steps.map((step, index) => (
@@ -184,7 +184,7 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
                 </li>
               ))}
             </ol>
-          </article>
+          </details>
 
           <details className="research-limitations">
             <summary>Coverage and limitations</summary>

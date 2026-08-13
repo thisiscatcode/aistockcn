@@ -5776,7 +5776,8 @@ select {
 }
 
 .research-proof-card > div,
-.research-agent-trace > div {
+.research-agent-trace > div,
+.research-agent-trace > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5785,7 +5786,8 @@ select {
 }
 
 .research-proof-card > div span,
-.research-agent-trace > div span {
+.research-agent-trace > div span,
+.research-agent-trace > summary span {
   color: #e7f5ff;
   font-size: 0.78rem;
   font-weight: 800;
@@ -5794,7 +5796,8 @@ select {
 }
 
 .research-proof-card > div small,
-.research-agent-trace > div small {
+.research-agent-trace > div small,
+.research-agent-trace > summary small {
   color: #72869d;
 }
 
@@ -6357,6 +6360,405 @@ select {
   font-size: 1rem;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.research-company-toolbar {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.research-back-link {
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.research-back-link::before {
+  content: "←";
+  margin-right: 6px;
+}
+
+.research-inline-search {
+  display: flex;
+  width: min(100%, 410px);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.research-inline-search input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 12px;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.research-inline-search button {
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--accent);
+  background: transparent;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.research-company-browser .research-company-list {
+  grid-template-columns: 1fr 1fr;
+}
+
+.research-company-browser .research-company-row:nth-child(odd) {
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.research-product-hero,
+.research-product-metrics,
+.research-view-tabs,
+.research-overview-lead,
+.research-overview-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 10px 26px rgba(92, 69, 37, 0.08);
+}
+
+.research-product-hero {
+  padding: 18px 20px;
+}
+
+.research-product-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.research-product-metrics strong.is-positive {
+  color: #08775d;
+}
+
+.research-product-metrics strong.is-negative {
+  color: #b4233c;
+}
+
+.research-view-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 5px;
+  overflow-x: auto;
+}
+
+.research-view-tabs a {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 15px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.research-view-tabs a:hover {
+  color: var(--text);
+  background: var(--bg-soft);
+}
+
+.research-view-tabs a.is-active {
+  color: #fff;
+  background: var(--accent);
+}
+
+.research-view-tabs a span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.research-view-content,
+.research-overview-dashboard {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.research-overview-lead {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-color: rgba(15, 118, 110, 0.24);
+  background: linear-gradient(120deg, #f0f9f6, #fffdf8);
+}
+
+.research-overview-lead h2,
+.research-overview-heading h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.research-overview-lead h2 {
+  font-size: 1.35rem;
+}
+
+.research-overview-lead p:last-child {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.research-primary-action {
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.research-overview-section {
+  padding: 17px 18px;
+}
+
+.research-overview-heading {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 13px;
+}
+
+.research-overview-heading h2 {
+  font-size: 1.08rem;
+}
+
+.research-overview-heading > a {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.research-overview-financials {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.research-overview-financials article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+
+.research-overview-financials span,
+.research-overview-financials small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.research-overview-financials strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-question-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.research-question-shortcuts a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 9px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+
+.research-question-shortcuts a:hover {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: #eff8f5;
+}
+
+.research-question-shortcuts span {
+  grid-row: 1 / 3;
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.research-question-shortcuts strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.research-question-shortcuts small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.research-overview-two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.research-overview-filings {
+  display: grid;
+}
+
+.research-overview-filings a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.research-overview-filings a:first-child {
+  border-top: 0;
+}
+
+.research-overview-filings span,
+.research-overview-filings small,
+.research-change-summary span,
+.research-change-summary small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.research-overview-filings span {
+  text-transform: capitalize;
+}
+
+.research-overview-filings strong,
+.research-change-summary strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.research-change-summary {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 8px;
+  background: #eff8f5;
+}
+
+.research-business-empty {
+  margin: 0;
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  font-size: 0.84rem;
+}
+
+.research-agent-trace > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.research-agent-trace > summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-agent-trace > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.research-agent-trace[open] > summary::after {
+  content: "−";
+}
+
+@media (max-width: 900px) {
+  .research-product-metrics,
+  .research-overview-financials {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .research-question-shortcuts,
+  .research-overview-two-column,
+  .research-company-browser .research-company-list {
+    grid-template-columns: 1fr;
+  }
+
+  .research-company-browser .research-company-row:nth-child(odd) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .research-company-toolbar,
+  .research-overview-lead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .research-inline-search {
+    width: 100%;
+  }
+
+  .research-product-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .research-product-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .research-price-block {
+    justify-items: start;
+  }
+
+  .research-view-tabs a {
+    padding: 0 12px;
+  }
+}
+
 .research-command-panel {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
   gap: 22px;
@@ -6562,17 +6964,20 @@ select {
 }
 
 .research-proof-card > div,
-.research-agent-trace > div {
+.research-agent-trace > div,
+.research-agent-trace > summary {
   padding: 9px 12px;
 }
 
 .research-proof-card > div span,
-.research-agent-trace > div span {
+.research-agent-trace > div span,
+.research-agent-trace > summary span {
   font-size: 0.84rem;
 }
 
 .research-proof-card > div small,
-.research-agent-trace > div small {
+.research-agent-trace > div small,
+.research-agent-trace > summary small {
   font-size: 0.78rem;
 }
 
@@ -8030,6 +8435,7 @@ select {
 .theme-shell-root[data-theme="bright"] .research-answer-summary > p:last-child,
 .theme-shell-root[data-theme="bright"] .research-proof-card > div span,
 .theme-shell-root[data-theme="bright"] .research-agent-trace > div span,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > summary span,
 .theme-shell-root[data-theme="bright"] .research-agent-trace li strong,
 .theme-shell-root[data-theme="bright"] .research-comparison-result > p:first-child,
 .theme-shell-root[data-theme="bright"] .research-evaluation-metrics strong,
@@ -8050,6 +8456,7 @@ select {
 .theme-shell-root[data-theme="bright"] .research-question-form small,
 .theme-shell-root[data-theme="bright"] .research-proof-card > div small,
 .theme-shell-root[data-theme="bright"] .research-agent-trace > div small,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > summary small,
 .theme-shell-root[data-theme="bright"] .research-agent-trace li small,
 .theme-shell-root[data-theme="bright"] .research-limitations,
 .theme-shell-root[data-theme="bright"] .research-comparison-trace,
@@ -8079,6 +8486,7 @@ select {
 .theme-shell-root[data-theme="bright"] .research-metric-grid article,
 .theme-shell-root[data-theme="bright"] .research-proof-card > div,
 .theme-shell-root[data-theme="bright"] .research-agent-trace > div,
+.theme-shell-root[data-theme="bright"] .research-agent-trace > summary,
 .theme-shell-root[data-theme="bright"] .research-agent-trace li,
 .theme-shell-root[data-theme="bright"] .research-comparison-table > div,
 .theme-shell-root[data-theme="bright"] .research-evaluation-metrics article {

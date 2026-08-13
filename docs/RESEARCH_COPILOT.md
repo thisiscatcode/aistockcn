@@ -128,14 +128,15 @@ The Compose configuration intentionally joins the existing `paper-db` and `ai-se
 
 ## User workflow
 
-1. Sign in to `aistockcn.com`, open Research Copilot from the navigation and select a company from the US equity universe.
-2. Sync the latest 10-K, 10-Q and 8-K from SEC EDGAR, sync standardized financial facts, or upload a PDF. Documents move through queued, extracting and search-ready states while preserving source lineage.
-3. Ask a company-specific question. The API streams progress while the agent selects and executes its allow-listed document, market-data and calculation tools.
-4. Review the answer's Document evidence, Model inference and Limitations sections. Each passage includes its filename and an honest native-page or SEC-HTML locator.
-5. Select two indexed annual reports in Filing Change Detection. Each proposed change includes the older and newer source passage, the saved algorithm version and a pending review state.
-6. Confirm, reject or flag changes for editing. Rerunning creates a new historical run linked to the earlier one.
-7. Compare two or three companies. The system executes the required tools for each company before synthesizing the comparison.
-8. Use the evaluation page to monitor Top-1 accuracy, MRR, lexical baseline and per-query ranks when the retrieval pipeline changes.
+1. Sign in to `aistockcn.com`, open Company Research and search by ticker or company name.
+2. Selecting a company opens its Overview first. This is the decision dashboard: market snapshot, latest annual performance, common research questions, latest filings and the most recent saved filing comparison.
+3. Choose one task from the company navigation: Overview, Ask Copilot, Financials, Filings, Changes or Compare. Only the selected workspace is displayed; operational ingestion state is not mixed into the customer page.
+4. In Ask Copilot, enter a focused company question or use a suggested task. The answer separates Document evidence, Model inference and Limitations. The execution trace is available under the collapsed “How this answer was produced” disclosure.
+5. In Financials, inspect normalized SEC facts and their original taxonomy and filing lineage. In Filings, open or add source documents when required.
+6. In Changes, compare two indexed annual reports. Each proposed change carries the older and newer source passage, saved algorithm version and review status; rerunning creates a linked historical result.
+7. In Compare, analyse two or three companies using the same evidence and deterministic financial-data boundary.
+
+Coverage queues, ingestion failures and retrieval evaluation belong to the administrator workflow at `/admin/research`; customers do not need to manage them before beginning research.
 
 ## Operational boundaries
 
