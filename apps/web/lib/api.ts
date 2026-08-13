@@ -1002,6 +1002,32 @@ export type ResearchDocumentList = {
   documents: ResearchDocument[];
 };
 
+export type ResearchCompanyCoverage = {
+  symbol: string;
+  stock_name?: string | null;
+  market?: string | null;
+  priority_rank: number;
+  priority_reasons: string[];
+  is_fei_favorite: boolean;
+  target_annual_reports: number;
+  target_recent_reports: number;
+  annual_indexed: number;
+  recent_indexed: number;
+  xbrl_fact_count: number;
+  status: "queued" | "syncing" | "indexing" | "ready" | "partial" | "failed" | "unsupported";
+  job_status?: string | null;
+  attempt_count?: number | null;
+  last_error_code?: string | null;
+};
+
+export type ResearchCoverageSummary = {
+  generated_at: string;
+  target: number;
+  status_counts: Record<string, number>;
+  queued_documents: number;
+  companies: ResearchCompanyCoverage[];
+};
+
 export type FilingChangeEvidence = {
   chunk_id: string;
   document_id: string;
@@ -1092,6 +1118,13 @@ export function getResearchDocuments(symbol?: string) {
   if (symbol) params.set("symbol", symbol);
   const query = params.size ? `?${params.toString()}` : "";
   return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, {
+    timeoutMs: 10000,
+    baseUrl: RESEARCH_API_BASE_URL
+  });
+}
+
+export function getResearchCoverage(limit = 100) {
+  return fetchJson<ResearchCoverageSummary>(`/api/research/coverage?limit=${limit}`, {
     timeoutMs: 10000,
     baseUrl: RESEARCH_API_BASE_URL
   });

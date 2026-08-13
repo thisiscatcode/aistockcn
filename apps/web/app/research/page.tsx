@@ -6,6 +6,7 @@ import { Shell } from "@/components/shell";
 import {
   getResearchCompanies,
   getResearchCompany,
+  getResearchCoverage,
   getResearchDocuments,
   getResearchFilingChangeRuns,
   getResearchFinancials,
@@ -18,6 +19,7 @@ import { ResearchDocuments } from "./research-documents";
 import { ResearchEvaluationPanel } from "./research-evaluation";
 import { ResearchFinancials } from "./research-financials";
 import { ResearchFilingChanges } from "./research-filing-changes";
+import { ResearchCoverageStatus } from "./research-coverage-status";
 
 
 export const dynamic = "force-dynamic";
@@ -74,12 +76,13 @@ export default async function ResearchPage({
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
-  const [searchResult, snapshot, documentResult, financialResult, filingChangeResult] = await Promise.all([
+  const [searchResult, snapshot, documentResult, financialResult, filingChangeResult, coverageResult] = await Promise.all([
     getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] })),
     symbol ? getResearchCompany(symbol, 30).catch(() => null) : Promise.resolve(null),
     symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] }),
     symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null),
-    symbol ? getResearchFilingChangeRuns(symbol).catch(() => ({ symbol, rows: 0, runs: [] })) : Promise.resolve({ symbol, rows: 0, runs: [] })
+    symbol ? getResearchFilingChangeRuns(symbol).catch(() => ({ symbol, rows: 0, runs: [] })) : Promise.resolve({ symbol, rows: 0, runs: [] }),
+    getResearchCoverage(100).catch(() => null)
   ]);
 
   const company = snapshot?.company;
@@ -119,6 +122,8 @@ export default async function ResearchPage({
           </div>
         </form>
       </section>
+
+      <ResearchCoverageStatus initialCoverage={coverageResult} selectedSymbol={symbol} />
 
       <section className="research-layout">
         <aside className="research-company-panel">

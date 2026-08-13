@@ -2,6 +2,8 @@
 
 AiStockCN is a live financial-data platform for A-shares and United States equities, with an integrated, source-grounded US Equity Research Copilot. The established A-share workflow remains intact while the main product adds a separate US market workspace for company data, screening, model readiness and operations.
 
+Research Copilot maintains a persistent 100-company US filing knowledge base. It prioritises existing Fei favourites, then major and actively traded companies, and records filing, indexing and financial-fact readiness so customers do not have to initialise every company manually.
+
 - Customer product: [aistockcn.com](https://aistockcn.com)
 - Research Copilot: [aistockcn.com/research](https://aistockcn.com/research)
 - Technical deep dive: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)

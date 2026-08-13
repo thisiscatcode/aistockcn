@@ -6273,6 +6273,75 @@ select {
   font-size: 1rem;
 }
 
+.research-coverage-panel {
+  padding: 14px 16px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  border-radius: 12px;
+  background: rgba(4, 14, 29, 0.82);
+}
+
+.research-coverage-heading,
+.research-selected-coverage {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.research-coverage-heading h2 {
+  margin-top: 3px;
+  color: #e8f1fb;
+  font-size: 1.08rem;
+}
+
+.research-coverage-heading > span {
+  color: #8ba0b7;
+  font-size: 0.78rem;
+}
+
+.research-coverage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.research-coverage-metrics article {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.research-coverage-metrics strong {
+  color: #e8f1fb;
+  font-size: 1.25rem;
+}
+
+.research-coverage-metrics span,
+.research-selected-coverage span {
+  color: #91a5bb;
+  font-size: 0.8rem;
+}
+
+.research-coverage-metrics .is-ready strong { color: #72ddb2; }
+.research-coverage-metrics .is-active strong { color: #67e8f9; }
+.research-coverage-metrics .is-attention strong { color: #fbbf77; }
+
+.research-selected-coverage {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.research-selected-coverage strong { color: #dce8f5; font-size: 0.84rem; }
+.research-selected-coverage em { color: #72ddb2; font-size: 0.76rem; font-style: normal; font-weight: 750; }
+
 .research-command-panel {
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
   gap: 22px;
@@ -6697,6 +6766,9 @@ select {
   .research-page {
     gap: 9px;
   }
+
+  .research-coverage-heading { align-items: flex-start; flex-direction: column; }
+  .research-coverage-metrics { grid-template-columns: 1fr 1fr; }
 
   .research-command-panel,
   .research-company-hero,
@@ -7841,6 +7913,7 @@ select {
 
 /* Light theme keeps every authenticated research surface light. */
 .theme-shell-root[data-theme="bright"] .research-command-panel,
+.theme-shell-root[data-theme="bright"] .research-coverage-panel,
 .theme-shell-root[data-theme="bright"] .research-company-panel,
 .theme-shell-root[data-theme="bright"] .research-workspace > section,
 .theme-shell-root[data-theme="bright"] .research-copilot-panel,
@@ -7852,6 +7925,23 @@ select {
   background: rgba(255, 253, 248, 0.92);
   color: var(--text);
   box-shadow: 0 14px 34px rgba(92, 69, 37, 0.1);
+}
+
+.theme-shell-root[data-theme="bright"] .research-coverage-heading h2,
+.theme-shell-root[data-theme="bright"] .research-coverage-metrics strong,
+.theme-shell-root[data-theme="bright"] .research-selected-coverage strong {
+  color: #2c342f;
+}
+
+.theme-shell-root[data-theme="bright"] .research-coverage-heading > span,
+.theme-shell-root[data-theme="bright"] .research-coverage-metrics span,
+.theme-shell-root[data-theme="bright"] .research-selected-coverage span {
+  color: #6f6254;
+}
+
+.theme-shell-root[data-theme="bright"] .research-coverage-metrics article {
+  border-color: rgba(68, 49, 28, 0.13);
+  background: #fbf7f0;
 }
 
 .theme-shell-root[data-theme="bright"] .research-financials-panel .research-section-heading > button {

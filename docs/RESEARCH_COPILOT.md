@@ -2,6 +2,19 @@
 
 Production-oriented US equity research integrated with AiStockCN's existing market-data platform, authentication and navigation at `aistockcn.com/research`.
 
+## Core company knowledge base
+
+Research Copilot maintains a pre-indexed coverage set of 100 US-listed companies so a customer does not begin with an empty workspace. Company priority is deterministic:
+
+1. Fei favourite stocks, ordered by their existing `display_num` preference.
+2. Widely followed core companies.
+3. The latest Cat/Lobster selection snapshots.
+4. Twenty-session average dollar trading volume.
+
+Only companies with an SEC CIK count toward the 100-company target. US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. For each company, the coverage service targets two annual filings, one recent filing and SEC XBRL financial facts.
+
+The `research-coverage-worker` owns the durable bootstrap queue, atomic job claiming, bounded retries and readiness reconciliation. Documents are indexed by the separate research workers. `GET /api/research/coverage` exposes company-level progress, errors and readiness to the product UI.
+
 ## Deployment status
 
 | Component | Status |
@@ -14,7 +27,8 @@ Production-oriented US equity research integrated with AiStockCN's existing mark
 ## What is live
 
 - Company search over the existing US equity universe and market-history tables.
-- Official SEC EDGAR discovery and sync for the latest 10-K, 10-Q and 8-K, using accession-number deduplication and declared fair-access identification.
+- Official SEC EDGAR discovery and sync for 10-K, 10-Q, 8-K, 20-F, 40-F and 6-K filings, using accession-number deduplication and declared fair-access identification.
+- A durable 100-company coverage queue with Fei favourites first, bounded retries and visible company-level readiness.
 - SEC Company Facts ingestion with canonical US-GAAP concept priorities, annual/quarterly/instant periods and original accession lineage.
 - Deterministic revenue, profit, EPS, margin, cash-flow, free-cash-flow and balance-sheet calculations. The LLM does not recalculate these numeric facts.
 - PDF upload with validation, SHA-256 deduplication and page-preserving extraction.
@@ -41,6 +55,9 @@ flowchart LR
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder\nreranker"]
     A --> Q["PostgreSQL queue\nSKIP LOCKED"]
+    Q --> B["Coverage worker\n100-company sync + retry"]
+    B --> E
+    B --> X
     A --> C["Filing change runs\nversioned rules + review history"]
     A --> S["Shared volume or encrypted S3\nsource documents"]
     E --> S

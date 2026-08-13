@@ -29,8 +29,15 @@ from app.services.research_documents import (
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 SEC_ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{primary_document}"
-SUPPORTED_FORMS = ("10-K", "10-Q", "8-K")
-FORM_DOCUMENT_TYPES = {"10-K": "annual_report", "10-Q": "quarterly_report", "8-K": "current_report"}
+SUPPORTED_FORMS = ("10-K", "10-Q", "8-K", "20-F", "40-F", "6-K")
+FORM_DOCUMENT_TYPES = {
+    "10-K": "annual_report",
+    "20-F": "annual_report",
+    "40-F": "annual_report",
+    "10-Q": "quarterly_report",
+    "8-K": "current_report",
+    "6-K": "current_report",
+}
 BLOCK_TAGS = {
     "address", "article", "aside", "blockquote", "br", "caption", "dd", "div", "dl", "dt",
     "figcaption", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li",

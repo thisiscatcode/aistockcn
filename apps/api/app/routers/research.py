@@ -30,6 +30,7 @@ from app.services.research_documents import (
 )
 from app.services.research_evaluation import list_evaluation_runs, run_reranker_evaluation
 from app.services.research_financials import get_sec_financial_summary, sync_sec_companyfacts
+from app.services.research_coverage import get_coverage_summary
 from app.services.research_filing_changes import (
     create_filing_change_run,
     get_filing_change_run,
@@ -63,7 +64,7 @@ class ResearchComparisonRequest(BaseModel):
 
 class ResearchSECFilingRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=15)
-    forms: list[str] = Field(default_factory=lambda: ["10-K", "10-Q", "8-K"], min_length=1, max_length=3)
+    forms: list[str] = Field(default_factory=lambda: ["10-K", "10-Q", "8-K"], min_length=1, max_length=6)
     limit_per_form: int = Field(default=1, ge=1, le=5)
 
 
@@ -98,6 +99,14 @@ def _filing_change_http_error(exc: ResearchError) -> HTTPException:
 def research_documents(symbol: str | None = Query(default=None, max_length=15)) -> dict[str, object]:
     try:
         return list_research_documents(symbol=symbol)
+    except ResearchError as exc:
+        raise HTTPException(status_code=400, detail={"code": str(exc), "message": str(exc)}) from exc
+
+
+@router.get("/coverage")
+def research_coverage(limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, object]:
+    try:
+        return get_coverage_summary(limit=limit)
     except ResearchError as exc:
         raise HTTPException(status_code=400, detail={"code": str(exc), "message": str(exc)}) from exc
 

@@ -60,7 +60,7 @@ services:
       - "127.0.0.1:8004:8000"
 
   research-api:
-    image: aistockcn-research-api:20260813-filing-change-v1
+    image: aistockcn-research-api:20260813-coverage-v1
     restart: unless-stopped
     working_dir: /app
     command: uvicorn app.research_main:app --host 0.0.0.0 --port 8000
@@ -75,6 +75,7 @@ services:
       RESEARCH_RERANKER_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
       RESEARCH_MODEL_CACHE_DIR: /models/sentence-transformers
       RESEARCH_INLINE_INDEXING: "false"
+      RESEARCH_SEC_REQUEST_INTERVAL_SECONDS: "0.25"
       RESEARCH_S3_BUCKET: ${RESEARCH_S3_BUCKET:-}
       AWS_REGION: ${AWS_REGION:-eu-west-2}
     volumes:
@@ -88,8 +89,10 @@ services:
       - "127.0.0.1:8003:8000"
 
   research-worker:
-    image: aistockcn-research-api:20260813-filing-change-v1
+    image: aistockcn-research-api:20260813-coverage-v1
     restart: unless-stopped
+    scale: 2
+    cpus: "1.25"
     working_dir: /app
     command: python -m app.research_worker
     env_file:
@@ -109,8 +112,28 @@ services:
       - default
       - paper-db
 
+  research-coverage-worker:
+    image: aistockcn-research-api:20260813-coverage-v1
+    restart: unless-stopped
+    cpus: "0.50"
+    working_dir: /app
+    command: python -m app.research_coverage_worker
+    env_file:
+      - ./run/panel.env
+    environment:
+      PROJECT_ROOT: /workspace
+      RESEARCH_UPLOAD_DIR: /data/research_uploads
+      RESEARCH_SEC_REQUEST_INTERVAL_SECONDS: "0.25"
+      RESEARCH_S3_BUCKET: ${RESEARCH_S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-eu-west-2}
+    volumes:
+      - research-uploads:/data/research_uploads
+    networks:
+      - default
+      - paper-db
+
   panel-web:
-    image: aistockcn-panel-web:20260813-filing-change-v1
+    image: aistockcn-panel-web:20260813-coverage-v1
     restart: unless-stopped
     working_dir: /app
     depends_on:

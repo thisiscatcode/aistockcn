@@ -203,6 +203,55 @@ create table if not exists research_filing_change_reviews (
 
 create index if not exists research_filing_change_reviews_change_idx
   on research_filing_change_reviews(change_id, created_at desc);
+
+create table if not exists research_company_coverage (
+  symbol text primary key references us_stock_master(symbol),
+  priority_rank integer not null,
+  priority_reasons jsonb not null default '[]'::jsonb,
+  is_fei_favorite boolean not null default false,
+  target_annual_reports integer not null default 2,
+  target_recent_reports integer not null default 1,
+  annual_indexed integer not null default 0,
+  recent_indexed integer not null default 0,
+  xbrl_fact_count integer not null default 0,
+  status text not null default 'queued'
+    check (status in ('queued', 'syncing', 'indexing', 'ready', 'partial', 'failed', 'unsupported')),
+  last_error_code text,
+  last_error_message text,
+  last_sync_started_at timestamptz,
+  last_sync_completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists research_company_coverage_priority_idx
+  on research_company_coverage(priority_rank);
+create index if not exists research_company_coverage_status_idx
+  on research_company_coverage(status, priority_rank);
+
+create table if not exists research_coverage_jobs (
+  id text primary key,
+  symbol text not null references research_company_coverage(symbol),
+  status text not null default 'queued'
+    check (status in ('queued', 'running', 'waiting_index', 'completed', 'partial', 'failed', 'unsupported')),
+  priority_rank integer not null,
+  requested_by text,
+  attempt_count integer not null default 0,
+  max_attempts integer not null default 4,
+  next_retry_at timestamptz,
+  last_error_code text,
+  last_error_message text,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists research_coverage_jobs_active_symbol_idx
+  on research_coverage_jobs(symbol)
+  where status in ('queued', 'running', 'waiting_index', 'failed');
+create index if not exists research_coverage_jobs_claim_idx
+  on research_coverage_jobs(status, priority_rank, created_at);
 """
 
 
