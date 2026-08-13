@@ -83,6 +83,20 @@ FINANCIAL_METRICS: dict[str, dict[str, Any]] = {
     },
 }
 
+IFRS_METRIC_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "revenue": ("Revenue", "RevenueFromContractsWithCustomers"),
+    "gross_profit": ("GrossProfit",),
+    "operating_income": ("ProfitLossFromOperatingActivities",),
+    "net_income": ("ProfitLoss",),
+    "eps_diluted": ("DilutedEarningsLossPerShare",),
+    "operating_cash_flow": ("CashFlowsFromUsedInOperatingActivities",),
+    "capital_expenditure": ("PurchaseOfPropertyPlantAndEquipment",),
+    "cash_and_equivalents": ("CashAndCashEquivalents",),
+    "assets": ("Assets",),
+    "liabilities": ("Liabilities",),
+    "stockholders_equity": ("Equity",),
+}
+
 
 RESEARCH_FINANCIAL_SCHEMA_SQL = """
 create table if not exists research_financial_facts (
@@ -148,7 +162,7 @@ def _period_kind(*, start_date: date | None, end_date: date, form: str, fiscal_p
     if start_date is None:
         return "instant"
     days = (end_date - start_date).days + 1
-    if form == "10-K" and fiscal_period == "FY" and 300 <= days <= 430:
+    if form in {"10-K", "20-F", "40-F"} and fiscal_period == "FY" and 300 <= days <= 430:
         return "annual"
     if 70 <= days <= 110:
         return "quarter"
@@ -167,72 +181,98 @@ def normalize_companyfacts_payload(
     *, symbol: str, cik: str, payload: dict[str, Any]
 ) -> list[dict[str, Any]]:
     normalized_symbol = normalize_us_symbol(symbol)
-    us_gaap = payload.get("facts", {}).get("us-gaap", {})
-    if not isinstance(us_gaap, dict):
-        return []
     rows: list[dict[str, Any]] = []
-    for metric, definition in FINANCIAL_METRICS.items():
-        expected_unit = str(definition["unit"])
-        for priority, concept in enumerate(definition["concepts"]):
-            concept_payload = us_gaap.get(concept)
-            if not isinstance(concept_payload, dict):
-                continue
-            units = concept_payload.get("units", {})
-            entries = units.get(expected_unit, []) if isinstance(units, dict) else []
-            for item in entries if isinstance(entries, list) else []:
-                if not isinstance(item, dict) or str(item.get("form") or "") not in {"10-K", "10-Q"}:
+    taxonomies = (
+        ("us-gaap", {metric: tuple(definition["concepts"]) for metric, definition in FINANCIAL_METRICS.items()}),
+        ("ifrs-full", IFRS_METRIC_CONCEPTS),
+    )
+    facts = payload.get("facts", {})
+    for taxonomy_priority, (taxonomy, metric_concepts) in enumerate(taxonomies):
+        taxonomy_facts = facts.get(taxonomy, {}) if isinstance(facts, dict) else {}
+        if not isinstance(taxonomy_facts, dict):
+            continue
+        for metric, concepts in metric_concepts.items():
+            definition = FINANCIAL_METRICS[metric]
+            expected_unit = str(definition["unit"])
+            for priority, concept in enumerate(concepts):
+                concept_payload = taxonomy_facts.get(concept)
+                if not isinstance(concept_payload, dict):
                     continue
-                end_date = _safe_date(item.get("end"))
-                filed_date = _safe_date(item.get("filed"))
-                accession_number = str(item.get("accn") or "").strip()
-                if end_date is None or filed_date is None or not accession_number:
+                units = concept_payload.get("units", {})
+                if not isinstance(units, dict):
                     continue
-                try:
-                    value = Decimal(str(item.get("val")))
-                except (InvalidOperation, TypeError, ValueError):
+                unit = _preferred_fact_unit(units=units, expected_unit=expected_unit)
+                if unit is None:
                     continue
-                if not value.is_finite():
-                    continue
-                start_date = _safe_date(item.get("start"))
-                fiscal_period = str(item.get("fp") or "").strip().upper()
-                form = str(item.get("form") or "").strip().upper()
-                identity = "|".join(
-                    [
-                        normalized_symbol, "us-gaap", concept, expected_unit,
-                        str(start_date or ""), str(end_date), accession_number,
-                        fiscal_period, form,
-                    ]
-                )
-                rows.append({
-                    "id": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
-                    "symbol": normalized_symbol,
-                    "cik": cik,
-                    "metric": metric,
-                    "metric_label": definition["label"],
-                    "taxonomy": "us-gaap",
-                    "concept": concept,
-                    "concept_priority": priority,
-                    "concept_label": concept_payload.get("label"),
-                    "concept_description": concept_payload.get("description"),
-                    "unit": expected_unit,
-                    "value": value,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "period_kind": _period_kind(
-                        start_date=start_date,
-                        end_date=end_date,
-                        form=form,
-                        fiscal_period=fiscal_period,
-                    ),
-                    "fiscal_year": int(item["fy"]) if str(item.get("fy") or "").isdigit() else None,
-                    "fiscal_period": fiscal_period or None,
-                    "form": form,
-                    "filed_date": filed_date,
-                    "accession_number": accession_number,
-                    "frame": str(item.get("frame") or "").strip() or None,
-                    "source_url": _filing_index_url(cik, accession_number),
-                })
+                entries = units.get(unit, [])
+                for item in entries if isinstance(entries, list) else []:
+                    if not isinstance(item, dict) or str(item.get("form") or "") not in {"10-K", "10-Q", "20-F", "40-F"}:
+                        continue
+                    end_date = _safe_date(item.get("end"))
+                    filed_date = _safe_date(item.get("filed"))
+                    accession_number = str(item.get("accn") or "").strip()
+                    if end_date is None or filed_date is None or not accession_number:
+                        continue
+                    try:
+                        value = Decimal(str(item.get("val")))
+                    except (InvalidOperation, TypeError, ValueError):
+                        continue
+                    if not value.is_finite():
+                        continue
+                    start_date = _safe_date(item.get("start"))
+                    fiscal_period = str(item.get("fp") or "").strip().upper()
+                    form = str(item.get("form") or "").strip().upper()
+                    identity = "|".join(
+                        [
+                            normalized_symbol, taxonomy, concept, unit,
+                            str(start_date or ""), str(end_date), accession_number,
+                            fiscal_period, form,
+                        ]
+                    )
+                    rows.append({
+                        "id": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+                        "symbol": normalized_symbol,
+                        "cik": cik,
+                        "metric": metric,
+                        "metric_label": definition["label"],
+                        "taxonomy": taxonomy,
+                        "concept": concept,
+                        "concept_priority": taxonomy_priority * 100 + priority,
+                        "concept_label": concept_payload.get("label"),
+                        "concept_description": concept_payload.get("description"),
+                        "unit": unit,
+                        "value": value,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "period_kind": _period_kind(
+                            start_date=start_date,
+                            end_date=end_date,
+                            form=form,
+                            fiscal_period=fiscal_period,
+                        ),
+                        "fiscal_year": int(item["fy"]) if str(item.get("fy") or "").isdigit() else None,
+                        "fiscal_period": fiscal_period or None,
+                        "form": form,
+                        "filed_date": filed_date,
+                        "accession_number": accession_number,
+                        "frame": str(item.get("frame") or "").strip() or None,
+                        "source_url": _filing_index_url(cik, accession_number),
+                    })
     return rows
+
+
+def _preferred_fact_unit(*, units: dict[str, Any], expected_unit: str) -> str | None:
+    if expected_unit in units:
+        return expected_unit
+    share_based = expected_unit.endswith("/shares")
+    candidates = [
+        str(unit)
+        for unit in units
+        if (str(unit).endswith("/shares") if share_based else "/" not in str(unit))
+        and len(str(unit).split("/", 1)[0]) == 3
+        and str(unit).split("/", 1)[0].isalpha()
+    ]
+    return sorted(candidates)[0] if candidates else None
 
 
 def sync_sec_companyfacts(*, symbol: str, settings: Settings | None = None) -> dict[str, Any]:

@@ -11,7 +11,7 @@ Research Copilot maintains a pre-indexed coverage set of 100 US-listed companies
 3. The latest Cat/Lobster selection snapshots.
 4. Twenty-session average dollar trading volume.
 
-Only companies with an SEC CIK count toward the 100-company target. US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. For each company, the coverage service targets two annual filings, one recent filing and SEC XBRL financial facts.
+Only companies with an SEC CIK count toward the 100-company target, and share classes with the same CIK count as one issuer. US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. Both US-GAAP and IFRS Company Facts retain their original taxonomy, reporting currency and accession lineage. For each company, the coverage service targets two annual filings, one recent filing and SEC XBRL financial facts.
 
 The `research-coverage-worker` owns the durable bootstrap queue, atomic job claiming, bounded retries and readiness reconciliation. Documents are indexed by the separate research workers. `GET /api/research/coverage` exposes company-level progress, errors and readiness to the product UI.
 

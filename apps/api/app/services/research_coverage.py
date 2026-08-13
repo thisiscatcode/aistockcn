@@ -29,6 +29,7 @@ def merge_priority_candidates(
     selections: Iterable[str],
     active: Iterable[str],
     eligible: set[str],
+    issuer_keys: dict[str, str] | None = None,
     limit: int,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Merge stable priority lanes while preserving every reason for each selected symbol."""
@@ -56,15 +57,22 @@ def merge_priority_candidates(
             if reason not in reasons[symbol]:
                 reasons[symbol].append(reason)
     safe_limit = max(1, min(int(limit), 1000))
-    rows = [
-        {
+    rows: list[dict[str, Any]] = []
+    seen_issuers: set[str] = set()
+    for symbol in ordered:
+        issuer_key = (issuer_keys or {}).get(symbol, symbol)
+        if issuer_key in seen_issuers:
+            continue
+        seen_issuers.add(issuer_key)
+        rows.append({
             "symbol": symbol,
-            "priority_rank": rank,
+            "priority_rank": len(rows) + 1,
             "priority_reasons": reasons[symbol],
             "is_fei_favorite": "fei_favorite" in reasons[symbol],
-        }
-        for rank, symbol in enumerate(ordered[:safe_limit], start=1)
-    ]
+            "issuer_key": issuer_key,
+        })
+        if len(rows) >= safe_limit:
+            break
     return rows, ineligible_favorites
 
 
@@ -130,13 +138,15 @@ def _priority_sources() -> dict[str, list[str]]:
 
 def seed_core_company_coverage(*, limit: int = 100, requested_by: str = "coverage-bootstrap") -> dict[str, Any]:
     sources = _priority_sources()
-    eligible = set(_ticker_cik_map())
+    cik_map = _ticker_cik_map()
+    eligible = set(cik_map)
     companies, ineligible_favorites = merge_priority_candidates(
         favorites=sources["favorites"],
         famous=sources["famous"],
         selections=sources["selections"],
         active=sources["active"],
         eligible=eligible,
+        issuer_keys=cik_map,
         limit=limit,
     )
     if len(companies) < limit:
@@ -148,20 +158,18 @@ def seed_core_company_coverage(*, limit: int = 100, requested_by: str = "coverag
                 cur.execute(
                     """
                     insert into research_company_coverage (
-                      symbol, priority_rank, priority_reasons, is_fei_favorite, status
-                    ) values (%s, %s, %s::jsonb, %s, 'queued')
+                      symbol, sec_cik, priority_rank, priority_reasons, is_fei_favorite, status
+                    ) values (%s, %s, %s, %s::jsonb, %s, 'queued')
                     on conflict (symbol) do update set
+                      sec_cik = excluded.sec_cik,
                       priority_rank = excluded.priority_rank,
                       priority_reasons = excluded.priority_reasons,
                       is_fei_favorite = excluded.is_fei_favorite,
-                      status = case
-                        when research_company_coverage.status = 'ready' then 'ready'
-                        else 'queued'
-                      end,
+                      status = research_company_coverage.status,
                       updated_at = now()
                     """,
                     [
-                        company["symbol"], company["priority_rank"],
+                        company["symbol"], company["issuer_key"], company["priority_rank"],
                         json.dumps(company["priority_reasons"]), company["is_fei_favorite"],
                     ],
                 )
@@ -173,7 +181,7 @@ def seed_core_company_coverage(*, limit: int = 100, requested_by: str = "coverag
                     select %s, %s, 'queued', %s, %s
                     where not exists (
                       select 1 from research_coverage_jobs
-                      where symbol = %s and status in ('queued', 'running', 'waiting_index', 'failed')
+                      where symbol = %s
                     )
                     on conflict do nothing
                     returning id

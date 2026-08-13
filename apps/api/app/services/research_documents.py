@@ -206,6 +206,7 @@ create index if not exists research_filing_change_reviews_change_idx
 
 create table if not exists research_company_coverage (
   symbol text primary key references us_stock_master(symbol),
+  sec_cik text,
   priority_rank integer not null,
   priority_reasons jsonb not null default '[]'::jsonb,
   is_fei_favorite boolean not null default false,
@@ -224,6 +225,9 @@ create table if not exists research_company_coverage (
   updated_at timestamptz not null default now()
 );
 
+alter table research_company_coverage add column if not exists sec_cik text;
+create unique index if not exists research_company_coverage_sec_cik_idx
+  on research_company_coverage(sec_cik) where sec_cik is not null;
 create index if not exists research_company_coverage_priority_idx
   on research_company_coverage(priority_rank);
 create index if not exists research_company_coverage_status_idx
