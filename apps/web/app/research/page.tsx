@@ -7,6 +7,7 @@ import {
   getResearchCompanies,
   getResearchCompany,
   getResearchDocuments,
+  getResearchFilingChangeRuns,
   getResearchFinancials,
   type ResearchCompany
 } from "@/lib/api";
@@ -16,6 +17,7 @@ import { ResearchComparisonPanel } from "./research-comparison";
 import { ResearchDocuments } from "./research-documents";
 import { ResearchEvaluationPanel } from "./research-evaluation";
 import { ResearchFinancials } from "./research-financials";
+import { ResearchFilingChanges } from "./research-filing-changes";
 
 
 export const dynamic = "force-dynamic";
@@ -72,11 +74,12 @@ export default async function ResearchPage({
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
-  const [searchResult, snapshot, documentResult, financialResult] = await Promise.all([
+  const [searchResult, snapshot, documentResult, financialResult, filingChangeResult] = await Promise.all([
     getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] })),
     symbol ? getResearchCompany(symbol, 30).catch(() => null) : Promise.resolve(null),
     symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] }),
-    symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null)
+    symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null),
+    symbol ? getResearchFilingChangeRuns(symbol).catch(() => ({ symbol, rows: 0, runs: [] })) : Promise.resolve({ symbol, rows: 0, runs: [] })
   ]);
 
   const company = snapshot?.company;
@@ -175,6 +178,12 @@ export default async function ResearchPage({
               <ResearchDocuments symbol={company.symbol} initialDocuments={documentResult.documents} />
 
               <ResearchFinancials symbol={company.symbol} initialFinancials={financialResult} />
+
+              <ResearchFilingChanges
+                symbol={company.symbol}
+                documents={documentResult.documents}
+                initialRuns={filingChangeResult.runs}
+              />
 
               <ResearchCopilot symbol={company.symbol} />
 

@@ -1002,6 +1002,75 @@ export type ResearchDocumentList = {
   documents: ResearchDocument[];
 };
 
+export type FilingChangeEvidence = {
+  chunk_id: string;
+  document_id: string;
+  filename: string;
+  document_type: string;
+  filing_date?: string | null;
+  fiscal_year?: number | null;
+  page_number?: number | null;
+  locator_type: string;
+  locator: string;
+  source_url?: string | null;
+  quote: string;
+};
+
+export type FilingChangeReview = {
+  decision: "confirmed" | "rejected" | "needs_edit";
+  reviewer: string;
+  note?: string | null;
+  created_at: string;
+};
+
+export type FilingChange = {
+  id: string;
+  sequence: number;
+  change_type: "added" | "deleted" | "strengthened" | "weakened" | "rewritten";
+  topic: string;
+  materiality_score: number;
+  similarity_score: number;
+  summary: string;
+  rationale: string;
+  older_evidence: FilingChangeEvidence;
+  newer_evidence: FilingChangeEvidence;
+  review_status: "pending" | "confirmed" | "rejected" | "needs_edit";
+  reviewed_by?: string | null;
+  reviewer_note?: string | null;
+  reviewed_at?: string | null;
+  review_history?: FilingChangeReview[];
+};
+
+export type FilingChangeRun = {
+  id: string;
+  symbol: string;
+  older_document_id: string;
+  newer_document_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  algorithm_version: string;
+  parameters: Record<string, unknown>;
+  retry_of_run_id?: string | null;
+  result_count: number;
+  reviewed_count?: number;
+  error_code?: string | null;
+  error_message?: string | null;
+  older_filename: string;
+  older_filing_date?: string | null;
+  older_fiscal_year?: number | null;
+  newer_filename: string;
+  newer_filing_date?: string | null;
+  newer_fiscal_year?: number | null;
+  created_at: string;
+  completed_at?: string | null;
+  changes?: FilingChange[];
+};
+
+export type FilingChangeRunList = {
+  symbol: string;
+  rows: number;
+  runs: FilingChangeRun[];
+};
+
 export function getResearchCompanies(query = "", limit = 12) {
   const params = new URLSearchParams({ query, limit: String(limit) });
   return fetchJson<ResearchCompanySearch>(`/api/research/companies?${params.toString()}`, {
@@ -1023,6 +1092,14 @@ export function getResearchDocuments(symbol?: string) {
   if (symbol) params.set("symbol", symbol);
   const query = params.size ? `?${params.toString()}` : "";
   return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, {
+    timeoutMs: 10000,
+    baseUrl: RESEARCH_API_BASE_URL
+  });
+}
+
+export function getResearchFilingChangeRuns(symbol: string, limit = 20) {
+  const params = new URLSearchParams({ symbol, limit: String(limit) });
+  return fetchJson<FilingChangeRunList>(`/api/research/filing-changes?${params.toString()}`, {
     timeoutMs: 10000,
     baseUrl: RESEARCH_API_BASE_URL
   });

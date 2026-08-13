@@ -37,5 +37,5 @@ Suggested reading order:
 
 ## Deployment status
 
-- `aistockcn.com` and `research.aistockcn.com` are live.
-- The Research Copilot currently runs on the existing host with Docker Compose.
+- `aistockcn.com` is live, including the authenticated Research Copilot at `/research`.
+- The Research API and background worker currently run on the existing host with Docker Compose.

@@ -5,7 +5,7 @@ import time
 from datetime import date
 from typing import Iterator
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -30,6 +30,13 @@ from app.services.research_documents import (
 )
 from app.services.research_evaluation import list_evaluation_runs, run_reranker_evaluation
 from app.services.research_financials import get_sec_financial_summary, sync_sec_companyfacts
+from app.services.research_filing_changes import (
+    create_filing_change_run,
+    get_filing_change_run,
+    list_filing_change_runs,
+    rerun_filing_change_detection,
+    review_filing_change,
+)
 from app.services.research_observability import record_agent_run
 from app.services.research_retrieval import retrieve_document_evidence
 from app.services.research_sec import discover_sec_filings, sync_sec_filings
@@ -62,6 +69,29 @@ class ResearchSECFilingRequest(BaseModel):
 
 class ResearchSECFinancialRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=15)
+
+
+class FilingChangeRunRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=15)
+    older_document_id: str = Field(min_length=1, max_length=100)
+    newer_document_id: str = Field(min_length=1, max_length=100)
+    max_changes: int = Field(default=24, ge=1, le=100)
+
+
+class FilingChangeReviewRequest(BaseModel):
+    decision: str = Field(pattern="^(confirmed|rejected|needs_edit)$")
+    note: str | None = Field(default=None, max_length=2000)
+
+
+def _filing_change_http_error(exc: ResearchError) -> HTTPException:
+    code = str(exc)
+    if code in {"filing_change_document_not_found", "filing_change_run_not_found", "filing_change_not_found"}:
+        status_code = 404
+    elif code in {"filing_change_documents_not_ready", "filing_change_no_comparable_chunks"}:
+        status_code = 409
+    else:
+        status_code = 400
+    return HTTPException(status_code=status_code, detail={"code": code, "message": code})
 
 
 @router.get("/documents")
@@ -192,6 +222,70 @@ def research_document_file(document_id: str) -> FileResponse:
         code = str(exc)
         status_code = 404 if code in {"document_not_found", "document_file_missing"} else 400
         raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
+@router.get("/filing-changes")
+def research_filing_change_runs(
+    symbol: str = Query(min_length=1, max_length=15),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    try:
+        return list_filing_change_runs(symbol=symbol, limit=limit)
+    except ResearchError as exc:
+        raise _filing_change_http_error(exc) from exc
+
+
+@router.post("/filing-changes", status_code=status.HTTP_202_ACCEPTED)
+def create_research_filing_change_run(
+    request: FilingChangeRunRequest,
+    x_research_actor: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        return create_filing_change_run(
+            symbol=request.symbol,
+            older_document_id=request.older_document_id,
+            newer_document_id=request.newer_document_id,
+            requested_by=x_research_actor,
+            parameters={"max_changes": request.max_changes},
+        )
+    except ResearchError as exc:
+        raise _filing_change_http_error(exc) from exc
+
+
+@router.get("/filing-changes/{run_id}")
+def research_filing_change_run(run_id: str) -> dict[str, object]:
+    try:
+        return get_filing_change_run(run_id)
+    except ResearchError as exc:
+        raise _filing_change_http_error(exc) from exc
+
+
+@router.post("/filing-changes/{run_id}/rerun", status_code=status.HTTP_202_ACCEPTED)
+def rerun_research_filing_change_run(
+    run_id: str,
+    x_research_actor: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        return rerun_filing_change_detection(run_id=run_id, requested_by=x_research_actor)
+    except ResearchError as exc:
+        raise _filing_change_http_error(exc) from exc
+
+
+@router.post("/filing-changes/changes/{change_id}/review")
+def review_research_filing_change(
+    change_id: str,
+    request: FilingChangeReviewRequest,
+    x_research_actor: str | None = Header(default=None),
+) -> dict[str, object]:
+    try:
+        return review_filing_change(
+            change_id=change_id,
+            decision=request.decision,
+            reviewer=x_research_actor or "authenticated-user",
+            note=request.note,
+        )
+    except ResearchError as exc:
+        raise _filing_change_http_error(exc) from exc
 
 
 @router.post("/retrieve")

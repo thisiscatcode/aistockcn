@@ -135,6 +135,74 @@ create table if not exists research_agent_runs (
 
 create index if not exists research_agent_runs_created_idx
   on research_agent_runs(created_at desc);
+
+create table if not exists research_filing_change_runs (
+  id text primary key,
+  symbol text not null references us_stock_master(symbol),
+  older_document_id text not null references research_documents(id),
+  newer_document_id text not null references research_documents(id),
+  status text not null default 'queued'
+    check (status in ('queued', 'running', 'completed', 'failed')),
+  algorithm_version text not null,
+  parameters jsonb not null default '{}'::jsonb,
+  requested_by text,
+  retry_of_run_id text references research_filing_change_runs(id),
+  result_count integer not null default 0,
+  error_code text,
+  error_message text,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (older_document_id <> newer_document_id)
+);
+
+create index if not exists research_filing_change_runs_symbol_idx
+  on research_filing_change_runs(symbol, created_at desc);
+create index if not exists research_filing_change_runs_status_idx
+  on research_filing_change_runs(status, created_at);
+
+create table if not exists research_filing_changes (
+  id text primary key,
+  run_id text not null references research_filing_change_runs(id) on delete cascade,
+  sequence integer not null,
+  change_type text not null
+    check (change_type in ('added', 'deleted', 'strengthened', 'weakened', 'rewritten')),
+  topic text not null,
+  materiality_score double precision not null,
+  similarity_score double precision not null,
+  summary text not null,
+  rationale text not null,
+  older_chunk_id text references research_document_chunks(id),
+  newer_chunk_id text references research_document_chunks(id),
+  older_evidence jsonb not null,
+  newer_evidence jsonb not null,
+  review_status text not null default 'pending'
+    check (review_status in ('pending', 'confirmed', 'rejected', 'needs_edit')),
+  reviewed_by text,
+  reviewer_note text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (run_id, sequence)
+);
+
+create index if not exists research_filing_changes_run_idx
+  on research_filing_changes(run_id, sequence);
+create index if not exists research_filing_changes_review_idx
+  on research_filing_changes(review_status, created_at desc);
+
+create table if not exists research_filing_change_reviews (
+  id text primary key,
+  change_id text not null references research_filing_changes(id) on delete cascade,
+  decision text not null
+    check (decision in ('confirmed', 'rejected', 'needs_edit')),
+  reviewer text not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists research_filing_change_reviews_change_idx
+  on research_filing_change_reviews(change_id, created_at desc);
 """
 
 

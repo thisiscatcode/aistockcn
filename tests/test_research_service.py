@@ -15,10 +15,82 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 from app.services import research as research_service
 from app.services import research_chunking as research_chunking_service
 from app.services import research_financials as research_financials_service
+from app.services import research_filing_changes as research_filing_changes_service
 from app.services import research_sec as research_sec_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def _filing_pair(self, *, older: str, newer: str, similarity: float) -> dict[str, object]:
+        return {
+            "older_chunk_id": "old-chunk",
+            "older_document_id": "old-document",
+            "older_page_number": 8,
+            "older_locator_type": "page",
+            "older_locator": "page 8",
+            "older_content": older,
+            "older_filename": "FY2024.pdf",
+            "older_document_type": "annual_report",
+            "older_filing_date": date(2025, 2, 1),
+            "older_fiscal_year": 2024,
+            "older_source_url": "https://example.com/2024.pdf",
+            "older_native_page_numbers": True,
+            "newer_chunk_id": "new-chunk",
+            "newer_document_id": "new-document",
+            "newer_page_number": 11,
+            "newer_locator_type": "page",
+            "newer_locator": "page 11",
+            "newer_content": newer,
+            "newer_filename": "FY2025.pdf",
+            "newer_document_type": "annual_report",
+            "newer_filing_date": date(2026, 2, 1),
+            "newer_fiscal_year": 2025,
+            "newer_source_url": "https://example.com/2025.pdf",
+            "newer_native_page_numbers": True,
+            "similarity_score": similarity,
+        }
+
+    def test_filing_change_detection_keeps_bilateral_source_evidence(self) -> None:
+        older = "Customer demand may fluctuate and could affect revenue. " * 8
+        newer = "A severe and increasingly significant demand decline will materially adversely affect revenue. " * 8
+        candidates = research_filing_changes_service.build_change_candidates([
+            (self._filing_pair(older=older, newer=newer, similarity=0.72), "older_to_newer")
+        ])
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate["change_type"], "strengthened")
+        self.assertEqual(candidate["older_evidence"]["document_id"], "old-document")
+        self.assertEqual(candidate["older_evidence"]["page_number"], 8)
+        self.assertEqual(candidate["newer_evidence"]["document_id"], "new-document")
+        self.assertEqual(candidate["newer_evidence"]["page_number"], 11)
+        self.assertIn("pending until a person", candidate["rationale"])
+
+    def test_filing_change_detection_is_reproducible_and_ignores_unchanged_text(self) -> None:
+        text = "Cybersecurity risk may materially affect operations and customer trust. " * 8
+        pair = self._filing_pair(older=text, newer=text, similarity=0.999)
+        first = research_filing_changes_service.build_change_candidates([(pair, "older_to_newer")])
+        second = research_filing_changes_service.build_change_candidates([(pair, "older_to_newer")])
+        self.assertEqual(first, second)
+        self.assertEqual(first, [])
+
+    def test_filing_change_detection_classifies_additions_and_deletions_by_direction(self) -> None:
+        older = "Competition risk may reduce market share and adversely affect revenue. " * 8
+        newer = "Cybersecurity threats could materially disrupt operations and customer data. " * 8
+        pair = self._filing_pair(older=older, newer=newer, similarity=0.31)
+        deleted = research_filing_changes_service.build_change_candidates([(pair, "older_to_newer")])
+        added = research_filing_changes_service.build_change_candidates([(pair, "newer_to_older")])
+        self.assertEqual(deleted[0]["change_type"], "deleted")
+        self.assertEqual(added[0]["change_type"], "added")
+        self.assertEqual(deleted[0]["older_evidence"]["document_id"], "old-document")
+        self.assertEqual(added[0]["newer_evidence"]["document_id"], "new-document")
+
+    def test_filing_change_detection_requires_relevant_disclosure_topic(self) -> None:
+        older = "The registered office is located at the following postal address. " * 8
+        newer = "The mailing address uses a different building and postal code. " * 8
+        candidates = research_filing_changes_service.build_change_candidates([
+            (self._filing_pair(older=older, newer=newer, similarity=0.2), "older_to_newer")
+        ])
+        self.assertEqual(candidates, [])
+
     def test_sec_companyfacts_normalization_preserves_numeric_lineage(self) -> None:
         payload = {
             "entityName": "Example Corporation",

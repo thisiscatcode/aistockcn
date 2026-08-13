@@ -138,6 +138,9 @@ def root() -> dict[str, object]:
             "POST /api/research/documents/sec/sync",
             "GET /api/research/financials/{symbol}",
             "POST /api/research/financials/sec/sync",
+            "GET/POST /api/research/filing-changes",
+            "POST /api/research/filing-changes/{run_id}/rerun",
+            "POST /api/research/filing-changes/changes/{change_id}/review",
             "POST /api/research/retrieve",
         ],
     }

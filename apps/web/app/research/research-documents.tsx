@@ -96,7 +96,7 @@ export function ResearchDocuments({
       const response = await fetch("/research/documents/sec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, forms: ["10-K", "10-Q", "8-K"], limit_per_form: 1 })
+        body: JSON.stringify({ symbol, forms: ["10-K", "10-Q", "8-K"], limit_per_form: 2 })
       });
       const result = await response.json();
       if (!response.ok) {
@@ -133,7 +133,7 @@ export function ResearchDocuments({
         <div className="research-sec-sync">
           <div>
             <strong>SEC EDGAR</strong>
-            <small>Fetch the latest 10-K, 10-Q and 8-K directly from the official filing archive.</small>
+            <small>Fetch two filing periods for 10-K, 10-Q and 8-K directly from the official archive.</small>
           </div>
           <button type="button" disabled={syncingSEC} onClick={syncSEC}>
             {syncingSEC ? "Syncing SEC…" : "Sync latest SEC filings"}

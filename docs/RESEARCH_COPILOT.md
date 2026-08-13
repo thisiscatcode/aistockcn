@@ -1,13 +1,13 @@
 # AiStockCN Research Copilot
 
-Production-oriented US equity research on top of AiStockCN's existing market-data platform. The customer site remains isolated at `aistockcn.com`; the copilot is deployed at `research.aistockcn.com`.
+Production-oriented US equity research integrated with AiStockCN's existing market-data platform, authentication and navigation at `aistockcn.com/research`.
 
 ## Deployment status
 
 | Component | Status |
 | --- | --- |
-| Public Research Copilot | Live at `research.aistockcn.com` |
-| Customer platform | Live at `aistockcn.com` on an isolated frontend image |
+| Public Research Copilot | Live at `aistockcn.com/research` after authentication |
+| Customer platform | Live at `aistockcn.com` through one product frontend |
 | Current public runtime | Docker Compose on the existing AiStockCN host |
 | Paid LLM API | Not required; the current agent uses local Ollama |
 
@@ -26,6 +26,7 @@ Production-oriented US equity research on top of AiStockCN's existing market-dat
 - A live reranker benchmark with persisted Top-1 accuracy, MRR and lexical-baseline results.
 - Request IDs, structured latency logs, retries with exponential backoff, rate limiting and privacy-conscious run telemetry.
 - Docker Compose services for the API, background worker and frontend.
+- Versioned filing-change runs with reciprocal semantic matching, bilateral original-text evidence, durable failures, rerun lineage and append-only human review decisions.
 
 ## Architecture
 
@@ -40,6 +41,7 @@ flowchart LR
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder\nreranker"]
     A --> Q["PostgreSQL queue\nSKIP LOCKED"]
+    A --> C["Filing change runs\nversioned rules + review history"]
     A --> S["Shared volume or encrypted S3\nsource documents"]
     E --> S
     Q --> K["Document ingestion worker"]
@@ -53,6 +55,20 @@ flowchart LR
 The LLM never provides the citation metadata shown by the UI. The server attaches `document_id`, filename, locator and source URL from retrieval results. Uploaded PDFs retain native page numbers. SEC filing HTML has no reliable native pagination, so it is cited as `SEC filing HTML · passage N` and is never mislabeled as a PDF page. Model-generated interpretation is kept in a separate field and rendered in a separate card.
 
 Numeric financial answers follow the same rule at a stricter boundary. The server selects canonical SEC Company Facts, calculates comparable-period changes and margins, and renders the factual answer from those typed values. Each fact retains taxonomy, concept, form, period, filing date and accession number. The local model may plan the `sec_financial_facts` tool and provide separately labelled qualitative interpretation, but it cannot overwrite the deterministic numeric answer.
+
+## Filing Change Detection
+
+Filing Change Detection compares two indexed annual reports for the same company. It is an auditable analysis workflow rather than a free-form request to summarize two documents:
+
+1. The API validates that both immutable source records are indexed annual reports for the same symbol and that the older period precedes the newer period.
+2. The worker performs reciprocal nearest-neighbour matching over the stored document vectors, so both deletions and additions can be surfaced.
+3. Versioned deterministic rules classify added, deleted, strengthened, weakened and materially rewritten language, then rank candidates by semantic divergence, disclosure topic, wording intensity and changed numeric expressions.
+4. Every candidate stores both source chunk IDs, both original excerpts, both filenames, both filing periods, and native PDF pages or honest SEC HTML passage locators.
+5. Every run stores its algorithm version, thresholds, source-document hashes and embedding-model lineage. A rerun creates a new linked run; it never overwrites the prior result.
+6. Failures remain visible with a stable error code and message. Interrupted work can be reclaimed safely by the PostgreSQL worker queue.
+7. Results begin as `pending`. Confirm, reject and needs-edit decisions are appended to a review-history table while the latest decision is shown on the result.
+
+The generated summary is deterministic and cannot alter the paired evidence. A human decision is therefore explicit rather than implied by fluent model output.
 
 ## Source-grounding contract
 
@@ -78,13 +94,13 @@ This prevents a fluent model answer from being presented as documentary evidence
 
 ## Local development
 
-The research stack is deliberately separate from the customer frontend image.
+The research API and worker are separately deployable services behind the integrated product frontend.
 
 ```bash
-docker build -t aistockcn-research-api:20260813-xbrl-v1 -f apps/api/Dockerfile.research .
-docker build -t aistockcn-research-web:20260813-xbrl-v1 -f apps/web/Dockerfile .
-docker compose up -d research-api research-worker panel-web-research
-docker compose ps research-api research-worker panel-web-research
+docker build -t aistockcn-research-api:20260813-filing-change-v1 -f apps/api/Dockerfile.research .
+docker build -t aistockcn-panel-web:20260813-filing-change-v1 -f apps/web/Dockerfile .
+docker compose up -d research-api research-worker panel-web
+docker compose ps research-api research-worker panel-web
 ```
 
 Required runtime values already used by the current installation are read from `run/panel.env`. Do not commit that file. Optional cloud document storage is enabled with `RESEARCH_S3_BUCKET`; local Compose uses the shared `research-uploads` volume when the variable is empty.
@@ -93,12 +109,14 @@ The Compose configuration intentionally joins the existing `paper-db` and `ai-se
 
 ## User workflow
 
-1. Open `research.aistockcn.com` and select a company from the AiStockCN US equity universe.
+1. Sign in to `aistockcn.com`, open Research Copilot from the navigation and select a company from the US equity universe.
 2. Sync the latest 10-K, 10-Q and 8-K from SEC EDGAR, sync standardized financial facts, or upload a PDF. Documents move through queued, extracting and search-ready states while preserving source lineage.
 3. Ask a company-specific question. The API streams progress while the agent selects and executes its allow-listed document, market-data and calculation tools.
 4. Review the answer's Document evidence, Model inference and Limitations sections. Each passage includes its filename and an honest native-page or SEC-HTML locator.
-5. Compare two or three companies. The system executes the required tools for each company before synthesizing the comparison.
-6. Use the evaluation page to monitor Top-1 accuracy, MRR, lexical baseline and per-query ranks when the retrieval pipeline changes.
+5. Select two indexed annual reports in Filing Change Detection. Each proposed change includes the older and newer source passage, the saved algorithm version and a pending review state.
+6. Confirm, reject or flag changes for editing. Rerunning creates a new historical run linked to the earlier one.
+7. Compare two or three companies. The system executes the required tools for each company before synthesizing the comparison.
+8. Use the evaluation page to monitor Top-1 accuracy, MRR, lexical baseline and per-query ranks when the retrieval pipeline changes.
 
 ## Operational boundaries
 

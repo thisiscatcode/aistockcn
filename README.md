@@ -3,11 +3,11 @@
 AiStockCN is a live financial-data platform for A-shares and United States equities, with an integrated, source-grounded US Equity Research Copilot. The established A-share workflow remains intact while the main product adds a separate US market workspace for company data, screening, model readiness and operations.
 
 - Customer product: [aistockcn.com](https://aistockcn.com)
-- Research Copilot: [research.aistockcn.com](https://research.aistockcn.com)
+- Research Copilot: [aistockcn.com/research](https://aistockcn.com/research)
 - Technical deep dive: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
 - Documentation index: [docs/README.md](docs/README.md)
 
-The customer site and Research Copilot use separate frontend/API services. Research development and deployment therefore do not require rebuilding the customer-facing image.
+The Research Copilot is part of the authenticated AiStockCN product and shares its navigation and login session. Its API and background workers remain separate services so long-running document and analysis work cannot block the customer interface.
 
 ## Product overview
 
@@ -17,9 +17,9 @@ The Research Copilot is attached directly to AiStockCN's existing US equity data
 
 | Surface | Purpose | Current runtime |
 | --- | --- | --- |
-| `aistockcn.com` | Existing customer-facing market and quantitative platform | Live, isolated production image |
+| `aistockcn.com` | Customer-facing market, quantitative and research platform | Live |
 | `aistockcn.com/us/overview` | US market data, screening and model-readiness workspace | Live, backed by an isolated read-only US API |
-| `research.aistockcn.com` | US equity document research, comparison and retrieval evaluation | Live, Docker Compose on the existing host |
+| `aistockcn.com/research` | US equity document research, filing-change detection, comparison and retrieval evaluation | Live within the authenticated product |
 
 ## United States market workspace
 
@@ -44,6 +44,7 @@ The US workspace is served by a dedicated `us-market-api`. It reads the existing
 - Preserve SEC accession lineage, original URLs and honest source locators throughout ingestion and retrieval. PDFs use native page numbers; SEC HTML uses passage locators and is never presented as paginated.
 - Ask company-specific questions in natural language with streamed progress events.
 - Compare two or three companies through a structured multi-step agent workflow.
+- Compare two indexed annual reports with reciprocal semantic matching; retain bilateral original-text citations, versioned run parameters, failures, reruns and human review history.
 - Query market data and run deterministic return and volatility calculations through server-side tools.
 - Combine PostgreSQL full-text search and `pgvector` similarity search using reciprocal-rank fusion.
 - Rerank candidate passages with a PyTorch cross-encoder.
@@ -72,6 +73,7 @@ flowchart LR
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder reranker"]
     A --> Q["PostgreSQL ingestion queue\nSKIP LOCKED"]
+    A --> C["Versioned filing-change detector\nbilateral citations + human review"]
     Q --> K["Background document worker"]
     S --> K
     K --> V["Source locators, chunks and vectors\nPostgreSQL / pgvector"]
@@ -100,6 +102,7 @@ The operational product has a second isolated path: the main Next.js frontend ca
 | Multi-step agent and tool calling | `apps/api/app/services/research.py` |
 | SEC discovery and filing sync | `apps/api/app/services/research_sec.py` |
 | SEC XBRL normalization and calculations | `apps/api/app/services/research_financials.py` |
+| Filing change runs, evidence and review | `apps/api/app/services/research_filing_changes.py` |
 | PDF/HTML ingestion and background work | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
 | Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
 | PyTorch reranking | `apps/api/app/services/research_models.py` |
@@ -118,9 +121,11 @@ The operational product has a second isolated path: the main Next.js frontend ca
 1. Select a US-listed company.
 2. Sync SEC filings and standardized financial facts, or upload a PDF, and wait for indexing to complete.
 3. Ask about revenue, profitability, risks or changes in management commentary.
-4. Inspect the cited filename, exact page or HTML passage locator, and original source alongside the model inference.
-5. Compare two or three companies using the same document, market-data and calculation tools.
-6. Review retrieval quality through the evaluation page when maintaining or changing the search pipeline.
+4. Compare two annual reports and inspect each proposed addition, deletion, strengthening, weakening or rewrite against both original passages.
+5. Confirm, reject or flag each filing change for editing; reruns remain separate historical records.
+6. Inspect the cited filename, exact page or HTML passage locator, and original source alongside the model inference.
+7. Compare two or three companies using the same document, market-data and calculation tools.
+8. Review retrieval quality through the evaluation page when maintaining or changing the search pipeline.
 
 ## Underlying AiStockCN platform
 
@@ -169,10 +174,10 @@ Local setup connects to existing platform services and does not seed market data
 cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 
-docker build -t aistockcn-research-api:20260813-xbrl-v1 -f apps/api/Dockerfile.research .
-docker build -t aistockcn-research-web:20260813-xbrl-v1 -f apps/web/Dockerfile .
-docker compose up -d research-api research-worker panel-web-research
-docker compose ps research-api research-worker panel-web-research
+docker build -t aistockcn-research-api:20260813-filing-change-v1 -f apps/api/Dockerfile.research .
+docker build -t aistockcn-panel-web:20260813-filing-change-v1 -f apps/web/Dockerfile .
+docker compose up -d research-api research-worker panel-web
+docker compose ps research-api research-worker panel-web
 ```
 
 The current Compose file connects to the platform's existing external database and AI-service networks. See [the detailed local-development notes](docs/RESEARCH_COPILOT.md#local-development) before starting from a new machine.
