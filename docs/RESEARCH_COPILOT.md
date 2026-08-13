@@ -44,7 +44,8 @@ The interface uses a neutral cool-grey canvas, white analytical surfaces and nav
 - BGE embeddings in `pgvector`, PostgreSQL full-text search, reciprocal-rank fusion and a PyTorch cross-encoder reranker.
 - Natural-language answers that render document evidence separately from model inference and preserve server-owned source locators.
 - A local Ollama `qwen2.5:3b` planner/synthesizer; no paid OpenAI key is required.
-- Structured tool plans, server-side tool allow-listing, SSE progress events and multi-company comparison.
+- Structured tool plans, server-side tool allow-listing, SSE progress events with long-running heartbeats and multi-company comparison.
+- Bounded model context, schema-constrained JSON output and an evidence-only fallback keep slow or malformed local-model responses from becoming opaque network failures.
 - A live reranker benchmark with persisted Top-1 accuracy, MRR and lexical-baseline results.
 - Request IDs, structured latency logs, retries with exponential backoff, rate limiting and privacy-conscious run telemetry.
 - Docker Compose services for the API, background worker and frontend.
@@ -115,7 +116,7 @@ This prevents a fluent model answer from being presented as documentary evidence
 5. Hybrid retrieval combines PostgreSQL English FTS and cosine search over BGE vectors using reciprocal-rank fusion when qualitative filing evidence is required.
 6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks the candidate passages with PyTorch.
 7. The local LLM synthesizes only from the supplied context; numeric-only financial questions use deterministic synthesis.
-8. The API emits SSE lifecycle events and a final structured response with evidence, inference, limitations and trace.
+8. The API emits SSE lifecycle events and 10-second heartbeats, then returns a structured response with evidence, inference, limitations and trace. If synthesis fails, verified evidence remains available with an explicit degraded status.
 
 ## Local development
 

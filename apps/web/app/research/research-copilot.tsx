@@ -17,6 +17,25 @@ function sourceLabel(item: ResearchAnswer["data_evidence"][number]) {
   return `${item.source} · ${item.locator}`;
 }
 
+function researchErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.includes("research_model_unavailable") || message.includes("research_model_invalid_response")) {
+    return "The analysis model took too long. Your evidence is safe — try again.";
+  }
+  if (message.includes("company_not_found")) {
+    return "This company is not available in the research universe.";
+  }
+  if (
+    message.includes("research_internal_error") ||
+    message.includes("Research stream ended") ||
+    message.toLowerCase().includes("network") ||
+    message.toLowerCase().includes("fetch")
+  ) {
+    return "The research connection was interrupted. Try again.";
+  }
+  return message || "Research could not be completed. Try again.";
+}
+
 
 export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: string; initialQuestion?: string }) {
   const [question, setQuestion] = useState(initialQuestion);
@@ -40,7 +59,9 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
       });
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => null);
-        throw new Error(typeof payload?.detail === "string" ? payload.detail : "Unable to run research agent");
+        const detail = payload?.detail;
+        const code = typeof detail === "object" && detail ? detail.code : detail;
+        throw new Error(typeof code === "string" ? code : "Unable to run research agent");
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -59,7 +80,7 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
           if (event === "status") setProgress(String(payload.message ?? payload.stage ?? "Running agent…"));
           if (event === "plan") setProgress(`Plan: ${(payload.tools ?? []).join(" → ")}`);
           if (event === "tool") setProgress(`Completed: ${String(payload.tool ?? "tool").replaceAll("_", " ")}`);
-          if (event === "error") throw new Error(String(payload.message ?? "Unable to run research agent"));
+          if (event === "error") throw new Error(String(payload.code ?? payload.message ?? "Unable to run research agent"));
           if (event === "result") {
             setAnswer(payload as ResearchAnswer);
             completed = true;
@@ -69,7 +90,7 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
       }
       if (!completed) throw new Error("Research stream ended before a result was returned");
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to run research agent");
+      setError(researchErrorMessage(requestError));
     } finally {
       setLoading(false);
       setProgress("");
@@ -110,9 +131,20 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
         </div>
       </form>
 
-      {loading && progress ? <p className="research-agent-progress" role="status">{progress}</p> : null}
+      {loading && progress ? (
+        <div className="research-agent-progress" role="status">
+          <span className="research-agent-progress-spinner" aria-hidden="true" />
+          <span>{progress}</span>
+        </div>
+      ) : null}
 
-      {error ? <p className="research-error" role="alert">{error}</p> : null}
+      {error ? (
+        <div className="research-error" role="alert">
+          <span className="research-error-icon" aria-hidden="true">!</span>
+          <div><strong>Research interrupted</strong><p>{error}</p></div>
+          <button type="button" onClick={() => submit()}>Try again</button>
+        </div>
+      ) : null}
 
       {answer ? (
         <div className="research-answer" aria-live="polite">

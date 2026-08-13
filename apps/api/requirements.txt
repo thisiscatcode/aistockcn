@@ -9,4 +9,7 @@ duckdb>=1.1,<2
 psycopg[binary]>=3.2,<4
 PyMuPDF==1.25.1
 python-multipart==0.0.20
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+sentence-transformers==3.3.1
 boto3==1.35.90

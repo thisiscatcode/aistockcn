@@ -389,6 +389,76 @@ class ResearchServiceTests(unittest.TestCase):
         self.assertEqual(plan["tools"], ["company_lookup", "hybrid_document_search"])
         self.assertNotIn("shell_exec", plan["tools"])
 
+    def test_answer_degrades_to_verified_financial_evidence_when_model_fails(self) -> None:
+        snapshot = {
+            "company": {
+                "symbol": "AMZN", "stock_name": "Amazon", "trade_date": "2026-08-13",
+                "close": 265.13, "price_diff": -2.15, "volume": 30_364_977,
+                "pe_ratio": 21.38, "earnings_per_share": 12.43,
+            },
+            "history": [{"close": value} for value in [265, 264, 263, 262, 261, 260]],
+        }
+        financial_summary = {
+            "coverage": {"fact_rows": 2},
+            "latest_annual": {
+                "fiscal_year": 2025,
+                "end_date": "2025-12-31",
+                "metrics": {
+                    "revenue": {
+                        "label": "Revenue", "value": 716_920_000_000, "unit": "USD",
+                        "locator": "SEC XBRL · revenue · FY2025",
+                    },
+                    "net_income": {
+                        "label": "Net income", "value": 77_670_000_000, "unit": "USD",
+                        "locator": "SEC XBRL · net income · FY2025",
+                    },
+                },
+                "derived": {},
+            },
+            "annual_changes": {"revenue": 12.38, "net_income": 30.1},
+            "evidence": [],
+        }
+        with (
+            mock.patch.object(research_service, "get_company_snapshot", return_value=snapshot),
+            mock.patch.object(
+                research_service, "get_settings",
+                return_value=SimpleNamespace(research_llm_model="qwen2.5:3b"),
+            ),
+            mock.patch.object(
+                research_service, "_retrieve_document_evidence",
+                return_value={
+                    "results": [{
+                        "chunk_id": "chunk-1", "document_id": "doc-1",
+                        "content": "Management expects continued investment in capacity.",
+                        "filename": "AMZN-10-K.html", "page_number": 0,
+                        "locator": "SEC filing HTML · passage 10", "locator_type": "html_passage",
+                        "native_page_numbers": False, "source_url": "https://www.sec.gov/example",
+                    }],
+                    "retrieval": {"indexed_documents": 1},
+                },
+            ),
+            mock.patch.object(
+                research_service, "_run_sec_financial_tool",
+                return_value=(financial_summary, None),
+            ),
+            mock.patch.object(
+                research_service, "_generate_research_synthesis",
+                side_effect=research_service.ResearchError("research_model_invalid_response"),
+            ),
+        ):
+            result = research_service.answer_research_question(
+                symbol="AMZN",
+                question="Summarize financial performance and management outlook.",
+                tool_plan={
+                    "tools": ["company_lookup", "sec_financial_facts", "hybrid_document_search"],
+                    "reason": "test", "planner": "test",
+                },
+            )
+
+        self.assertIn("$716.92 billion", result["answer"])
+        self.assertEqual(result["agent_steps"][-1]["status"], "degraded")
+        self.assertTrue(any("reduced to verified evidence" in item for item in result["limitations"]))
+
     def test_synthesis_compacts_model_context_without_changing_evidence(self) -> None:
         passages = [
             {
@@ -415,9 +485,9 @@ class ResearchServiceTests(unittest.TestCase):
         prompt = model_mock.call_args.kwargs["prompt"]
         self.assertEqual(result["answer"], "Grounded answer.")
         self.assertIn("evidence-0-", prompt)
-        self.assertIn("evidence-3-", prompt)
-        self.assertNotIn("evidence-4-", prompt)
-        self.assertLess(len(prompt), 5000)
+        self.assertIn("evidence-2-", prompt)
+        self.assertNotIn("evidence-3-", prompt)
+        self.assertLess(len(prompt), 4000)
 
 
 if __name__ == "__main__":

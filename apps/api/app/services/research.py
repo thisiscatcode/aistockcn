@@ -274,12 +274,21 @@ def _extract_json_object(text: str) -> dict[str, Any]:
             return {}
 
 
-def _call_local_json_model(*, prompt: str, settings: Settings) -> dict[str, Any]:
+def _call_local_json_model(
+    *,
+    prompt: str,
+    settings: Settings,
+    max_output_tokens: int = 240,
+    json_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     payload = {
         "model": settings.research_llm_model,
         "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.1, "num_predict": 320},
+        "format": json_schema or "json",
+        "options": {
+            "temperature": 0.1,
+            "num_predict": max(64, min(int(max_output_tokens), 480)),
+        },
         "prompt": prompt,
     }
     request = Request(
@@ -322,6 +331,15 @@ def plan_research_tools(*, question: str, settings: Settings | None = None) -> d
     try:
         generated = _call_local_json_model(
             settings=resolved,
+            max_output_tokens=96,
+            json_schema={
+                "type": "object",
+                "properties": {
+                    "tools": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                },
+                "required": ["tools", "reason"],
+            },
             prompt=(
                 "You are a research-agent planner. Choose only the tools needed to answer the question. "
                 "Available tools: company_lookup (identity and valuation snapshot), market_history "
@@ -387,14 +405,70 @@ def _generate_research_synthesis(
     settings: Settings,
     financial_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    model_company_context = {
+        key: company.get(key)
+        for key in (
+            "symbol", "stock_name", "stock_industry_en", "trade_date",
+            "close", "price_diff", "pe_ratio", "earnings_per_share",
+        )
+        if company.get(key) is not None
+    }
+
+    def compact_period(
+        period: dict[str, Any] | None, metrics: tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        if not period:
+            return None
+        return {
+            "fiscal_year": period.get("fiscal_year"),
+            "end_date": period.get("end_date"),
+            "metrics": {
+                metric: {
+                    key: fact.get(key)
+                    for key in ("value", "unit", "locator")
+                    if fact.get(key) is not None
+                }
+                for metric in metrics
+                if (fact := (period.get("metrics") or {}).get(metric))
+            },
+        }
+
+    model_financial_context = None
+    if financial_context:
+        annual_metrics = ("revenue", "net_income")
+        quarter_metrics = ("revenue", "net_income")
+        annual_changes = financial_context.get("annual_changes") or {}
+        quarter_changes = financial_context.get("quarterly_yoy_changes") or {}
+        model_financial_context = {
+            "latest_annual": compact_period(
+                financial_context.get("latest_annual"), annual_metrics
+            ),
+            "annual_changes": {
+                metric: annual_changes.get(metric)
+                for metric in (
+                    "revenue", "operating_income", "net_income",
+                    "gross_margin_pct", "operating_margin_pct", "net_margin_pct",
+                )
+                if annual_changes.get(metric) is not None
+            },
+        }
+        if any(term in question.lower() for term in ("quarter", "quarterly", "latest results")):
+            model_financial_context["latest_quarter"] = compact_period(
+                financial_context.get("latest_quarter"), quarter_metrics
+            )
+            model_financial_context["quarterly_yoy_changes"] = {
+                metric: quarter_changes.get(metric)
+                for metric in quarter_metrics
+                if quarter_changes.get(metric) is not None
+            }
+
     prompt_documents = [
         {
             "filename": item.get("filename"),
             "locator": item.get("locator") or f"page {item.get('page_number')}",
-            "source_url": item.get("source_url"),
-            "content": str(item.get("content") or "")[:700],
+            "content": str(item.get("content") or "")[:240],
         }
-        for item in document_context[:4]
+        for item in document_context[:3]
     ]
     filing_instruction = (
         "Use filing claims only when directly supported by the supplied document passages, and cite the exact "
@@ -413,16 +487,30 @@ def _generate_research_synthesis(
     )
     generated = _call_local_json_model(
         settings=settings,
+        max_output_tokens=400,
+        json_schema={
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "model_inference": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 3,
+                },
+            },
+            "required": ["answer", "model_inference"],
+        },
         prompt=(
             "You are an equity research copilot. Answer only from the supplied market and document context. "
             f"{filing_instruction} {financial_instruction} "
             "If the question needs evidence that is not supplied, state that limitation. "
             "Return JSON only with keys answer (string) and "
-            "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct.\n\n"
+            "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct. "
+            "Keep the answer under 100 words and return at most 2 brief inferences.\n\n"
             f"Question: {question}\n"
-            f"Company context: {json.dumps(company, default=str)}\n"
+            f"Company context: {json.dumps(model_company_context, default=str)}\n"
             f"Deterministic calculations: {json.dumps(calculations, default=str)}\n"
-            f"SEC XBRL financial facts: {json.dumps(financial_context or {}, default=str)}\n"
+            f"SEC XBRL financial facts: {json.dumps(model_financial_context or {}, default=str)}\n"
             f"Retrieved document passages: {json.dumps(prompt_documents, default=str)}"
         ),
     )
@@ -690,18 +778,36 @@ def answer_research_question(
         _deterministic_financial_answer(summary=financial_summary, question=normalized_question)
         if financial_summary and financial_summary.get("latest_annual") else None
     )
+    synthesis_error: str | None = None
     if deterministic_financial_answer and not _question_requires_qualitative_synthesis(normalized_question):
         synthesis = {"answer": deterministic_financial_answer, "model_inference": []}
     else:
-        synthesis = _generate_research_synthesis(
-            question=normalized_question,
-            company=company,
-            calculations=calculations,
-            document_context=document_context,
-            settings=settings,
-            financial_context=financial_context,
-        )
-        if deterministic_financial_answer:
+        try:
+            synthesis = _generate_research_synthesis(
+                question=normalized_question,
+                company=company,
+                calculations=calculations,
+                document_context=document_context,
+                settings=settings,
+                financial_context=financial_context,
+            )
+        except ResearchError as exc:
+            if str(exc) not in {"research_model_unavailable", "research_model_invalid_response"}:
+                raise
+            synthesis_error = str(exc)
+            if deterministic_financial_answer:
+                synthesis = {"answer": deterministic_financial_answer, "model_inference": []}
+            elif document_context:
+                synthesis = {
+                    "answer": (
+                        "AI synthesis is temporarily unavailable. The highest-ranked verified filing "
+                        "evidence for this question is shown below."
+                    ),
+                    "model_inference": [],
+                }
+            else:
+                raise
+        if deterministic_financial_answer and not synthesis_error:
             synthesis["model_inference"] = [synthesis["answer"], *synthesis["model_inference"]][:3]
             synthesis["answer"] = deterministic_financial_answer
 
@@ -763,9 +869,12 @@ def answer_research_question(
         "data_evidence": evidence,
         "model_inference": synthesis["model_inference"],
         "limitations": (
-            ["Only the retrieved filing passages shown as evidence were available to the model."]
+            ["Only the highest-ranked retrieved filing passages were supplied to the model."]
             if document_context
             else ["No relevant indexed filing passages were available; no filing-based claims are included."]
+        ) + (
+            ["Model synthesis was unavailable; the response was reduced to verified evidence."]
+            if synthesis_error else []
         ) + ["Market data can be delayed and this output is research assistance, not investment advice."],
         "agent_steps": [
             {
@@ -800,7 +909,11 @@ def answer_research_question(
                 }]
                 if "hybrid_document_search" in selected_tools else []
             ),
-            {"tool": "evidence_synthesis", "status": "completed", "detail": settings.research_llm_model},
+            {
+                "tool": "evidence_synthesis",
+                "status": "degraded" if synthesis_error else "completed",
+                "detail": synthesis_error or settings.research_llm_model,
+            },
         ],
         "tool_plan": plan,
         "retrieval": retrieval.get("retrieval"),
@@ -863,6 +976,19 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
     else:
         generated = _call_local_json_model(
             settings=settings,
+            max_output_tokens=240,
+            json_schema={
+                "type": "object",
+                "properties": {
+                    "answer": {"type": "string"},
+                    "model_inference": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                    },
+                },
+                "required": ["answer", "model_inference"],
+            },
             prompt=(
                 "You are an equity comparison agent. Compare only the supplied companies and evidence. "
                 "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "

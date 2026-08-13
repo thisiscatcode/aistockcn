@@ -12,7 +12,8 @@ RUN mkdir -p /workspace
 COPY apps/api/requirements.txt /tmp/requirements.txt
 
 RUN pip install --upgrade pip \
-    && pip install -r /tmp/requirements.txt
+    && pip install -r /tmp/requirements.txt \
+    && python -c "import torch, sentence_transformers"
 
 COPY apps/api /app
 COPY control_settings.py /workspace/control_settings.py

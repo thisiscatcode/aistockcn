@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import json
+import logging
 import time
 from datetime import date
 from typing import Iterator
@@ -44,6 +46,8 @@ from app.services.research_sec import discover_sec_filings, sync_sec_filings
 
 
 router = APIRouter(prefix="/api/research", tags=["research"])
+logger = logging.getLogger(__name__)
+_research_stream_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="research-stream")
 
 
 class ResearchQuestionRequest(BaseModel):
@@ -378,11 +382,18 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
             plan = plan_research_tools(question=request.question)
             yield f"event: plan\ndata: {json.dumps(plan)}\n\n"
             yield f"event: status\ndata: {json.dumps({'stage': 'executing', 'message': 'Running validated tools'})}\n\n"
-            result = answer_research_question(
+            future = _research_stream_executor.submit(
+                answer_research_question,
                 symbol=request.symbol,
                 question=request.question,
                 tool_plan=plan,
             )
+            while True:
+                try:
+                    result = future.result(timeout=10)
+                    break
+                except FutureTimeoutError:
+                    yield f"event: status\ndata: {json.dumps({'stage': 'synthesizing', 'message': 'Analyzing cited evidence'})}\n\n"
             record_agent_run(
                 run_type="question_stream",
                 symbols=[str(result["symbol"])],
@@ -405,6 +416,17 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
                 error_code=str(exc),
             )
             yield f"event: error\ndata: {json.dumps({'code': str(exc), 'message': str(exc)})}\n\n"
+        except Exception:
+            logger.exception("research stream failed unexpectedly for symbol=%s", request.symbol.upper())
+            record_agent_run(
+                run_type="question_stream",
+                symbols=[request.symbol.upper()],
+                question=request.question,
+                status="failed",
+                duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+                error_code="research_internal_error",
+            )
+            yield f"event: error\ndata: {json.dumps({'code': 'research_internal_error', 'message': 'research_internal_error'})}\n\n"
 
     return StreamingResponse(
         events(),
