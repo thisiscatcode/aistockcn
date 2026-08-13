@@ -26,7 +26,7 @@ export default async function UsOverviewPage() {
     <UsShell
       user={user}
       title="US Market Overview"
-      subtitle="Live United States equity coverage, rules-based selection and model readiness."
+      subtitle="Coverage, selection and readiness"
     >
       <section className="metrics-grid">
         <MetricCard label="Active Companies" value={formatNumber(coverage.active_symbols, user.locale)} hint="NASDAQ and NYSE" />

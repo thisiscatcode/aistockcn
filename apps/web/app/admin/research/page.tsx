@@ -59,7 +59,7 @@ export default async function ResearchOperationsPage() {
   return (
     <Shell
       title="Research Operations"
-      subtitle="Coverage, ingestion and retrieval-quality controls for Research Copilot."
+      subtitle="Coverage, ingestion and retrieval quality"
       locale={user.locale}
       username={user.displayName}
       role={user.role}

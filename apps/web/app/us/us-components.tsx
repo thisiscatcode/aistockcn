@@ -23,11 +23,6 @@ export function UsShell({
       role={user.role}
       market="US"
     >
-      <div className="us-market-context" role="status">
-        <span className="us-market-flag" aria-hidden="true">US</span>
-        <strong>United States equities</strong>
-        <span>USD · America/New_York · NASDAQ &amp; NYSE</span>
-      </div>
       {children}
     </Shell>
   );

@@ -27,7 +27,7 @@ export default async function UsPicksPage({
   }));
 
   return (
-    <UsShell user={user} title="US Picks" subtitle="Current rules-based United States selection snapshots, kept separate from the gated ML model.">
+    <UsShell user={user} title="US Picks" subtitle="Rules-based selection snapshots">
       <div className="us-selection-tabs" aria-label="US selection type">
         <a className={type === "cat" ? "is-active" : ""} href="/us/picks?type=cat">Cat selection</a>
         <a className={type === "lobster" ? "is-active" : ""} href="/us/picks?type=lobster">Lobster selection</a>

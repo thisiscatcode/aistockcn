@@ -33,7 +33,7 @@ export default async function UsDataPage({
   }));
 
   return (
-    <UsShell user={user} title="US Market Data" subtitle="Search the live NASDAQ and NYSE company universe and inspect data coverage.">
+    <UsShell user={user} title="US Market Data" subtitle="NASDAQ and NYSE universe">
       <section className="metrics-grid">
         <MetricCard label="Active Companies" value={formatNumber(summary.coverage.active_symbols, user.locale)} hint="Common stocks in the active universe" />
         <MetricCard label="Stored Bars" value={formatNumber(summary.coverage.total_bars, user.locale)} hint="Daily observations" />

@@ -31,14 +31,14 @@ export function Shell({
 }) {
   const copy = getMessages(locale);
   const isDark = tone === "dark";
-  const navItem = (href: Route, label: string) => ({ href, label });
-  const businessNavItems: Array<{ href: Route; label: string }> = market === "US"
+  const navItem = (href: Route, label: string, icon?: string) => ({ href, label, icon });
+  const businessNavItems: Array<{ href: Route; label: string; icon?: string }> = market === "US"
     ? [
-        navItem("/us/overview" as Route, copy.shell.nav.overview),
-        navItem("/research" as Route, copy.shell.nav.research),
-        navItem("/us/data" as Route, copy.shell.nav.data),
-        navItem("/us/picks" as Route, copy.shell.nav.picks),
-        navItem("/us/paper" as Route, copy.shell.nav.paper)
+        navItem("/us/overview" as Route, copy.shell.nav.overview, "O"),
+        navItem("/research" as Route, copy.shell.nav.research, "AI"),
+        navItem("/us/data" as Route, copy.shell.nav.data, "E"),
+        navItem("/us/picks" as Route, copy.shell.nav.picks, "P"),
+        navItem("/us/paper" as Route, copy.shell.nav.paper, "$")
       ]
     : [
         navItem("/overview", copy.shell.nav.overview),
@@ -48,8 +48,60 @@ export function Shell({
         navItem("/paper", copy.shell.nav.paper)
       ];
   const navItems = role === "admin"
-    ? [...businessNavItems, navItem("/admin", copy.shell.nav.admin)]
+    ? market === "US"
+      ? [
+          ...businessNavItems,
+          navItem("/us/system-monitor" as Route, "System", "S"),
+          navItem("/us/batch" as Route, "Data Jobs", "J"),
+          navItem("/us/models" as Route, "Models", "M"),
+          navItem("/admin", copy.shell.nav.admin, "A")
+        ]
+      : [...businessNavItems, navItem("/admin", copy.shell.nav.admin)]
     : businessNavItems;
+
+  if (market === "US") {
+    return (
+      <div className="theme-shell-root us-terminal-root" data-theme-root data-theme="bright">
+        <div className="us-terminal-shell">
+          <aside className="us-terminal-sidebar">
+            <div className="us-terminal-brand">
+              <span className="us-terminal-mark" aria-hidden="true">A</span>
+              <span><strong>AiStockCN</strong><small>US Intelligence</small></span>
+            </div>
+
+            <div className="us-terminal-nav-label">Workspace</div>
+            <NavTabs items={navItems} />
+
+            <div className="us-terminal-sidebar-footer">
+              <MarketSwitcher market={market} />
+              <div className="us-terminal-user">
+                <span className="us-terminal-avatar" aria-hidden="true">{username.slice(0, 1).toUpperCase()}</span>
+                <span><small>Signed in</small><strong>{username}</strong></span>
+                <ThemeToggle />
+              </div>
+              <form action="/auth/logout" method="post" className="hero-logout-form">
+                <button type="submit" className="logout-button">{copy.shell.logout}</button>
+              </form>
+            </div>
+          </aside>
+
+          <div className="us-terminal-workspace">
+            <header className="us-terminal-topbar">
+              <div className="us-terminal-heading">
+                <span>US Stocks</span>
+                <h1>{title}</h1>
+                {subtitle ? <p>{subtitle}</p> : null}
+              </div>
+              <div className="us-terminal-clock">
+                <ShanghaiTime locale={locale} label="New York" timeZone="America/New_York" />
+              </div>
+            </header>
+            <main className="page-content us-terminal-content">{children}</main>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const content = (
     <div className={`shell${isDark ? " shell-dark" : ""}${compact ? " shell-compact" : ""}`}>
@@ -84,8 +136,8 @@ export function Shell({
           <div className="nav-time">
             <ShanghaiTime
               locale={locale}
-              label={market === "US" ? "New York Time" : copy.shell.shanghaiTime}
-              timeZone={market === "US" ? "America/New_York" : "Asia/Shanghai"}
+              label={copy.shell.shanghaiTime}
+              timeZone="Asia/Shanghai"
             />
           </div>
         </div>

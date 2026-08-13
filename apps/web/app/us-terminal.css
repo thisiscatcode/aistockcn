@@ -1,0 +1,1220 @@
+/*
+ * US equity workstation visual system.
+ * Every selector is scoped to .us-terminal-root so the A-share product keeps
+ * its existing layout and theme unchanged.
+ */
+
+.us-terminal-root {
+  --bg: #f2f5f9;
+  --bg-soft: #f7f9fc;
+  --card: #ffffff;
+  --card-strong: #ffffff;
+  --line: #dce3ec;
+  --line-strong: #c6d0dc;
+  --text: #172033;
+  --muted: #687386;
+  --accent: #2563eb;
+  --accent-soft: #eaf0ff;
+  --danger: #d92d20;
+  --danger-soft: #feeceb;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 18px rgba(16, 24, 40, 0.045);
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+}
+
+.us-terminal-root.page-dark,
+.us-terminal-root.page-dark::before {
+  background: var(--bg);
+  background-image: none;
+}
+
+.us-terminal-shell {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* Global navigation: one left rail, never a second horizontal header. */
+.us-terminal-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: 244px;
+  height: 100vh;
+  padding: 18px 14px 14px;
+  overflow: hidden;
+  color: #cbd5e1;
+  background: #0b1220;
+  border-right: 1px solid #192336;
+}
+
+.us-terminal-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 50px;
+  padding: 0 8px;
+}
+
+.us-terminal-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 1.05rem;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28);
+}
+
+.us-terminal-brand > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.us-terminal-brand strong {
+  color: #f8fafc;
+  font-size: 1.08rem;
+  letter-spacing: -0.01em;
+}
+
+.us-terminal-brand small {
+  color: #7f8da3;
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.us-terminal-nav-label {
+  margin: 22px 11px 8px;
+  color: #607087;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.us-terminal-sidebar .nav {
+  display: grid;
+  gap: 4px;
+}
+
+.us-terminal-sidebar .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 46px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #98a6ba;
+  font-size: 0.98rem;
+  font-weight: 680;
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.us-terminal-sidebar .nav-link::after {
+  display: none;
+}
+
+.us-terminal-sidebar .nav-link:hover {
+  color: #f1f5f9;
+  background: #131e30;
+}
+
+.us-terminal-sidebar .nav-link-active {
+  color: #ffffff;
+  background: #1c2a40;
+  box-shadow: inset 3px 0 #4f8cff;
+}
+
+.us-terminal-sidebar .nav-link-label {
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+.us-terminal-sidebar .nav-link:hover .nav-link-label {
+  background: transparent;
+}
+
+.us-terminal-sidebar .nav-link-icon {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #29364b;
+  border-radius: 7px;
+  color: #8ea3c0;
+  background: #111b2b;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.us-terminal-sidebar .nav-link-active .nav-link-icon {
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #dbeafe;
+  background: rgba(37, 99, 235, 0.3);
+}
+
+.us-terminal-sidebar .navigation-feedback {
+  position: static;
+  margin: 6px 8px 0;
+  color: #93a4bb;
+  background: transparent;
+  box-shadow: none;
+}
+
+.us-terminal-sidebar-footer {
+  display: grid;
+  gap: 12px;
+  margin-top: auto;
+  padding: 14px 6px 2px;
+  border-top: 1px solid #1d293b;
+}
+
+.us-terminal-sidebar .market-switcher {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #263349;
+  border-radius: 8px;
+  background: #111b2b;
+}
+
+.us-terminal-sidebar .market-switcher-link {
+  padding: 8px 5px;
+  border-radius: 5px;
+  color: #8494aa;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.us-terminal-sidebar .market-switcher-link.is-active {
+  color: #ffffff;
+  background: #2563eb;
+  box-shadow: none;
+}
+
+.us-terminal-user {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.us-terminal-avatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #344258;
+  border-radius: 50%;
+  color: #dbeafe;
+  background: #1a2639;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.us-terminal-user > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+}
+
+.us-terminal-user small {
+  color: #6e7e94;
+  font-size: 0.68rem;
+}
+
+.us-terminal-user strong {
+  overflow: hidden;
+  color: #dce5f2;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.us-terminal-sidebar .theme-toggle {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-color: #344258;
+  color: #93c5fd;
+  background: #152136;
+  box-shadow: none;
+}
+
+.us-terminal-sidebar .theme-toggle:hover {
+  border-color: #4b6383;
+  background: #1a2a42;
+}
+
+.us-terminal-sidebar .theme-toggle-dark::after {
+  background: #152136;
+}
+
+.us-terminal-sidebar .hero-logout-form {
+  display: block;
+}
+
+.us-terminal-sidebar .logout-button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #28364b;
+  border-radius: 7px;
+  color: #91a2b8;
+  background: transparent;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.us-terminal-sidebar .logout-button:hover {
+  color: #ffffff;
+  background: #131e30;
+  text-decoration: none;
+}
+
+/* Page header and workspace. */
+.us-terminal-workspace {
+  min-width: 0;
+  background: var(--bg);
+}
+
+.us-terminal-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+}
+
+.us-terminal-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto);
+  align-items: baseline;
+  gap: 1px 12px;
+  min-width: 0;
+}
+
+.us-terminal-heading > span {
+  grid-column: 1 / -1;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.us-terminal-heading h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.55rem, 2vw, 1.9rem);
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.us-terminal-heading p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.us-terminal-clock {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  font-size: 0.82rem;
+}
+
+.us-terminal-root .us-terminal-content {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 18px 22px 34px;
+}
+
+/* Shared financial primitives. */
+.us-terminal-root .metrics-grid,
+.us-terminal-root .two-col-grid,
+.us-terminal-root .catalog-grid {
+  gap: 10px;
+}
+
+.us-terminal-root .metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.us-terminal-root .metric-card,
+.us-terminal-root .panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  backdrop-filter: none;
+}
+
+.us-terminal-root .metric-card {
+  min-height: 112px;
+  padding: 14px 15px;
+}
+
+.us-terminal-root .metric-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.us-terminal-root .metric-value {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.us-terminal-root .metric-hint {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.us-terminal-root .panel {
+  padding: 16px;
+}
+
+.us-terminal-root .panel-header {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.us-terminal-root .panel h2 {
+  color: var(--text);
+  font-size: 1.16rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.us-terminal-root .panel-copy,
+.us-terminal-root .empty-state {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.us-terminal-root .pill {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: #536075;
+  background: var(--bg-soft);
+  font-size: 0.8rem;
+  font-weight: 720;
+}
+
+.us-terminal-root .pill.live {
+  border-color: #a7e3c7;
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.us-terminal-root .pill.warn {
+  border-color: #fecaca;
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.us-terminal-root .panel-link,
+.us-terminal-root a.panel-link {
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 720;
+}
+
+.us-terminal-root .summary-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.us-terminal-root .summary-list > div {
+  padding: 9px 11px;
+  border-bottom-color: var(--line);
+  background: #ffffff;
+}
+
+.us-terminal-root .summary-list span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.us-terminal-root .summary-list strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+/* Tables are the core surface of a finance product. */
+.us-terminal-root .table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.us-terminal-root .data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.us-terminal-root .data-table th {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--line-strong);
+  color: #5c687a;
+  background: #f6f8fb;
+  font-size: 0.76rem;
+  font-weight: 820;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.us-terminal-root .data-table td {
+  padding: 9px 11px;
+  border-bottom: 1px solid #e8edf3;
+  color: #344054;
+  background: #ffffff;
+  font-size: 0.91rem;
+}
+
+.us-terminal-root .data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.us-terminal-root .data-table tbody tr:hover td {
+  background: #f7faff;
+}
+
+.us-terminal-root .data-table-link {
+  color: #175cd3;
+  font-weight: 760;
+}
+
+.us-terminal-root .data-table-cell-detail {
+  color: #7b8798;
+  font-size: 0.78rem;
+}
+
+.us-terminal-root .table-pagination {
+  margin-top: 10px;
+}
+
+.us-terminal-root .table-pagination button,
+.us-terminal-root .table-page-size select {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: #344054;
+  background: #ffffff;
+}
+
+/* Buttons and inputs: flat, high contrast, predictable. */
+.us-terminal-root input,
+.us-terminal-root select,
+.us-terminal-root textarea {
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  color: var(--text);
+  background: #ffffff;
+}
+
+.us-terminal-root input:focus,
+.us-terminal-root select:focus,
+.us-terminal-root textarea:focus {
+  border-color: #4f82ee;
+  outline: 3px solid rgba(37, 99, 235, 0.12);
+}
+
+.us-terminal-root button:not(.logout-button):not(.theme-toggle) {
+  border-radius: 6px;
+  box-shadow: none;
+  font-weight: 760;
+}
+
+.us-terminal-root .us-stock-search {
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.us-terminal-root .us-stock-search input {
+  min-height: 42px;
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 0.95rem;
+}
+
+.us-terminal-root .us-stock-search button,
+.us-terminal-root .us-stock-search a {
+  min-height: 42px;
+  padding: 9px 15px;
+  border-color: #2563eb;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #2563eb;
+  font-size: 0.9rem;
+}
+
+.us-terminal-root .us-stock-search a {
+  border-color: var(--line-strong);
+  color: #344054;
+  background: #ffffff;
+}
+
+.us-terminal-root .us-selection-tabs {
+  width: fit-content;
+  padding: 3px;
+  border-color: var(--line);
+  border-radius: 7px;
+  background: #e9eef5;
+}
+
+.us-terminal-root .us-selection-tabs a {
+  padding: 8px 13px;
+  border-radius: 5px;
+  font-size: 0.9rem;
+}
+
+.us-terminal-root .us-selection-tabs a.is-active {
+  color: #175cd3;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.1);
+}
+
+.us-terminal-root .us-evidence-note {
+  gap: 7px;
+  padding: 9px 12px;
+  border-color: #f4d59a;
+  border-radius: 7px;
+  color: #795507;
+  background: #fffaeb;
+  font-size: 0.88rem;
+}
+
+.us-terminal-root .us-gate-list {
+  gap: 6px;
+}
+
+.us-terminal-root .us-gate-row {
+  padding: 9px 11px;
+  border-color: var(--line);
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.us-terminal-root .us-gate-row strong {
+  color: #344054;
+  font-size: 0.9rem;
+}
+
+.us-terminal-root .us-gate-row p {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.us-terminal-root .us-gate-row.is-ready {
+  border-color: #a7e3c7;
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.us-terminal-root .us-history-progress > span {
+  background: #2563eb;
+}
+
+.us-terminal-root .us-blocker-list {
+  color: #795507;
+  font-size: 0.9rem;
+}
+
+/* Research is a company workstation inside the same US visual system. */
+.us-terminal-root .research-product-page {
+  gap: 9px;
+  font-size: 1rem;
+}
+
+.us-terminal-root .research-company-toolbar {
+  min-height: 40px;
+}
+
+.us-terminal-root .research-back-link {
+  color: #175cd3;
+  font-size: 0.92rem;
+}
+
+.us-terminal-root .research-inline-search {
+  width: min(100%, 370px);
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.us-terminal-root .research-inline-search input {
+  min-height: 40px;
+  padding: 8px 11px;
+  font-size: 0.95rem;
+}
+
+.us-terminal-root .research-inline-search button {
+  padding: 0 13px;
+  border-left-color: var(--line);
+  color: #175cd3;
+  background: #ffffff;
+  font-size: 0.9rem;
+}
+
+.us-terminal-root .research-command-panel,
+.us-terminal-root .research-company-panel,
+.us-terminal-root .research-product-hero,
+.us-terminal-root .research-view-tabs,
+.us-terminal-root .research-overview-section,
+.us-terminal-root .research-query-panel,
+.us-terminal-root .research-copilot-panel,
+.us-terminal-root .research-financials-panel,
+.us-terminal-root .research-documents-panel,
+.us-terminal-root .research-comparison-panel,
+.us-terminal-root .filing-change-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: #ffffff;
+  background-image: none;
+  box-shadow: var(--shadow);
+}
+
+.us-terminal-root .research-start-panel {
+  padding: 15px 16px;
+}
+
+.us-terminal-root .research-start-panel h2,
+.us-terminal-root .research-section-heading h2,
+.us-terminal-root .research-company-hero h2,
+.us-terminal-root .research-copilot-panel h2 {
+  color: var(--text);
+}
+
+.us-terminal-root .research-search-form > div {
+  border-color: var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.us-terminal-root .research-search-form input {
+  color: var(--text);
+  background: #ffffff;
+}
+
+.us-terminal-root .research-search-form button {
+  border-color: #2563eb;
+  border-radius: 5px;
+  background: #2563eb;
+}
+
+.us-terminal-root .research-company-list,
+.us-terminal-root .research-company-row {
+  border-color: var(--line);
+}
+
+.us-terminal-root .research-company-row {
+  background: #ffffff;
+}
+
+.us-terminal-root .research-company-row:hover {
+  background: #f5f8ff;
+}
+
+.us-terminal-root .research-symbol,
+.us-terminal-root .research-company-row strong,
+.us-terminal-root .research-row-price {
+  color: var(--text);
+}
+
+.us-terminal-root .research-symbol {
+  color: #175cd3;
+}
+
+.us-terminal-root .research-company-row small {
+  color: var(--muted);
+}
+
+.us-terminal-root .research-product-hero {
+  padding: 13px 16px;
+}
+
+.us-terminal-root .research-product-hero h2 {
+  font-size: clamp(1.85rem, 2.4vw, 2.25rem);
+}
+
+.us-terminal-root .research-product-hero h2 span,
+.us-terminal-root .research-product-hero > div:first-child > p:last-child,
+.us-terminal-root .research-price-block small {
+  color: var(--muted);
+}
+
+.us-terminal-root .research-price-block strong,
+.us-terminal-root .research-security-stats strong {
+  color: var(--text);
+}
+
+.us-terminal-root .research-price-block .is-positive,
+.us-terminal-root .research-product-metrics strong.is-positive {
+  color: #067647;
+}
+
+.us-terminal-root .research-price-block .is-negative,
+.us-terminal-root .research-product-metrics strong.is-negative {
+  color: #d92d20;
+}
+
+.us-terminal-root .research-security-stats,
+.us-terminal-root .research-security-stats article {
+  border-color: var(--line);
+}
+
+.us-terminal-root .research-security-stats span {
+  color: var(--muted);
+}
+
+.us-terminal-root .research-view-tabs {
+  gap: 0;
+  padding: 0 7px;
+  overflow-x: auto;
+  box-shadow: none;
+}
+
+.us-terminal-root .research-view-tabs a {
+  min-height: 44px;
+  padding: 0 15px;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: #667085;
+  font-size: 0.94rem;
+}
+
+.us-terminal-root .research-view-tabs a:hover {
+  color: #175cd3;
+  background: transparent;
+}
+
+.us-terminal-root .research-view-tabs a.is-active {
+  border-bottom-color: #2563eb;
+  color: #175cd3;
+  background: transparent;
+}
+
+.us-terminal-root .research-view-tabs a span {
+  color: #175cd3;
+  background: #eaf0ff;
+}
+
+.us-terminal-root .research-query-panel {
+  padding: 11px;
+  box-shadow: none;
+}
+
+.us-terminal-root .research-query-form {
+  border-color: #2563eb;
+  border-radius: 6px;
+}
+
+.us-terminal-root .research-query-form button {
+  background: #2563eb;
+}
+
+.us-terminal-root .research-query-shortcuts a {
+  border-color: var(--line);
+  color: #536075;
+  background: #f6f8fb;
+}
+
+.us-terminal-root .research-query-shortcuts a:hover {
+  border-color: #9dbaf7;
+  color: #175cd3;
+}
+
+.us-terminal-root .research-overview-section {
+  padding: 13px 14px;
+  box-shadow: none;
+}
+
+.us-terminal-root .research-overview-heading h2,
+.us-terminal-root .research-overview-financials strong,
+.us-terminal-root .research-overview-filings strong,
+.us-terminal-root .research-change-summary strong {
+  color: var(--text);
+}
+
+.us-terminal-root .research-overview-heading > a {
+  color: #175cd3;
+}
+
+.us-terminal-root .research-overview-financials article,
+.us-terminal-root .research-business-empty {
+  border-color: var(--line);
+  border-radius: 6px;
+  background: #f7f9fc;
+}
+
+.us-terminal-root .research-overview-financials span,
+.us-terminal-root .research-overview-financials small,
+.us-terminal-root .research-overview-filings span,
+.us-terminal-root .research-overview-filings small,
+.us-terminal-root .research-change-summary span,
+.us-terminal-root .research-change-summary small,
+.us-terminal-root .research-business-empty {
+  color: var(--muted);
+}
+
+.us-terminal-root .research-change-summary {
+  border-color: #b8cdf8;
+  background: #f3f7ff;
+}
+
+.us-terminal-root .research-beta-badge {
+  border-color: #b8cdf8;
+  color: #175cd3;
+  background: #eaf0ff;
+}
+
+.us-terminal-root .research-suggestions button {
+  border-color: var(--line);
+  color: #475467;
+  background: #f7f9fc;
+}
+
+.us-terminal-root .research-suggestions button:hover {
+  border-color: #9dbaf7;
+  color: #175cd3;
+  background: #f3f7ff;
+}
+
+.us-terminal-root .research-question-form textarea {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: #ffffff;
+}
+
+.us-terminal-root .research-question-form button,
+.us-terminal-root .research-comparison-form button,
+.us-terminal-root .research-document-upload button,
+.us-terminal-root .research-sec-sync button,
+.us-terminal-root .research-financials-panel .research-section-heading > button,
+.us-terminal-root .filing-change-form button,
+.us-terminal-root .filing-change-result-head button,
+.us-terminal-root .filing-change-review button {
+  border-color: #2563eb;
+  color: #ffffff;
+  background: #2563eb;
+  background-image: none;
+}
+
+.us-terminal-root .research-answer-summary,
+.us-terminal-root .research-proof-card,
+.us-terminal-root .research-agent-trace,
+.us-terminal-root .research-comparison-result > p:first-child,
+.us-terminal-root .research-comparison-table,
+.us-terminal-root .research-document-list article,
+.us-terminal-root .filing-change-card,
+.us-terminal-root .filing-change-evidence,
+.us-terminal-root .filing-change-history,
+.us-terminal-root .filing-change-run-list button {
+  border-color: var(--line);
+  color: var(--text);
+  background: #f8fafc;
+  background-image: none;
+}
+
+.us-terminal-root .research-answer-summary > p:last-child,
+.us-terminal-root .research-proof-card > div span,
+.us-terminal-root .research-agent-trace > summary span,
+.us-terminal-root .research-agent-trace li strong,
+.us-terminal-root .research-comparison-result > p:first-child,
+.us-terminal-root .research-document-list strong,
+.us-terminal-root .filing-change-history strong,
+.us-terminal-root .filing-change-result-head strong,
+.us-terminal-root .filing-change-card-head strong,
+.us-terminal-root .filing-change-evidence strong,
+.us-terminal-root .filing-change-review strong {
+  color: var(--text);
+}
+
+.us-terminal-root .research-proof-card > div,
+.us-terminal-root .research-agent-trace > summary,
+.us-terminal-root .research-agent-trace li,
+.us-terminal-root .research-comparison-table > div {
+  border-color: var(--line);
+}
+
+.us-terminal-root .research-proof-card section.is-document-evidence,
+.us-terminal-root .research-agent-progress,
+.us-terminal-root .research-plan-reason {
+  border-color: #b8cdf8;
+  color: #405f96;
+  background: #f3f7ff;
+}
+
+.us-terminal-root .research-financial-period strong,
+.us-terminal-root .research-financial-grid strong,
+.us-terminal-root .research-sec-sync strong,
+.us-terminal-root .research-document-list strong {
+  color: var(--text);
+}
+
+.us-terminal-root .research-financial-grid article,
+.us-terminal-root .research-document-status,
+.us-terminal-root .research-document-empty {
+  border-color: var(--line);
+  color: var(--text);
+  background: #f8fafc;
+}
+
+.us-terminal-root .research-financial-grid a,
+.us-terminal-root .research-document-list article > a,
+.us-terminal-root .research-proof-card cite,
+.us-terminal-root .filing-change-evidence a {
+  color: #175cd3;
+}
+
+.us-terminal-root .research-sec-sync {
+  border-color: #b8cdf8;
+  background: #f3f7ff;
+}
+
+.us-terminal-root .research-comparison-table .is-heading {
+  color: #536075;
+  background: #eef2f7;
+}
+
+.us-terminal-root .filing-change-form select,
+.us-terminal-root .filing-change-review input {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: #ffffff;
+}
+
+.us-terminal-root .filing-change-evidence blockquote,
+.us-terminal-root .filing-change-progress,
+.us-terminal-root .filing-change-method,
+.us-terminal-root .filing-change-rationale,
+.us-terminal-root .research-document-list small,
+.us-terminal-root .research-document-stats,
+.us-terminal-root .research-financial-note,
+.us-terminal-root .research-financial-period span,
+.us-terminal-root .research-financial-period small {
+  color: var(--muted);
+}
+
+.us-terminal-root .filing-change-status,
+.us-terminal-root .filing-change-type,
+.us-terminal-root .filing-change-review > div:first-child > span {
+  color: #175cd3;
+  background: #eaf0ff;
+}
+
+/* Optional dark mode retains the same hierarchy. Light remains the default. */
+.us-terminal-root[data-theme="dark"] {
+  --bg: #0f1724;
+  --bg-soft: #131e2e;
+  --card: #172234;
+  --card-strong: #172234;
+  --line: #2a374a;
+  --line-strong: #3a485d;
+  --text: #e7edf6;
+  --muted: #99a7ba;
+  --accent: #6b9bff;
+  --accent-soft: #203b6b;
+  --danger: #ff8b82;
+  --danger-soft: #4f282b;
+  background: var(--bg);
+}
+
+.us-terminal-root[data-theme="dark"] .us-terminal-topbar,
+.us-terminal-root[data-theme="dark"] .metric-card,
+.us-terminal-root[data-theme="dark"] .panel,
+.us-terminal-root[data-theme="dark"] .research-command-panel,
+.us-terminal-root[data-theme="dark"] .research-company-panel,
+.us-terminal-root[data-theme="dark"] .research-product-hero,
+.us-terminal-root[data-theme="dark"] .research-view-tabs,
+.us-terminal-root[data-theme="dark"] .research-overview-section,
+.us-terminal-root[data-theme="dark"] .research-query-panel,
+.us-terminal-root[data-theme="dark"] .research-copilot-panel,
+.us-terminal-root[data-theme="dark"] .research-financials-panel,
+.us-terminal-root[data-theme="dark"] .research-documents-panel,
+.us-terminal-root[data-theme="dark"] .research-comparison-panel,
+.us-terminal-root[data-theme="dark"] .filing-change-panel {
+  color: var(--text);
+  background: var(--card);
+}
+
+.us-terminal-root[data-theme="dark"] .data-table td,
+.us-terminal-root[data-theme="dark"] .summary-list,
+.us-terminal-root[data-theme="dark"] .summary-list > div,
+.us-terminal-root[data-theme="dark"] input,
+.us-terminal-root[data-theme="dark"] select,
+.us-terminal-root[data-theme="dark"] textarea,
+.us-terminal-root[data-theme="dark"] .research-inline-search,
+.us-terminal-root[data-theme="dark"] .research-inline-search button,
+.us-terminal-root[data-theme="dark"] .research-query-form,
+.us-terminal-root[data-theme="dark"] .research-search-form > div,
+.us-terminal-root[data-theme="dark"] .research-search-form input {
+  color: var(--text);
+  background: #111c2c;
+}
+
+.us-terminal-root[data-theme="dark"] .data-table th,
+.us-terminal-root[data-theme="dark"] .research-overview-financials article,
+.us-terminal-root[data-theme="dark"] .research-answer-summary,
+.us-terminal-root[data-theme="dark"] .research-proof-card,
+.us-terminal-root[data-theme="dark"] .research-agent-trace,
+.us-terminal-root[data-theme="dark"] .research-financial-grid article,
+.us-terminal-root[data-theme="dark"] .research-document-list article,
+.us-terminal-root[data-theme="dark"] .filing-change-card,
+.us-terminal-root[data-theme="dark"] .filing-change-evidence {
+  color: var(--text);
+  background: #131f30;
+}
+
+@media (max-width: 1050px) {
+  .us-terminal-shell {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  .us-terminal-sidebar {
+    width: 210px;
+  }
+
+  .us-terminal-heading p {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .us-terminal-shell {
+    display: block;
+    padding-bottom: 70px;
+  }
+
+  .us-terminal-sidebar {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 80;
+    display: block;
+    width: auto;
+    height: 70px;
+    padding: 5px 7px;
+    border-top: 1px solid #26344a;
+    border-right: 0;
+  }
+
+  .us-terminal-brand,
+  .us-terminal-nav-label,
+  .us-terminal-sidebar-footer {
+    display: none;
+  }
+
+  .us-terminal-sidebar .nav {
+    display: flex;
+    gap: 2px;
+    overflow-x: auto;
+  }
+
+  .us-terminal-sidebar .nav-link {
+    display: grid;
+    flex: 1 0 68px;
+    min-width: 68px;
+    min-height: 58px;
+    justify-items: center;
+    gap: 2px;
+    padding: 4px 2px;
+    border-radius: 6px;
+    font-size: 0.67rem;
+  }
+
+  .us-terminal-sidebar .nav-link-active {
+    box-shadow: inset 0 2px #4f8cff;
+  }
+
+  .us-terminal-sidebar .nav-link-icon {
+    width: 27px;
+    height: 27px;
+  }
+
+  .us-terminal-sidebar .navigation-feedback {
+    display: none;
+  }
+
+  .us-terminal-topbar {
+    position: static;
+    min-height: 72px;
+    padding: 10px 13px;
+  }
+
+  .us-terminal-heading h1 {
+    font-size: 1.45rem;
+  }
+
+  .us-terminal-clock {
+    display: none;
+  }
+
+  .us-terminal-root .us-terminal-content {
+    padding: 12px 10px 22px;
+  }
+
+  .us-terminal-root .metrics-grid,
+  .us-terminal-root .two-col-grid,
+  .us-terminal-root .research-overview-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .us-terminal-root .research-company-toolbar {
+    align-items: stretch;
+  }
+
+  .us-terminal-root .research-inline-search {
+    width: 100%;
+  }
+}

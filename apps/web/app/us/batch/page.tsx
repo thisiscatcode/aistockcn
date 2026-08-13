@@ -12,7 +12,7 @@ export default async function UsBatchPage() {
   const latestByLane = new Map(status.recent_runs.map((run) => [run.lane, run]));
 
   return (
-    <UsShell user={user} title="US Data Jobs" subtitle="Daily United States market-data lanes run independently on the New York market calendar.">
+    <UsShell user={user} title="US Data Jobs" subtitle="New York market-data lanes">
       <section className="metrics-grid">
         <MetricCard label="Status" value={status.status} hint={status.is_running ? status.current_run?.lane ?? "Running" : "Scheduler watching"} />
         <MetricCard label="Latest Market Date" value={formatDate(status.coverage.latest_trade_date, user.locale)} hint={`${formatNumber(status.coverage.latest_symbols, user.locale)} symbols`} />

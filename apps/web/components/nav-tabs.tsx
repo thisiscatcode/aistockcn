@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MouseEvent, useEffect, useState } from "react";
 
-export function NavTabs({ items }: { items: Array<{ href: Route; label: string }> }) {
+export function NavTabs({ items }: { items: Array<{ href: Route; label: string; icon?: string }> }) {
   const pathname = usePathname();
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
 
@@ -41,6 +41,7 @@ export function NavTabs({ items }: { items: Array<{ href: Route; label: string }
             aria-busy={pendingLabel === item.label ? true : undefined}
             onClick={(event) => markNavigationPending(event, active, item.label)}
           >
+            {item.icon ? <span className="nav-link-icon" aria-hidden="true">{item.icon}</span> : null}
             <span className="nav-link-label">{item.label}</span>
           </Link>
         );

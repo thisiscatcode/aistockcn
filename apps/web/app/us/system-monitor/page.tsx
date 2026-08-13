@@ -13,7 +13,7 @@ export default async function UsSystemMonitorPage() {
   const coverage = status.coverage;
 
   return (
-    <UsShell user={user} title="US System Monitor" subtitle="Operational health for the independent United States data and selection lanes.">
+    <UsShell user={user} title="US System Monitor" subtitle="Pipeline health and recent runs">
       <section className="metrics-grid">
         <MetricCard label="Pipeline" value={status.status} hint={status.is_running ? "A US lane is running" : "No US lane is running"} />
         <MetricCard label="Latest Date" value={formatDate(coverage.latest_trade_date, user.locale)} hint={`${coverage.latest_symbols} symbols`} />

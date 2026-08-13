@@ -12,7 +12,7 @@ export default async function UsPaperPage() {
   const gate = paper.gate;
 
   return (
-    <UsShell user={user} title="US Paper Trading" subtitle="A separate USD paper account will activate only after the United States model passes validation.">
+    <UsShell user={user} title="US Paper Trading" subtitle="USD simulation account">
       <section className="metrics-grid">
         <MetricCard label="Account" value="Not connected" hint="No US broker account is active" />
         <MetricCard label="Positions" value={formatNumber(paper.positions.length, user.locale)} hint="No CN holdings are shown here" />

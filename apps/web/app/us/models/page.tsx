@@ -13,7 +13,7 @@ export default async function UsModelsPage() {
   const progress = Math.min((gate.available_trading_dates / gate.required_trading_dates) * 100, 100);
 
   return (
-    <UsShell user={user} title="US Models" subtitle="An independent United States model pipeline with honest data and validation gates.">
+    <UsShell user={user} title="US Models" subtitle="Training and validation gates">
       <section className="metrics-grid">
         <MetricCard label="Profile" value={model.profile.name} hint="Independent from all A-share models" />
         <MetricCard label="Horizon" value={`${model.profile.horizon_trading_days} trading days`} hint="Next open to fifth close" />

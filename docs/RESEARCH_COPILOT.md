@@ -17,6 +17,12 @@ The `research-coverage-worker` owns the durable bootstrap queue, atomic job clai
 
 Operational state is deliberately separated from the customer research workflow. `/research` contains company analysis, documents, financials, filing changes and grounded Q&A. Coverage queues, indexing progress, failures and retrieval evaluation are restricted to administrators at `/admin/research`.
 
+## US product interface
+
+The US equity product uses a dedicated workstation shell and does not alter the A-share interface. Global US navigation lives in one persistent left rail; the top bar contains only the current page title and New York time. Company Research has one secondary navigation level for the selected security: Summary, Ask AI, Financials, Filings, Changes and Compare. This prevents product navigation and company tasks from appearing as two competing headers.
+
+The interface uses a neutral cool-grey canvas, white analytical surfaces, navy navigation, blue primary actions and conventional green/red financial state colours. Tables, inputs and buttons share one compact scale across Research, Market Overview, Explorer, Picks, Paper and US administration. On narrow screens the left rail becomes a horizontally scrollable bottom navigation while the company task tabs remain independently scrollable.
+
 ## Deployment status
 
 | Component | Status |

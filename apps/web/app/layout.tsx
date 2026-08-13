@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./us-terminal.css";
 import type { Metadata } from "next";
 import { ReactNode } from "react";
 
