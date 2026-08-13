@@ -29,6 +29,7 @@ RESEARCH_TOOLS = (
     "company_lookup",
     "market_history",
     "financial_calculator",
+    "sec_financial_facts",
     "hybrid_document_search",
 )
 
@@ -189,6 +190,22 @@ def get_company_snapshot(*, symbol: str, history_limit: int = 30) -> dict[str, A
                 [normalized_symbol],
             )
             coverage = dict(cur.fetchone() or {})
+            cur.execute(
+                """
+                select count(*) filter (where status = 'indexed') as indexed_documents
+                from research_documents where symbol = %s
+                """,
+                [normalized_symbol],
+            )
+            document_coverage = dict(cur.fetchone() or {})
+            cur.execute(
+                """
+                select fact_count, status, synced_at
+                from research_financial_sync_status where symbol = %s
+                """,
+                [normalized_symbol],
+            )
+            financial_coverage = dict(cur.fetchone() or {})
 
     return {
         "company": records_to_json([dict(company)])[0],
@@ -196,8 +213,8 @@ def get_company_snapshot(*, symbol: str, history_limit: int = 30) -> dict[str, A
         "coverage": records_to_json([coverage])[0],
         "research_readiness": {
             "market_data": "ready",
-            "sec_filings": "not_indexed",
-            "financial_facts": "not_indexed",
+            "sec_filings": "ready" if int(document_coverage.get("indexed_documents") or 0) else "not_indexed",
+            "financial_facts": "ready" if financial_coverage.get("status") == "ready" else "not_indexed",
         },
     }
 
@@ -298,14 +315,19 @@ def plan_research_tools(*, question: str, settings: Settings | None = None) -> d
     """Ask the local LLM for a structured tool plan, then validate it server-side."""
     resolved = settings or get_settings()
     normalized_question = " ".join(str(question or "").split())
-    fallback = ["company_lookup", "market_history", "financial_calculator", "hybrid_document_search"]
+    fallback = [
+        "company_lookup", "market_history", "financial_calculator",
+        "sec_financial_facts", "hybrid_document_search",
+    ]
     try:
         generated = _call_local_json_model(
             settings=resolved,
             prompt=(
                 "You are a research-agent planner. Choose only the tools needed to answer the question. "
                 "Available tools: company_lookup (identity and valuation snapshot), market_history "
-                "(daily prices), financial_calculator (returns and volatility), hybrid_document_search "
+                "(daily prices), financial_calculator (returns and volatility), sec_financial_facts "
+                "(standardized SEC XBRL revenue, profit, EPS, cash flow and balance sheet facts), "
+                "hybrid_document_search "
                 "(annual reports, filings, risks and management language). Return JSON only: "
                 '{"tools":["tool_name"],"reason":"one short sentence"}. '
                 "Use hybrid_document_search for any question about company performance, financial results, "
@@ -327,12 +349,22 @@ def plan_research_tools(*, question: str, settings: Settings | None = None) -> d
             "return", "volatility", "price", "market", "momentum", "20-day", "20 day",
             "5-day", "5 day", "risk signal",
         )
+        financial_fact_terms = (
+            "revenue", "sales", "profit", "income", "earnings", "eps", "margin",
+            "cash flow", "free cash", "capex", "assets", "liabilities", "balance sheet",
+            "financial", "year over year", "yoy", "growth",
+        )
         if any(term in lower_question for term in market_signal_terms):
             for required_tool in ("market_history", "financial_calculator"):
                 if required_tool not in tools:
                     tools.append(required_tool)
         if "financial_calculator" in tools and "market_history" not in tools:
             tools.append("market_history")
+        if any(term in lower_question for term in financial_fact_terms):
+            if "sec_financial_facts" not in tools:
+                tools.append("sec_financial_facts")
+            if not _question_requires_qualitative_synthesis(normalized_question):
+                tools = [tool for tool in tools if tool != "hybrid_document_search"]
         if not tools:
             tools = fallback
         tools = [tool for tool in RESEARCH_TOOLS if tool in tools]
@@ -353,6 +385,7 @@ def _generate_research_synthesis(
     calculations: dict[str, Any],
     document_context: list[dict[str, Any]],
     settings: Settings,
+    financial_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prompt_documents = [
         {
@@ -371,16 +404,25 @@ def _generate_research_synthesis(
         "The SEC filing corpus returned no relevant passages, so do not claim knowledge of revenue, earnings "
         "trends, risk factors, guidance, management statements, or annual-report content."
     )
+    financial_instruction = (
+        "Use numeric financial claims only from the supplied SEC XBRL facts or deterministic calculations. "
+        "Cite XBRL claims with their exact supplied locator as [SEC XBRL, locator]."
+        if financial_context
+        else
+        "No standardized SEC XBRL facts were available, so qualify any numeric financial conclusion."
+    )
     generated = _call_local_json_model(
         settings=settings,
         prompt=(
             "You are an equity research copilot. Answer only from the supplied market and document context. "
-            f"{filing_instruction} If the question needs evidence that is not supplied, state that limitation. "
+            f"{filing_instruction} {financial_instruction} "
+            "If the question needs evidence that is not supplied, state that limitation. "
             "Return JSON only with keys answer (string) and "
             "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct.\n\n"
             f"Question: {question}\n"
             f"Company context: {json.dumps(company, default=str)}\n"
             f"Deterministic calculations: {json.dumps(calculations, default=str)}\n"
+            f"SEC XBRL financial facts: {json.dumps(financial_context or {}, default=str)}\n"
             f"Retrieved document passages: {json.dumps(prompt_documents, default=str)}"
         ),
     )
@@ -400,6 +442,216 @@ def _retrieve_document_evidence(*, symbol: str, question: str) -> dict[str, Any]
     from app.services.research_retrieval import retrieve_document_evidence
 
     return retrieve_document_evidence(symbol=symbol, question=question, top_k=6)
+
+
+def _compact_financial_context(summary: dict[str, Any]) -> dict[str, Any]:
+    def compact_period(
+        period: dict[str, Any] | None, *, include_locators: bool
+    ) -> dict[str, Any] | None:
+        if not period:
+            return None
+        selected_metrics = {}
+        for metric in (
+            "revenue", "gross_profit", "operating_income", "net_income", "eps_diluted",
+            "operating_cash_flow", "assets", "liabilities",
+        ):
+            fact = period.get("metrics", {}).get(metric)
+            if fact:
+                selected_metrics[metric] = {
+                    "value": fact.get("value"),
+                    "unit": fact.get("unit"),
+                }
+                if include_locators:
+                    selected_metrics[metric]["locator"] = fact.get("locator")
+        return {
+            "end_date": period.get("end_date"),
+            "fiscal_year": period.get("fiscal_year"),
+            "fiscal_period": period.get("fiscal_period"),
+            "metrics": selected_metrics,
+            "derived": period.get("derived") if include_locators else None,
+        }
+
+    return {
+        "latest_annual": compact_period(summary.get("latest_annual"), include_locators=True),
+        "previous_annual": compact_period(summary.get("previous_annual"), include_locators=False),
+        "annual_changes": summary.get("annual_changes") or {},
+        "latest_quarter": compact_period(summary.get("latest_quarter"), include_locators=True),
+        "comparable_quarter": compact_period(summary.get("comparable_quarter"), include_locators=False),
+        "quarterly_yoy_changes": summary.get("quarterly_yoy_changes") or {},
+    }
+
+
+def _run_sec_financial_tool(symbol: str) -> tuple[dict[str, Any] | None, str | None]:
+    from app.services.research_financials import get_sec_financial_summary, sync_sec_companyfacts
+
+    try:
+        summary = get_sec_financial_summary(symbol=symbol)
+        if not int(summary.get("coverage", {}).get("fact_rows") or 0):
+            sync_sec_companyfacts(symbol=symbol)
+            summary = get_sec_financial_summary(symbol=symbol)
+        return summary, None
+    except ResearchError as exc:
+        return None, str(exc)
+
+
+def _format_financial_value(value: Any, unit: str | None) -> str:
+    number = _numeric(value)
+    if number is None:
+        return "unavailable"
+    if unit == "USD/shares":
+        return f"${number:,.2f} per diluted share"
+    if unit == "USD":
+        absolute = abs(number)
+        if absolute >= 1_000_000_000:
+            return f"${number / 1_000_000_000:,.2f} billion"
+        if absolute >= 1_000_000:
+            return f"${number / 1_000_000:,.2f} million"
+        return f"${number:,.0f}"
+    return f"{number:,.2f} {unit or ''}".strip()
+
+
+def _change_phrase(value: Any, *, percentage_points: bool = False) -> str:
+    number = _numeric(value)
+    if number is None:
+        return "with no comparable period available"
+    direction = "up" if number >= 0 else "down"
+    suffix = " percentage points" if percentage_points else "%"
+    return f"{direction} {abs(number):.2f}{suffix} from the comparable period"
+
+
+def _deterministic_financial_answer(*, summary: dict[str, Any], question: str) -> str:
+    latest = summary.get("latest_annual")
+    if not latest:
+        return "No complete annual SEC XBRL period is available for this company."
+    metrics = latest.get("metrics") or {}
+    changes = summary.get("annual_changes") or {}
+    fiscal_label = f"FY{latest.get('fiscal_year') or ''}".rstrip()
+    period_label = f"{fiscal_label} ended {latest.get('end_date')}"
+    sentences: list[str] = []
+    lower_question = question.lower()
+    wants_quarter = any(
+        term in lower_question for term in ("quarter", "quarterly", "latest period", "recent results")
+    )
+    wants_annual = any(term in lower_question for term in ("annual", "year", "fy")) or not wants_quarter
+    if wants_annual:
+        for metric in ("revenue", "net_income", "eps_diluted", "operating_cash_flow"):
+            fact = metrics.get(metric)
+            if not fact:
+                continue
+            sentences.append(
+                f"For {period_label}, {str(fact['label']).lower()} was "
+                f"{_format_financial_value(fact.get('value'), fact.get('unit'))}, "
+                f"{_change_phrase(changes.get(metric))} "
+                f"[SEC XBRL, {fact['locator']}]."
+            )
+        derived = latest.get("derived") or {}
+        margin_parts = []
+        for metric, label in (
+            ("gross_margin_pct", "Gross margin"),
+            ("operating_margin_pct", "operating margin"),
+            ("net_margin_pct", "net margin"),
+        ):
+            value = _numeric(derived.get(metric))
+            if value is not None:
+                margin_parts.append(
+                    f"{label} was {value:.2f}% ({_change_phrase(changes.get(metric), percentage_points=True)})"
+                )
+        if margin_parts:
+            revenue_fact = metrics.get("revenue")
+            margin_locator = revenue_fact.get("locator") if revenue_fact else period_label
+            sentences.append("; ".join(margin_parts) + f" [SEC XBRL calculations, {margin_locator}].")
+
+    if wants_quarter:
+        quarter = summary.get("latest_quarter")
+        quarter_changes = summary.get("quarterly_yoy_changes") or {}
+        if quarter:
+            quarter_metrics = quarter.get("metrics") or {}
+            for metric in ("revenue", "net_income", "eps_diluted"):
+                fact = quarter_metrics.get(metric)
+                if not fact:
+                    continue
+                sentences.append(
+                    f"For the quarter ended {quarter.get('end_date')}, {str(fact['label']).lower()} was "
+                    f"{_format_financial_value(fact.get('value'), fact.get('unit'))}, "
+                    f"{_change_phrase(quarter_changes.get(metric))} "
+                    f"[SEC XBRL, {fact['locator']}]."
+                )
+    return " ".join(sentences)
+
+
+def _financial_comparison_context(summary: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not summary or not summary.get("latest_annual"):
+        return None
+    latest = summary["latest_annual"]
+    metrics = latest.get("metrics") or {}
+    return {
+        "end_date": latest.get("end_date"),
+        "fiscal_year": latest.get("fiscal_year"),
+        "metrics": {
+            metric: {
+                "value": fact.get("value"),
+                "unit": fact.get("unit"),
+                "locator": fact.get("locator"),
+            }
+            for metric in ("revenue", "net_income", "eps_diluted")
+            if (fact := metrics.get(metric))
+        },
+        "derived": {
+            metric: latest.get("derived", {}).get(metric)
+            for metric in ("gross_margin_pct", "operating_margin_pct", "net_margin_pct")
+        },
+        "annual_changes": {
+            metric: summary.get("annual_changes", {}).get(metric)
+            for metric in (
+                "revenue", "net_income", "eps_diluted", "gross_margin_pct",
+                "operating_margin_pct", "net_margin_pct",
+            )
+        },
+    }
+
+
+def _deterministic_financial_comparison(companies: list[dict[str, Any]]) -> str:
+    statements = []
+    for item in companies:
+        financials = item.get("financials") or {}
+        metrics = financials.get("metrics") or {}
+        revenue = metrics.get("revenue")
+        net_income = metrics.get("net_income")
+        if not revenue and not net_income:
+            continue
+        parts = []
+        if revenue:
+            parts.append(
+                f"revenue {_format_financial_value(revenue.get('value'), revenue.get('unit'))} "
+                f"({_change_phrase(financials.get('annual_changes', {}).get('revenue'))}) "
+                f"[SEC XBRL, {revenue.get('locator')}]"
+            )
+        if net_income:
+            parts.append(
+                f"net income {_format_financial_value(net_income.get('value'), net_income.get('unit'))} "
+                f"({_change_phrase(financials.get('annual_changes', {}).get('net_income'))}) "
+                f"[SEC XBRL, {net_income.get('locator')}]"
+            )
+        gross_margin = _numeric(financials.get("derived", {}).get("gross_margin_pct"))
+        if gross_margin is not None:
+            parts.append(f"gross margin {gross_margin:.2f}%")
+        statements.append(
+            f"{item['symbol']} FY{financials.get('fiscal_year') or ''} ended "
+            f"{financials.get('end_date')}: " + "; ".join(parts) + "."
+        )
+    return " ".join(statements)
+
+
+def _question_requires_qualitative_synthesis(question: str) -> bool:
+    lower_question = question.lower()
+    return any(
+        term in lower_question
+        for term in (
+            "risk", "why", "driver", "management", "strategy", "outlook", "guidance",
+            "positioning", "explain", "summar", "investment", "competitive", "product",
+            "supply", "regulatory", "language", "commentary",
+        )
+    )
 
 
 def answer_research_question(
@@ -429,13 +681,29 @@ def answer_research_question(
         else {"results": [], "retrieval": {"strategy": "not_selected_by_agent"}}
     )
     document_context = list(retrieval.get("results") or [])
-    synthesis = _generate_research_synthesis(
-        question=normalized_question,
-        company=company,
-        calculations=calculations,
-        document_context=document_context,
-        settings=settings,
+    financial_summary: dict[str, Any] | None = None
+    financial_error: str | None = None
+    if "sec_financial_facts" in selected_tools:
+        financial_summary, financial_error = _run_sec_financial_tool(normalized_symbol)
+    financial_context = _compact_financial_context(financial_summary) if financial_summary else None
+    deterministic_financial_answer = (
+        _deterministic_financial_answer(summary=financial_summary, question=normalized_question)
+        if financial_summary and financial_summary.get("latest_annual") else None
     )
+    if deterministic_financial_answer and not _question_requires_qualitative_synthesis(normalized_question):
+        synthesis = {"answer": deterministic_financial_answer, "model_inference": []}
+    else:
+        synthesis = _generate_research_synthesis(
+            question=normalized_question,
+            company=company,
+            calculations=calculations,
+            document_context=document_context,
+            settings=settings,
+            financial_context=financial_context,
+        )
+        if deterministic_financial_answer:
+            synthesis["model_inference"] = [synthesis["answer"], *synthesis["model_inference"]][:3]
+            synthesis["answer"] = deterministic_financial_answer
 
     latest_date = company.get("trade_date")
     evidence: list[dict[str, Any]] = [
@@ -471,6 +739,8 @@ def answer_research_question(
     ]
     if "financial_calculator" not in selected_tools:
         evidence = [item for item in evidence if item["id"] != "calculated-market-signals"]
+    if financial_summary:
+        evidence.extend(financial_summary.get("evidence") or [])
 
     return {
         "symbol": normalized_symbol,
@@ -514,6 +784,16 @@ def answer_research_question(
             ),
             *(
                 [{
+                    "tool": "sec_financial_facts",
+                    "status": "failed" if financial_error else "completed",
+                    "detail": financial_error or (
+                        f"{financial_summary.get('coverage', {}).get('fact_rows', 0)} canonical SEC XBRL facts"
+                    ),
+                }]
+                if "sec_financial_facts" in selected_tools else []
+            ),
+            *(
+                [{
                     "tool": "hybrid_document_search",
                     "status": "completed",
                     "detail": f"{len(document_context)} reranked passages",
@@ -524,6 +804,7 @@ def answer_research_question(
         ],
         "tool_plan": plan,
         "retrieval": retrieval.get("retrieval"),
+        "financials": financial_context,
         "model": {"provider": "ollama", "name": settings.research_llm_model},
         "duration_ms": round((time.perf_counter() - started_at) * 1000, 1),
     }
@@ -540,67 +821,96 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
     normalized_question = " ".join(str(question or "").split())
     if not normalized_question:
         raise ResearchError("question_required")
+    needs_qualitative_synthesis = _question_requires_qualitative_synthesis(normalized_question)
 
     companies: list[dict[str, Any]] = []
     document_evidence: list[dict[str, Any]] = []
+    financial_evidence: list[dict[str, Any]] = []
     for symbol in normalized_symbols:
         snapshot = get_company_snapshot(symbol=symbol, history_limit=60)
         calculations = _market_calculations(snapshot["history"])
-        companies.append({"symbol": symbol, "company": snapshot["company"], "calculations": calculations})
-        retrieval = _retrieve_document_evidence(symbol=symbol, question=normalized_question)
-        for item in list(retrieval.get("results") or [])[:2]:
-            document_evidence.append({
-                "symbol": symbol,
-                "id": item["chunk_id"],
-                "document_id": item["document_id"],
-                "claim": item["content"],
-                "source": item["filename"],
-                "locator": item.get("locator") or f"page {item['page_number']}",
-                "locator_type": item.get("locator_type") or "page",
-                "page_number": item["page_number"] if item.get("native_page_numbers", True) else None,
-                "source_url": item.get("source_url"),
-                "reranker_score": item.get("reranker_score"),
-            })
+        financial_summary, _ = _run_sec_financial_tool(symbol)
+        comparison_financials = _financial_comparison_context(financial_summary)
+        companies.append({
+            "symbol": symbol,
+            "company": snapshot["company"],
+            "calculations": calculations,
+            "financials": comparison_financials,
+        })
+        for item in (financial_summary or {}).get("evidence") or []:
+            financial_evidence.append({"symbol": symbol, **item})
+        if needs_qualitative_synthesis:
+            retrieval = _retrieve_document_evidence(symbol=symbol, question=normalized_question)
+            for item in list(retrieval.get("results") or [])[:2]:
+                document_evidence.append({
+                    "symbol": symbol,
+                    "id": item["chunk_id"],
+                    "document_id": item["document_id"],
+                    "claim": item["content"],
+                    "source": item["filename"],
+                    "locator": item.get("locator") or f"page {item['page_number']}",
+                    "locator_type": item.get("locator_type") or "page",
+                    "page_number": item["page_number"] if item.get("native_page_numbers", True) else None,
+                    "source_url": item.get("source_url"),
+                    "reranker_score": item.get("reranker_score"),
+                })
 
     settings = get_settings()
-    generated = _call_local_json_model(
-        settings=settings,
-        prompt=(
-            "You are an equity comparison agent. Compare only the supplied companies and evidence. "
-            "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "
-            "only with answer (string) and model_inference (array of at most 3 strings). Cite document claims "
-            "using the exact supplied locator as [SYMBOL, filename, locator]. Never call an HTML passage a page.\n"
-            f"Question: {normalized_question}\n"
-            f"Company data and calculations: {json.dumps(companies, default=str)}\n"
-            "Document evidence: "
-            + json.dumps(
-                [
-                    {**item, "claim": str(item.get("claim") or "")[:700]}
-                    for item in document_evidence
-                ],
-                default=str,
-            )
-        ),
-    )
-    answer = str(generated.get("answer") or "").strip()
-    if not answer:
-        raise ResearchError("research_model_invalid_response")
-    inference = generated.get("model_inference")
-    if not isinstance(inference, list):
-        inference = []
+    deterministic_comparison = _deterministic_financial_comparison(companies)
+    if deterministic_comparison and not needs_qualitative_synthesis:
+        answer = deterministic_comparison
+        inference: list[Any] = []
+    else:
+        generated = _call_local_json_model(
+            settings=settings,
+            prompt=(
+                "You are an equity comparison agent. Compare only the supplied companies and evidence. "
+                "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "
+                "only with answer (string) and model_inference (array of at most 3 strings). Cite document claims "
+                "using the exact supplied locator as [SYMBOL, filename, locator]. Never call an HTML passage a page.\n"
+                f"Question: {normalized_question}\n"
+                f"Company data and calculations: {json.dumps(companies, default=str)}\n"
+                "Document evidence: "
+                + json.dumps(
+                    [
+                        {**item, "claim": str(item.get("claim") or "")[:700]}
+                        for item in document_evidence
+                    ],
+                    default=str,
+                )
+            ),
+        )
+        answer = str(generated.get("answer") or "").strip()
+        if not answer:
+            raise ResearchError("research_model_invalid_response")
+        inference = generated.get("model_inference")
+        if not isinstance(inference, list):
+            inference = []
+        if deterministic_comparison:
+            inference = [answer, *inference][:3]
+            answer = deterministic_comparison
     return {
         "symbols": normalized_symbols,
         "question": normalized_question,
         "answer": answer,
         "companies": companies,
         "document_evidence": document_evidence,
+        "financial_evidence": financial_evidence,
         "model_inference": [str(item).strip() for item in inference if str(item).strip()][:3],
         "agent_steps": [
             {"tool": "comparison_planner", "status": "completed", "detail": ", ".join(normalized_symbols)},
             {"tool": "company_lookup", "status": "completed", "detail": f"{len(companies)} companies"},
             {"tool": "financial_calculator", "status": "completed", "detail": "returns and volatility per company"},
-            {"tool": "hybrid_document_search", "status": "completed", "detail": f"{len(document_evidence)} passages"},
-            {"tool": "comparison_synthesis", "status": "completed", "detail": settings.research_llm_model},
+            {"tool": "sec_financial_facts", "status": "completed", "detail": f"{len(financial_evidence)} cited facts"},
+            *(
+                [{"tool": "hybrid_document_search", "status": "completed", "detail": f"{len(document_evidence)} passages"}]
+                if needs_qualitative_synthesis else []
+            ),
+            {
+                "tool": "comparison_synthesis",
+                "status": "completed",
+                "detail": settings.research_llm_model if needs_qualitative_synthesis else "deterministic financial synthesis",
+            },
         ],
         "model": {"provider": "ollama", "name": settings.research_llm_model},
     }

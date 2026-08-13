@@ -158,6 +158,14 @@ def _ticker_cik_map() -> dict[str, str]:
     return result
 
 
+def resolve_sec_cik(symbol: str) -> str:
+    normalized_symbol = normalize_us_symbol(symbol)
+    cik = _ticker_cik_map().get(normalized_symbol)
+    if not cik:
+        raise ResearchDocumentError("sec_cik_not_found")
+    return cik
+
+
 def _recent_filing_rows(submissions: dict[str, Any]) -> list[dict[str, Any]]:
     recent = submissions.get("filings", {}).get("recent", {})
     if not isinstance(recent, dict):
@@ -185,9 +193,7 @@ def discover_sec_filings(
     limit_per_form: int = 1,
 ) -> dict[str, Any]:
     normalized_symbol = normalize_us_symbol(symbol)
-    cik = _ticker_cik_map().get(normalized_symbol)
-    if not cik:
-        raise ResearchDocumentError("sec_cik_not_found")
+    cik = resolve_sec_cik(normalized_symbol)
     selected_forms = []
     for raw in forms or list(SUPPORTED_FORMS):
         form = str(raw).strip().upper()

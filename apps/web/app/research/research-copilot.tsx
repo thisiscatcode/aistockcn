@@ -104,7 +104,7 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
           rows={2}
         />
         <div>
-          <small>Uses live company data, deterministic calculations and reranked PDF passages with page citations.</small>
+          <small>Uses live market data, SEC XBRL financial facts and reranked filing passages with source citations.</small>
           <button type="submit" disabled={loading || !question.trim()}>
             {loading ? "Agent working…" : "Run research"}
           </button>
@@ -137,13 +137,21 @@ export function ResearchCopilot({ symbol }: { symbol: string }) {
                     >
                       <cite>{sourceLabel(item)} ↗</cite>
                     </a>
+                  ) : item.source_url ? (
+                    <a className="research-source-link" href={item.source_url} target="_blank" rel="noreferrer">
+                      <cite>{sourceLabel(item)} ↗</cite>
+                    </a>
                   ) : <cite>{sourceLabel(item)}</cite>}
                 </section>
               ))}
               {answer.data_evidence.map((item) => (
                 <section key={item.id}>
                   <p>{item.claim}</p>
-                  <cite>{sourceLabel(item)}</cite>
+                  {item.source_url ? (
+                    <a className="research-source-link" href={item.source_url} target="_blank" rel="noreferrer">
+                      <cite>{sourceLabel(item)} ↗</cite>
+                    </a>
+                  ) : <cite>{sourceLabel(item)}</cite>}
                 </section>
               ))}
               {answer.document_evidence.length === 0 ? (

@@ -3,12 +3,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Shell } from "@/components/shell";
-import { getResearchCompanies, getResearchCompany, getResearchDocuments, type ResearchCompany } from "@/lib/api";
+import {
+  getResearchCompanies,
+  getResearchCompany,
+  getResearchDocuments,
+  getResearchFinancials,
+  type ResearchCompany
+} from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { ResearchCopilot } from "./research-copilot";
 import { ResearchComparisonPanel } from "./research-comparison";
 import { ResearchDocuments } from "./research-documents";
 import { ResearchEvaluationPanel } from "./research-evaluation";
+import { ResearchFinancials } from "./research-financials";
 
 
 export const dynamic = "force-dynamic";
@@ -65,10 +72,11 @@ export default async function ResearchPage({
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
-  const [searchResult, snapshot, documentResult] = await Promise.all([
+  const [searchResult, snapshot, documentResult, financialResult] = await Promise.all([
     getResearchCompanies(query, 12).catch(() => ({ query, rows: 0, total_active: 0, companies: [] })),
     symbol ? getResearchCompany(symbol, 30).catch(() => null) : Promise.resolve(null),
-    symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] })
+    symbol ? getResearchDocuments(symbol).catch(() => ({ rows: 0, documents: [] })) : Promise.resolve({ rows: 0, documents: [] }),
+    symbol ? getResearchFinancials(symbol).catch(() => null) : Promise.resolve(null)
   ]);
 
   const company = snapshot?.company;
@@ -166,6 +174,8 @@ export default async function ResearchPage({
 
               <ResearchDocuments symbol={company.symbol} initialDocuments={documentResult.documents} />
 
+              <ResearchFinancials symbol={company.symbol} initialFinancials={financialResult} />
+
               <ResearchCopilot symbol={company.symbol} />
 
               <ResearchComparisonPanel symbol={company.symbol} />
@@ -186,8 +196,8 @@ export default async function ResearchPage({
                   <article className={documentResult.documents.some((item) => ["text_ready", "indexed"].includes(item.status)) ? "is-ready" : undefined}>
                     <span>02</span><strong>Company documents</strong><small>{documentResult.rows ? `${documentResult.rows} uploaded` : "Upload PDF to begin"}</small>
                   </article>
-                  <article>
-                    <span>03</span><strong>Financial facts</strong><small>XBRL normalization next</small>
+                  <article className={financialResult?.coverage.fact_rows ? "is-ready" : undefined}>
+                    <span>03</span><strong>Financial facts</strong><small>{financialResult?.coverage.fact_rows ? `${financialResult.coverage.fact_rows} SEC XBRL facts` : "Sync SEC facts to begin"}</small>
                   </article>
                   <article className="is-ready">
                     <span>04</span><strong>Grounded answers</strong><small>Live for market evidence</small>

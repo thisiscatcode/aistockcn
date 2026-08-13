@@ -29,6 +29,7 @@ from app.services.research_documents import (
     save_uploaded_pdf,
 )
 from app.services.research_evaluation import list_evaluation_runs, run_reranker_evaluation
+from app.services.research_financials import get_sec_financial_summary, sync_sec_companyfacts
 from app.services.research_observability import record_agent_run
 from app.services.research_retrieval import retrieve_document_evidence
 from app.services.research_sec import discover_sec_filings, sync_sec_filings
@@ -57,6 +58,10 @@ class ResearchSECFilingRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=15)
     forms: list[str] = Field(default_factory=lambda: ["10-K", "10-Q", "8-K"], min_length=1, max_length=3)
     limit_per_form: int = Field(default=1, ge=1, le=5)
+
+
+class ResearchSECFinancialRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=15)
 
 
 @router.get("/documents")
@@ -133,6 +138,34 @@ def sync_research_sec_filings(
         code = str(exc)
         status_code = 404 if code == "sec_cik_not_found" else 502 if code == "sec_request_failed" else 400
         raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
+@router.post("/financials/sec/sync")
+def sync_research_sec_financials(request: ResearchSECFinancialRequest) -> dict[str, object]:
+    try:
+        sync = sync_sec_companyfacts(symbol=request.symbol)
+        return {**sync, "financials": get_sec_financial_summary(symbol=request.symbol)}
+    except ResearchError as exc:
+        code = str(exc)
+        status_code = 404 if code == "sec_cik_not_found" else 502 if code.startswith("sec_") else 400
+        raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
+@router.get("/financials/{symbol}")
+def research_sec_financials(
+    symbol: str,
+    annual_limit: int = Query(default=5, ge=1, le=10),
+    quarterly_limit: int = Query(default=8, ge=1, le=16),
+) -> dict[str, object]:
+    try:
+        return get_sec_financial_summary(
+            symbol=symbol,
+            annual_limit=annual_limit,
+            quarterly_limit=quarterly_limit,
+        )
+    except ResearchError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=400, detail={"code": code, "message": code}) from exc
 
 
 @router.get("/documents/{document_id}")

@@ -830,6 +830,55 @@ export type ResearchCompanySnapshot = {
   };
 };
 
+export type ResearchFinancialMetric = {
+  label: string;
+  value: number | null;
+  unit: string;
+  taxonomy: string;
+  concept: string;
+  form: string;
+  filed_date: string;
+  accession_number: string;
+  source_url: string;
+  locator: string;
+};
+
+export type ResearchFinancialPeriod = {
+  start_date?: string | null;
+  end_date: string;
+  fiscal_year?: number | null;
+  fiscal_period?: string | null;
+  period_kind: string;
+  metrics: Record<string, ResearchFinancialMetric>;
+  derived: Record<string, number | null>;
+};
+
+export type ResearchFinancialSummary = {
+  symbol: string;
+  status?: {
+    status: string;
+    fact_count: number;
+    synced_at: string;
+    source_url: string;
+  } | null;
+  coverage: {
+    fact_rows: number;
+    annual_periods: number;
+    quarterly_periods: number;
+    latest_end_date?: string | null;
+  };
+  latest_annual?: ResearchFinancialPeriod | null;
+  previous_annual?: ResearchFinancialPeriod | null;
+  annual_changes: Record<string, number | null>;
+  latest_quarter?: ResearchFinancialPeriod | null;
+  comparable_quarter?: ResearchFinancialPeriod | null;
+  quarterly_yoy_changes: Record<string, number | null>;
+  annual_series: ResearchFinancialPeriod[];
+  quarterly_series: ResearchFinancialPeriod[];
+  latest_balance_sheet?: ResearchFinancialPeriod | null;
+  evidence: ResearchEvidence[];
+};
+
 export type ResearchEvidence = {
   id: string;
   claim: string;
@@ -885,8 +934,16 @@ export type ResearchComparison = {
       return_20d_pct?: number | null;
       annualized_volatility_pct?: number | null;
     };
+    financials?: {
+      end_date?: string | null;
+      fiscal_year?: number | null;
+      metrics?: Record<string, { value?: number | null; unit?: string; locator?: string }>;
+      derived?: Record<string, number | null>;
+      annual_changes?: Record<string, number | null>;
+    } | null;
   }>;
   document_evidence: Array<ResearchEvidence & { symbol: string }>;
+  financial_evidence?: Array<ResearchEvidence & { symbol: string }>;
   model_inference: string[];
   agent_steps: Array<{ tool: string; status: string; detail: string }>;
   model: { provider: string; name: string };
@@ -969,6 +1026,13 @@ export function getResearchDocuments(symbol?: string) {
     timeoutMs: 10000,
     baseUrl: RESEARCH_API_BASE_URL
   });
+}
+
+export function getResearchFinancials(symbol: string) {
+  return fetchJson<ResearchFinancialSummary>(
+    `/api/research/financials/${encodeURIComponent(symbol)}`,
+    { timeoutMs: 10000, baseUrl: RESEARCH_API_BASE_URL }
+  );
 }
 
 export type UsMarketContext = {

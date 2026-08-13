@@ -5911,6 +5911,10 @@ select {
   font-size: 0.84rem;
 }
 
+.research-comparison-table.is-financial > div {
+  grid-template-columns: 0.8fr repeat(5, minmax(90px, 1fr));
+}
+
 .research-comparison-table > div:first-child {
   border-top: 0;
 }
@@ -6728,6 +6732,118 @@ select {
   background: linear-gradient(145deg, rgba(19, 34, 57, 0.9), rgba(8, 18, 35, 0.94));
 }
 
+.research-financials-panel {
+  overflow: hidden;
+  border: 1px solid rgba(52, 211, 153, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(10, 35, 42, 0.9), rgba(8, 18, 35, 0.95));
+}
+
+.research-financials-panel .research-section-heading > button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #8ef0cb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.research-financials-panel .research-section-heading > button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.research-financials-panel > .research-error,
+.research-financials-panel > .research-document-empty {
+  margin: 0 16px 16px;
+}
+
+.research-financial-period {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 0 16px 10px;
+}
+
+.research-financial-period strong {
+  color: #dffbf1;
+  font-size: 1rem;
+}
+
+.research-financial-period span,
+.research-financial-period small {
+  color: #8299ac;
+  font-size: 0.78rem;
+}
+
+.research-financial-period small {
+  margin-left: auto;
+}
+
+.research-financial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 16px 10px;
+}
+
+.research-financial-grid article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  background: rgba(4, 14, 29, 0.48);
+}
+
+.research-financial-grid span {
+  color: #7890a5;
+  font-size: 0.75rem;
+}
+
+.research-financial-grid strong {
+  color: #e4f8f0;
+  font-size: 1.12rem;
+}
+
+.research-financial-grid small {
+  font-size: 0.72rem;
+}
+
+.research-financial-grid .is-positive {
+  color: #6ee7b7;
+}
+
+.research-financial-grid .is-negative {
+  color: #fda4af;
+}
+
+.research-financial-grid a {
+  overflow: hidden;
+  color: #67d7df;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.65rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-financial-grid a:hover {
+  text-decoration: underline;
+}
+
+.research-financial-note {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: #8299ac;
+  font-size: 0.76rem;
+}
+
 .research-documents-content {
   display: grid;
   gap: 10px;
@@ -7360,6 +7476,19 @@ select {
     flex-direction: column;
   }
 
+  .research-financial-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .research-financial-period {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .research-financial-period small {
+    margin-left: 0;
+  }
+
   .research-document-stats {
     flex-wrap: wrap;
   }
@@ -7376,11 +7505,39 @@ select {
 .theme-shell-root[data-theme="bright"] .research-copilot-panel,
 .theme-shell-root[data-theme="bright"] .research-comparison-panel,
 .theme-shell-root[data-theme="bright"] .research-evaluation-panel,
-.theme-shell-root[data-theme="bright"] .research-documents-panel {
+.theme-shell-root[data-theme="bright"] .research-documents-panel,
+.theme-shell-root[data-theme="bright"] .research-financials-panel {
   border-color: rgba(15, 118, 110, 0.18);
   background: rgba(255, 253, 248, 0.92);
   color: var(--text);
   box-shadow: 0 14px 34px rgba(92, 69, 37, 0.1);
+}
+
+.theme-shell-root[data-theme="bright"] .research-financials-panel .research-section-heading > button {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: #edf8f5;
+  color: #0f766e;
+}
+
+.theme-shell-root[data-theme="bright"] .research-financial-period strong,
+.theme-shell-root[data-theme="bright"] .research-financial-grid strong {
+  color: #2c342f;
+}
+
+.theme-shell-root[data-theme="bright"] .research-financial-period span,
+.theme-shell-root[data-theme="bright"] .research-financial-period small,
+.theme-shell-root[data-theme="bright"] .research-financial-grid span,
+.theme-shell-root[data-theme="bright"] .research-financial-note {
+  color: #6f6254;
+}
+
+.theme-shell-root[data-theme="bright"] .research-financial-grid article {
+  border-color: rgba(68, 49, 28, 0.13);
+  background: #fbf7f0;
+}
+
+.theme-shell-root[data-theme="bright"] .research-financial-grid a {
+  color: #0f766e;
 }
 
 .theme-shell-root[data-theme="bright"] .research-sec-sync {

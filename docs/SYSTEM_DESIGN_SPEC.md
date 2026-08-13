@@ -23,13 +23,14 @@ Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.
 
 ## Research Copilot Architecture
 
-The Research Copilot is an isolated product service over the existing US equity data plane. Its ingestion API can discover and download official SEC 10-K, 10-Q and 8-K filings, while continuing to accept customer-supplied PDFs. A PostgreSQL queue is claimed atomically by the background worker. The worker extracts source-aware text, creates overlapping chunks, generates BGE embeddings and stores them in `pgvector`.
+The Research Copilot is an isolated product service over the existing US equity data plane. Its ingestion API can discover and download official SEC 10-K, 10-Q and 8-K filings, while continuing to accept customer-supplied PDFs. A PostgreSQL queue is claimed atomically by the background worker. The worker extracts source-aware text, creates overlapping chunks, generates BGE embeddings and stores them in `pgvector`. A separate financial ingestion path normalizes SEC Company Facts into typed, source-linked periods used by deterministic calculation tools.
 
 ```mermaid
 flowchart LR
     U["Authenticated user"] --> W["Next.js research UI"]
     W --> A["FastAPI research API"]
     A --> E["SEC EDGAR"]
+    A --> X["SEC XBRL Company Facts"]
     A --> Q["PostgreSQL document queue"]
     Q --> K["Ingestion worker"]
     K --> V["PostgreSQL FTS + pgvector"]
@@ -37,13 +38,17 @@ flowchart LR
     V --> H
     H --> R["PyTorch cross-encoder reranker"]
     A --> M["US market data + calculations"]
+    X --> F["Canonical financial facts + calculations"]
     A --> L["Local structured agent"]
     R --> L
     M --> L
+    F --> L
     L --> O["Evidence + inference + limitations + trace"]
 ```
 
 Citation metadata remains server-owned. PDFs retain native page numbers. SEC HTML records its CIK, accession number, primary document and original archive URL, and uses explicit HTML passage locators because the source does not have stable native pages.
+
+Financial facts are keyed by symbol, taxonomy, concept, unit, period and accession. Concept priority resolves common US-GAAP alternatives without discarding the original concept. Annual and quarterly percentage changes, margins and free cash flow are calculated outside the model. Numeric-only questions bypass generative synthesis and return deterministic, accession-cited answers; qualitative model output remains a separate inference field.
 
 ## Main Components
 

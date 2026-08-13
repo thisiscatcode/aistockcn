@@ -11,6 +11,18 @@ function metric(value: unknown, suffix = "") {
 }
 
 
+function compactFinancial(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+    style: "currency",
+    currency: "USD"
+  }).format(parsed);
+}
+
+
 export function ResearchComparisonPanel({ symbol }: { symbol: string }) {
   const [symbols, setSymbols] = useState(`${symbol}, MSFT`);
   const [question, setQuestion] = useState("Compare valuation, recent performance, risk evidence and management positioning.");
@@ -78,6 +90,21 @@ export function ResearchComparisonPanel({ symbol }: { symbol: string }) {
               </div>
             ))}
           </div>
+          {result.companies.some((item) => item.financials) ? (
+            <div className="research-comparison-table is-financial" role="table" aria-label="SEC financial comparison">
+              <div className="is-heading" role="row"><span>Company</span><span>Revenue</span><span>Revenue YoY</span><span>Net income</span><span>Net income YoY</span><span>Gross margin</span></div>
+              {result.companies.map((item) => (
+                <div key={`${item.symbol}-financials`} role="row">
+                  <strong>{item.symbol}</strong>
+                  <span>{compactFinancial(item.financials?.metrics?.revenue?.value)}</span>
+                  <span>{metric(item.financials?.annual_changes?.revenue, "%")}</span>
+                  <span>{compactFinancial(item.financials?.metrics?.net_income?.value)}</span>
+                  <span>{metric(item.financials?.annual_changes?.net_income, "%")}</span>
+                  <span>{metric(item.financials?.derived?.gross_margin_pct, "%")}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="research-answer-columns">
             <article className="research-proof-card is-evidence">
               <div><span>Document evidence</span><small>Page-grounded</small></div>
@@ -98,6 +125,19 @@ export function ResearchComparisonPanel({ symbol }: { symbol: string }) {
               ))}
               {!result.document_evidence.length ? <p>No relevant indexed passages were available.</p> : null}
             </article>
+            {result.financial_evidence?.length ? (
+              <article className="research-proof-card is-evidence">
+                <div><span>SEC XBRL evidence</span><small>Standardized facts</small></div>
+                {result.financial_evidence.map((item) => (
+                  <section key={`${item.symbol}-${item.id}`}>
+                    <p><strong>{item.symbol}</strong> · {item.claim}</p>
+                    <a className="research-source-link" href={item.source_url ?? "#"} target="_blank" rel="noreferrer">
+                      <cite>{item.source} · {item.locator} ↗</cite>
+                    </a>
+                  </section>
+                ))}
+              </article>
+            ) : null}
             <article className="research-proof-card is-inference">
               <div><span>Model inference</span><small>{result.model.name}</small></div>
               <ul>{result.model_inference.map((item) => <li key={item}>{item}</li>)}</ul>

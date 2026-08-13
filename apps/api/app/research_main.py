@@ -17,11 +17,13 @@ from uuid import uuid4
 from app.config import get_settings
 from app.routers.research import router as research_router
 from app.services.research_documents import init_research_document_schema
+from app.services.research_financials import init_research_financial_schema
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_research_document_schema()
+    init_research_financial_schema()
     yield
 
 
@@ -134,6 +136,8 @@ def root() -> dict[str, object]:
             "POST /api/research/documents/upload",
             "POST /api/research/documents/sec/discover",
             "POST /api/research/documents/sec/sync",
+            "GET /api/research/financials/{symbol}",
+            "POST /api/research/financials/sec/sync",
             "POST /api/research/retrieve",
         ],
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 import json
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -13,10 +14,141 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.services import research as research_service
 from app.services import research_chunking as research_chunking_service
+from app.services import research_financials as research_financials_service
 from app.services import research_sec as research_sec_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_sec_companyfacts_normalization_preserves_numeric_lineage(self) -> None:
+        payload = {
+            "entityName": "Example Corporation",
+            "facts": {
+                "us-gaap": {
+                    "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                        "label": "Revenue",
+                        "description": "Revenue from contracts with customers.",
+                        "units": {
+                            "USD": [
+                                {
+                                    "start": "2024-01-01", "end": "2024-12-31", "val": 1000,
+                                    "accn": "0000000001-25-000001", "fy": 2024, "fp": "FY",
+                                    "form": "10-K", "filed": "2025-02-01", "frame": "CY2024",
+                                },
+                                {
+                                    "start": "2025-01-01", "end": "2025-03-31", "val": 300,
+                                    "accn": "0000000001-25-000002", "fy": 2025, "fp": "Q1",
+                                    "form": "10-Q", "filed": "2025-05-01", "frame": "CY2025Q1",
+                                },
+                            ]
+                        },
+                    },
+                    "Assets": {
+                        "label": "Assets",
+                        "description": "Total assets.",
+                        "units": {
+                            "USD": [{
+                                "end": "2024-12-31", "val": 2500,
+                                "accn": "0000000001-25-000001", "fy": 2024, "fp": "FY",
+                                "form": "10-K", "filed": "2025-02-01", "frame": "CY2024Q4I",
+                            }]
+                        },
+                    },
+                }
+            },
+        }
+        rows = research_financials_service.normalize_companyfacts_payload(
+            symbol="aapl", cik="0000320193", payload=payload
+        )
+        self.assertEqual(len(rows), 3)
+        annual = next(row for row in rows if row["period_kind"] == "annual")
+        quarter = next(row for row in rows if row["period_kind"] == "quarter")
+        instant = next(row for row in rows if row["period_kind"] == "instant")
+        self.assertEqual(annual["metric"], "revenue")
+        self.assertEqual(annual["value"], 1000)
+        self.assertEqual(quarter["fiscal_period"], "Q1")
+        self.assertEqual(instant["metric"], "assets")
+        self.assertIn("0000000001-25-000001-index.html", annual["source_url"])
+        self.assertEqual(annual["taxonomy"], "us-gaap")
+        self.assertEqual(annual["concept"], "RevenueFromContractWithCustomerExcludingAssessedTax")
+
+    def test_financial_period_calculates_margins_and_free_cash_flow(self) -> None:
+        base = {
+            "concept_priority": 0,
+            "taxonomy": "us-gaap",
+            "unit": "USD",
+            "start_date": date(2024, 1, 1),
+            "end_date": date(2024, 12, 31),
+            "period_kind": "annual",
+            "fiscal_year": 2024,
+            "fiscal_period": "FY",
+            "form": "10-K",
+            "filed_date": date(2025, 2, 1),
+            "accession_number": "0000000001-25-000001",
+            "source_url": "https://www.sec.gov/example",
+        }
+        values = {
+            "revenue": ("Revenue", "Revenue", 1000),
+            "gross_profit": ("Gross profit", "GrossProfit", 400),
+            "operating_income": ("Operating income", "OperatingIncomeLoss", 200),
+            "net_income": ("Net income", "NetIncomeLoss", 150),
+            "operating_cash_flow": ("Operating cash flow", "NetCashProvidedByUsedInOperatingActivities", 250),
+            "capital_expenditure": ("Capital expenditure", "PaymentsToAcquirePropertyPlantAndEquipment", 80),
+        }
+        period = research_financials_service._period_record([
+            {**base, "metric": metric, "metric_label": label, "concept": concept, "value": value}
+            for metric, (label, concept, value) in values.items()
+        ])
+        self.assertEqual(period["derived"]["gross_margin_pct"], 40.0)
+        self.assertEqual(period["derived"]["operating_margin_pct"], 20.0)
+        self.assertEqual(period["derived"]["net_margin_pct"], 15.0)
+        self.assertEqual(period["derived"]["free_cash_flow"], 170.0)
+
+    def test_financial_answer_is_deterministic_and_source_grounded(self) -> None:
+        locator = "us-gaap:Revenue · 10-K FY2025 · accession 0001"
+        summary = {
+            "latest_annual": {
+                "fiscal_year": 2025,
+                "end_date": date(2025, 12, 31),
+                "metrics": {
+                    "revenue": {"label": "Revenue", "value": 125_000_000_000, "unit": "USD", "locator": locator},
+                    "net_income": {"label": "Net income", "value": 25_000_000_000, "unit": "USD", "locator": "net-income-locator"},
+                },
+                "derived": {"gross_margin_pct": 45.5, "operating_margin_pct": 30.0, "net_margin_pct": 20.0},
+            },
+            "annual_changes": {
+                "revenue": 8.25,
+                "net_income": -2.5,
+                "gross_margin_pct": 1.25,
+                "operating_margin_pct": -0.5,
+                "net_margin_pct": -2.0,
+            },
+        }
+        answer = research_service._deterministic_financial_answer(
+            summary=summary, question="How did annual revenue, income and margins change?"
+        )
+        self.assertIn("$125.00 billion", answer)
+        self.assertIn("up 8.25%", answer)
+        self.assertIn("down 2.50%", answer)
+        self.assertIn("Gross margin was 45.50%", answer)
+        self.assertIn("up 1.25 percentage points", answer)
+        self.assertIn(locator, answer)
+
+    def test_financial_only_plan_uses_xbrl_without_document_search(self) -> None:
+        with mock.patch.object(
+            research_service,
+            "_call_local_json_model",
+            return_value={
+                "tools": ["company_lookup", "hybrid_document_search"],
+                "reason": "Retrieve financial evidence.",
+            },
+        ):
+            plan = research_service.plan_research_tools(
+                question="How did annual revenue and net income change?",
+                settings=SimpleNamespace(),
+            )
+        self.assertIn("sec_financial_facts", plan["tools"])
+        self.assertNotIn("hybrid_document_search", plan["tools"])
+
     def test_sec_html_extraction_omits_hidden_and_executable_content(self) -> None:
         payload = b"""
         <html><body>
@@ -137,6 +269,11 @@ class ResearchServiceTests(unittest.TestCase):
                 "_generate_research_synthesis",
                 return_value={"answer": "Market-data answer.", "model_inference": ["Momentum is positive."]},
             ),
+            mock.patch.object(
+                research_service,
+                "_run_sec_financial_tool",
+                return_value=({"coverage": {"fact_rows": 0}, "evidence": []}, None),
+            ),
         ):
             result = research_service.answer_research_question(
                 symbol="nvda",
@@ -159,6 +296,7 @@ class ResearchServiceTests(unittest.TestCase):
             "company_lookup",
             "market_history",
             "financial_calculator",
+            "sec_financial_facts",
             "hybrid_document_search",
             "evidence_synthesis",
         ])

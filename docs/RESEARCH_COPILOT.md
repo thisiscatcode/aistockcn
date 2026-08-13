@@ -15,6 +15,8 @@ Production-oriented US equity research on top of AiStockCN's existing market-dat
 
 - Company search over the existing US equity universe and market-history tables.
 - Official SEC EDGAR discovery and sync for the latest 10-K, 10-Q and 8-K, using accession-number deduplication and declared fair-access identification.
+- SEC Company Facts ingestion with canonical US-GAAP concept priorities, annual/quarterly/instant periods and original accession lineage.
+- Deterministic revenue, profit, EPS, margin, cash-flow, free-cash-flow and balance-sheet calculations. The LLM does not recalculate these numeric facts.
 - PDF upload with validation, SHA-256 deduplication and page-preserving extraction.
 - Background ingestion worker using PostgreSQL `FOR UPDATE SKIP LOCKED`.
 - BGE embeddings in `pgvector`, PostgreSQL full-text search, reciprocal-rank fusion and a PyTorch cross-encoder reranker.
@@ -34,6 +36,7 @@ flowchart LR
     A --> P["Structured agent planner\nOllama qwen2.5:3b"]
     A --> D["AiStockCN US market data\nPostgreSQL"]
     A --> E["SEC EDGAR\nsubmissions + filing archive"]
+    A --> X["SEC XBRL Company Facts\nfinancial fact normalization"]
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder\nreranker"]
     A --> Q["PostgreSQL queue\nSKIP LOCKED"]
@@ -44,9 +47,12 @@ flowchart LR
     K --> V["Pages, chunks, vectors\nPostgreSQL / pgvector"]
     V --> H
     A --> O["Logs, run telemetry,\nevaluation results"]
+    X --> A
 ```
 
 The LLM never provides the citation metadata shown by the UI. The server attaches `document_id`, filename, locator and source URL from retrieval results. Uploaded PDFs retain native page numbers. SEC filing HTML has no reliable native pagination, so it is cited as `SEC filing HTML · passage N` and is never mislabeled as a PDF page. Model-generated interpretation is kept in a separate field and rendered in a separate card.
+
+Numeric financial answers follow the same rule at a stricter boundary. The server selects canonical SEC Company Facts, calculates comparable-period changes and margins, and renders the factual answer from those typed values. Each fact retains taxonomy, concept, form, period, filing date and accession number. The local model may plan the `sec_financial_facts` tool and provide separately labelled qualitative interpretation, but it cannot overwrite the deterministic numeric answer.
 
 ## Source-grounding contract
 
@@ -64,18 +70,19 @@ This prevents a fluent model answer from being presented as documentary evidence
 1. The authenticated frontend sends a company-scoped question.
 2. The local LLM returns a JSON tool plan. The API drops any tool not in the server allow-list.
 3. The executor queries company/market data, runs deterministic return and volatility calculations, and conditionally runs document retrieval.
-4. Hybrid retrieval combines PostgreSQL English FTS and cosine search over BGE vectors using reciprocal-rank fusion.
-5. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks the candidate passages with PyTorch.
-6. The local LLM synthesizes only from the supplied context.
-7. The API emits SSE lifecycle events and a final structured response with evidence, inference, limitations and trace.
+4. For financial questions, the executor loads normalized SEC XBRL facts and calculates annual or quarterly comparisons before synthesis.
+5. Hybrid retrieval combines PostgreSQL English FTS and cosine search over BGE vectors using reciprocal-rank fusion when qualitative filing evidence is required.
+6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks the candidate passages with PyTorch.
+7. The local LLM synthesizes only from the supplied context; numeric-only financial questions use deterministic synthesis.
+8. The API emits SSE lifecycle events and a final structured response with evidence, inference, limitations and trace.
 
 ## Local development
 
 The research stack is deliberately separate from the customer frontend image.
 
 ```bash
-docker build -t aistockcn-research-api:20260813-sec-v1 -f apps/api/Dockerfile.research .
-docker build -t aistockcn-research-web:20260813-sec-v1 -f apps/web/Dockerfile .
+docker build -t aistockcn-research-api:20260813-xbrl-v1 -f apps/api/Dockerfile.research .
+docker build -t aistockcn-research-web:20260813-xbrl-v1 -f apps/web/Dockerfile .
 docker compose up -d research-api research-worker panel-web-research
 docker compose ps research-api research-worker panel-web-research
 ```
@@ -87,7 +94,7 @@ The Compose configuration intentionally joins the existing `paper-db` and `ai-se
 ## User workflow
 
 1. Open `research.aistockcn.com` and select a company from the AiStockCN US equity universe.
-2. Sync the latest 10-K, 10-Q and 8-K from SEC EDGAR, or upload a PDF. The document moves through queued, extracting and search-ready states while preserving its source lineage.
+2. Sync the latest 10-K, 10-Q and 8-K from SEC EDGAR, sync standardized financial facts, or upload a PDF. Documents move through queued, extracting and search-ready states while preserving source lineage.
 3. Ask a company-specific question. The API streams progress while the agent selects and executes its allow-listed document, market-data and calculation tools.
 4. Review the answer's Document evidence, Model inference and Limitations sections. Each passage includes its filename and an honest native-page or SEC-HTML locator.
 5. Compare two or three companies. The system executes the required tools for each company before synthesizing the comparison.
