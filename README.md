@@ -1,11 +1,12 @@
-# AiStockCN — Source-Grounded AI Research for US and China Equities
+# AiStockCN — AI Equity Research and Quantitative Trading
 
-AiStockCN brings market data, company filings, standardized financials and AI-assisted research into one authenticated product. It covers more than 5,000 actively tracked US-listed equities and more than 5,000 China A-shares, helping investors move from company discovery to evidence-backed analysis without switching between disconnected tools.
+AiStockCN is one authenticated product for AI company research, evidence verification, quantitative signals, portfolios and controlled execution across more than 5,000 actively tracked US-listed equities and more than 5,000 China A-shares.
 
 The integrated Research Copilot answers company questions, compares businesses and detects material filing changes while keeping original documents, financial facts, model inference and limitations clearly separated.
 
 - Product: [aistockcn.com](https://aistockcn.com)
-- Research Copilot: [aistockcn.com/research](https://aistockcn.com/research)
+- US company research: [aistockcn.com/us/research](https://aistockcn.com/us/research)
+- A-share company research: [aistockcn.com/cn/research](https://aistockcn.com/cn/research)
 - Product and operating guide: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
 - Documentation index: [docs/README.md](docs/README.md)
 
@@ -14,7 +15,7 @@ The integrated Research Copilot answers company questions, compares businesses a
 | Product capability | What it delivers |
 | --- | --- |
 | Market intelligence | Search and analyse 5,000+ US equities and 5,000+ China A-shares within one platform |
-| Company research | Ask natural-language questions across market data, SEC filings and standardized financials |
+| Company research | Research US and A-share companies through market-scoped data, filings and financial evidence |
 | Verifiable answers | Open the original document, page or SEC HTML passage behind a claim |
 | Financial analysis | Use normalized SEC XBRL facts and deterministic calculations for revenue, profit, margins and cash flow |
 | Company comparison | Compare two or three businesses through the same evidence and calculation workflow |
@@ -22,29 +23,25 @@ The integrated Research Copilot answers company questions, compares businesses a
 
 ## Product interface
 
-### Company research
+### One product across two markets
 
-![AiStockCN Research Copilot company summary](docs/assets/research-copilot.png)
+![AiStockCN unified product homepage](docs/assets/product-home.png)
 
-One security-level workspace connects financial highlights, original filings, cited AI research, disclosure changes and peer comparison.
+The product entry connects Research, Verify, Quantify, Portfolio and Execute without presenting separate products for each market or workflow stage.
 
-### Auditable filing changes
+### Responsive customer experience
 
-![AiStockCN Filing Change Detection](docs/assets/filing-change-detection.png)
+<p align="center">
+  <img src="docs/assets/product-home-mobile.png" alt="AiStockCN mobile product homepage" width="360" />
+</p>
 
-Annual-report comparisons retain both source documents, versioned run history and explicit human review.
-
-### US market intelligence
-
-![AiStockCN US market overview](docs/assets/us-market-overview.png)
-
-The US workspace combines market coverage, selection status and research access without mixing administrative telemetry into the investor workflow.
+Desktop and mobile use the same product language, evidence contract and direct calls to action.
 
 ## What users can do
 
 ### Research a company
 
-Select a US-listed company and ask about revenue, profitability, margins, risks, guidance, management language or recent market performance. The agent chooses from approved financial-data, document-search and calculation tools, then returns one structured response.
+Select a company and review its market context and original filings. US research supports cited agent answers and standardized SEC facts. A-share ingestion prioritizes official SSE, SZSE/CNINFO and BSE disclosures and uses a separate Chinese retrieval profile.
 
 ### Verify every conclusion
 
@@ -77,12 +74,13 @@ Verified evidence remains available independently from model-generated interpret
 
 | Surface | Purpose |
 | --- | --- |
-| `/overview` | China A-share portfolio and market workflow |
-| `/us/overview` | US market coverage, screening and product status |
-| `/us/data` | NASDAQ and NYSE company search and daily market observations |
-| `/us/picks` | Rules-based US selection snapshots |
-| `/us/paper` | USD paper-trading account and portfolio controls |
-| `/research` | Company overview, cited Q&A, financials, filings, filing changes and comparison |
+| `/cn/overview`, `/us/overview` | Market overview and current product state |
+| `/cn/research`, `/us/research` | Company evidence, filings, questions, comparison and filing changes |
+| `/cn/quant`, `/us/quant` | Signals, methodology, walk-forward results and Explorer |
+| `/cn/portfolio`, `/us/portfolio` | A-share holdings or US research and model baskets |
+| `/cn/execution`, `/us/execution` | Controlled A-share execution or US readiness gates |
+
+The global market switcher preserves the current stage. Each stage reports `Live`, `In validation` or `Planned` from the server-side capability gate. US execution does not connect a broker account or submit orders.
 
 ### Operations workspace
 
@@ -120,30 +118,30 @@ The current planner and synthesizer run through local Ollama, so the product doe
 flowchart LR
     U["Authenticated user"] --> W["Next.js product"]
 
-    W --> C["A-share platform API"]
+    W --> C["Platform API"]
     W --> M["US market API"]
     W --> R["Research API"]
 
-    C --> CN["5,000+ A-shares\nmarket, models and portfolios"]
-    M --> US["5,000+ US equities\nprices, fundamentals and selections"]
+    C --> CN["5,000+ A-shares<br/>market, models and portfolios"]
+    M --> US["5,000+ US equities<br/>prices, fundamentals and selections"]
 
-    R --> P["Schema-constrained agent\ntool planning + execution"]
-    P --> X["SEC XBRL\nfinancial facts"]
-    P --> S["SEC EDGAR and uploaded PDFs\nsource documents"]
-    P --> D["Deterministic financial\nand market calculations"]
-    P --> H["Hybrid retrieval\nPostgreSQL FTS + pgvector + RRF"]
-    H --> RR["PyTorch cross-encoder\nreranker"]
-    P --> L["Local Ollama\nevidence synthesis"]
+    R --> P["Schema-constrained agent<br/>tool planning and execution"]
+    P --> X["SEC XBRL<br/>validated financial facts"]
+    P --> S["SEC and China official disclosures<br/>plus uploaded PDFs"]
+    P --> D["Deterministic financial<br/>and market calculations"]
+    P --> H["Hybrid retrieval<br/>FTS plus pgvector plus RRF"]
+    H --> RR["PyTorch cross-encoder<br/>market-specific reranker"]
+    P --> L["Local Ollama<br/>evidence synthesis"]
 
     R --> Q["PostgreSQL work queue"]
     Q --> K["Background ingestion workers"]
-    K --> V["Documents, chunks, vectors\nand source lineage"]
+    K --> V["Documents, chunks, vectors<br/>and source lineage"]
     V --> H
 
-    R --> O["Structured logs, run history\nand retrieval evaluation"]
+    R --> O["Structured logs, run history<br/>and retrieval evaluation"]
     X --> P
     US --> P
-    P --> A["Cited answer\nevidence + inference + limitations"]
+    P --> A["Cited answer<br/>evidence plus inference plus limitations"]
     A --> W
 ```
 
@@ -152,13 +150,15 @@ The research API and document workers are separate from the customer frontend, s
 ## Filing ingestion and retrieval
 
 - Discover and synchronize 10-K, 10-Q and 8-K filings from the official SEC EDGAR archive.
+- Discover and synchronize A-share reports through official SSE, SZSE/CNINFO and BSE disclosure identities.
 - Upload annual reports and company filings as PDFs.
 - Preserve SEC CIK, accession number, filing date, source URL and native locator type.
 - Normalize SEC Company Facts into canonical annual and quarterly financial periods.
+- Preserve exchange, announcement ID, report period, PDF checksum, source provider and native page numbers.
 - Extract page-aware PDF text and honest SEC HTML passages.
 - Chunk and embed documents in background workers backed by a PostgreSQL queue using `SKIP LOCKED`.
-- Fuse lexical and vector retrieval, then rerank candidates with a PyTorch cross-encoder.
-- Evaluate retrieval with Top-1 accuracy, mean reciprocal rank and a lexical baseline.
+- Use separate English and Chinese embedding, FTS and PyTorch reranker profiles.
+- Evaluate retrieval per market with Top-1 accuracy, mean reciprocal rank and a lexical baseline.
 
 ## Reliability and safety
 
@@ -192,16 +192,17 @@ Research Copilot operates on the same live platform that supports:
 | FastAPI and SSE streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
 | Multi-step agent and tool execution | `apps/api/app/services/research.py` |
 | SEC filing discovery and sync | `apps/api/app/services/research_sec.py` |
+| China official disclosure sync | `apps/api/app/services/research_cn_disclosures.py` |
 | SEC XBRL normalization and calculations | `apps/api/app/services/research_financials.py` |
 | Filing change detection and review | `apps/api/app/services/research_filing_changes.py` |
 | PDF/HTML ingestion and workers | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
 | Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
 | PyTorch reranking | `apps/api/app/services/research_models.py` |
 | Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
-| Customer research UI | `apps/web/app/research/` |
-| US market product UI | `apps/web/app/us/` |
+| Unified customer UI | `apps/web/app/cn/`, `apps/web/app/us/`, `apps/web/components/shell.tsx` |
 | US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
 | Model Registry | `apps/api/app/services/model_registry.py`, `scripts/create_model_registry.sql` |
+| US adjusted OHLCV and 5-day pipeline | `scripts/backfill_us_daily_bars.py`, `scripts/train_us_5d_model.py` |
 | Container environment | `docker-compose.yml`, `apps/api/Dockerfile`, `apps/web/Dockerfile` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 

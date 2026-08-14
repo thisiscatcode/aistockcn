@@ -47,6 +47,8 @@ class Settings:
     research_max_upload_bytes: int
     research_embedding_model: str
     research_reranker_model: str
+    research_cn_embedding_model: str
+    research_cn_reranker_model: str
     research_model_cache_dir: Path
     research_inline_indexing: bool
     research_s3_bucket: str | None
@@ -202,6 +204,14 @@ def get_settings() -> Settings:
         research_reranker_model=(
             os.getenv("RESEARCH_RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2").strip()
             or "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        ),
+        research_cn_embedding_model=(
+            os.getenv("RESEARCH_CN_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5").strip()
+            or "BAAI/bge-small-zh-v1.5"
+        ),
+        research_cn_reranker_model=(
+            os.getenv("RESEARCH_CN_RERANKER_MODEL", "BAAI/bge-reranker-base").strip()
+            or "BAAI/bge-reranker-base"
         ),
         research_model_cache_dir=Path(
             os.getenv("RESEARCH_MODEL_CACHE_DIR", "/models/sentence-transformers").strip()

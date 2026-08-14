@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
 import { ProfileSelector } from "../models/profile-selector";
+import { ProductSubnav } from "@/components/product-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,12 @@ export default async function PicksPage({
       username={user.username}
       role={user.role}
     >
+      <ProductSubnav active="signals" items={[
+        { key: "signals", label: "Signals", href: "/cn/quant?view=signals" as never },
+        { key: "methodology", label: "Methodology", href: "/cn/quant?view=methodology" as never },
+        { key: "walk-forward", label: "Walk-forward", href: "/cn/quant?view=walk-forward" as never },
+        { key: "explorer", label: "Explorer", href: "/cn/quant?view=explorer" as never }
+      ]} />
       <section className="model-view-header">
         <div>
           <p className="model-view-kicker">Viewing picks</p>

@@ -4,6 +4,7 @@ import { getUsPicks } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { UsShell } from "../us-components";
+import { ProductSubnav } from "@/components/product-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function UsPicksPage({
   const rows = response.picks.map((pick) => ({
     rank: pick.rank,
     symbol: pick.symbol,
-    symbol_href: `/research?symbol=${encodeURIComponent(pick.symbol)}`,
+    symbol_href: `/us/research?symbol=${encodeURIComponent(pick.symbol)}`,
     company: pick.name,
     exchange: pick.exchange,
     industry: pick.industry,
@@ -28,9 +29,15 @@ export default async function UsPicksPage({
 
   return (
     <UsShell user={user} title="US Picks" subtitle="Rules-based selection snapshots">
+      <ProductSubnav active="signals" items={[
+        { key: "signals", label: "Signals", href: "/us/quant?view=signals" as never },
+        { key: "methodology", label: "Methodology", href: "/us/quant?view=methodology" as never },
+        { key: "walk-forward", label: "Walk-forward", href: "/us/quant?view=walk-forward" as never },
+        { key: "explorer", label: "Explorer", href: "/us/quant?view=explorer" as never }
+      ]} />
       <div className="us-selection-tabs" aria-label="US selection type">
-        <a className={type === "cat" ? "is-active" : ""} href="/us/picks?type=cat">Cat selection</a>
-        <a className={type === "lobster" ? "is-active" : ""} href="/us/picks?type=lobster">Lobster selection</a>
+        <a className={type === "cat" ? "is-active" : ""} href="/us/quant?view=signals&type=cat">Cat selection</a>
+        <a className={type === "lobster" ? "is-active" : ""} href="/us/quant?view=signals&type=lobster">Lobster selection</a>
       </div>
       <div className="us-evidence-note">
         <strong>Rules-based selection</strong>

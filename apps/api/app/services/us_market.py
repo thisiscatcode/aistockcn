@@ -7,6 +7,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json
+from app.services.model_registry import get_active_deployment, get_latest_model_for_profile
 
 try:
     import psycopg
@@ -22,6 +23,46 @@ US_TIMEZONE = "America/New_York"
 US_BENCHMARK = {"symbol": "SPY", "name": "SPDR S&P 500 ETF Trust"}
 US_MODEL_PROFILE = "us_5d_v1"
 US_MODEL_REQUIRED_DATES = 504
+US_MODEL_REQUIRED_SYMBOLS = 100
+
+US_MODEL_DATA_SCHEMA_SQL = """
+create table if not exists us_stock_daily_bars (
+  trade_date date not null,
+  symbol text not null references us_stock_master(symbol) on delete cascade,
+  open numeric not null,
+  high numeric not null,
+  low numeric not null,
+  close numeric not null,
+  volume numeric not null,
+  vwap numeric,
+  transaction_count numeric,
+  provider text not null,
+  adjustment_state text not null check (adjustment_state in ('adjusted', 'unadjusted')),
+  provider_timestamp bigint,
+  ingestion_run_id text not null,
+  source_payload_sha256 text not null,
+  imported_at timestamptz not null default now(),
+  primary key (trade_date, symbol, provider, adjustment_state)
+);
+create index if not exists us_stock_daily_bars_symbol_date_idx on us_stock_daily_bars(symbol, trade_date desc);
+create index if not exists us_stock_daily_bars_lineage_idx on us_stock_daily_bars(ingestion_run_id, imported_at);
+create table if not exists us_market_ingestion_runs (
+  id text primary key,
+  provider text not null,
+  adjustment_state text not null,
+  date_from date not null,
+  date_to date not null,
+  status text not null check (status in ('running', 'completed', 'partial', 'failed')),
+  requested_symbols integer not null default 0,
+  completed_symbols integer not null default 0,
+  failed_symbols integer not null default 0,
+  row_count bigint not null default 0,
+  checkpoint jsonb not null default '{}'::jsonb,
+  last_error text,
+  started_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+"""
 
 
 class UsMarketError(RuntimeError):
@@ -40,6 +81,16 @@ def _connect(settings: Settings | None = None):
         connect_timeout=5,
         options="-c default_transaction_read_only=on",
     )
+
+
+def init_us_model_data_schema(settings: Settings | None = None) -> None:
+    resolved = settings or get_settings()
+    if not resolved.paper_db_url or psycopg is None:
+        raise UsMarketError("US model database is not configured")
+    with psycopg.connect(resolved.paper_db_url, connect_timeout=8) as conn:
+        with conn.cursor() as cur:
+            cur.execute(US_MODEL_DATA_SCHEMA_SQL)
+        conn.commit()
 
 
 def _context(*, as_of: Any = None) -> dict[str, Any]:
@@ -92,6 +143,38 @@ def _coverage(cur: Any) -> dict[str, Any]:
     latest = int(row.get("latest_symbols") or 0)
     row["latest_coverage_pct"] = round((latest / active) * 100, 2) if active else 0.0
     return _json_rows([row])[0]
+
+
+def _adjusted_bar_coverage(cur: Any) -> dict[str, Any]:
+    cur.execute(
+        """
+        with eligible as (
+          select b.symbol, count(distinct b.trade_date)::integer as trading_dates
+          from us_stock_daily_bars b
+          join us_stock_master m on m.symbol = b.symbol
+          where b.provider = 'MASSIVE'
+            and b.adjustment_state = 'adjusted'
+            and m.is_active = true
+            and m.del_flg = false
+          group by b.symbol
+        ), summary as (
+          select
+            min(trade_date) as first_trade_date,
+            max(trade_date) as latest_trade_date,
+            count(distinct trade_date)::integer as trading_dates,
+            count(*)::bigint as total_bars
+          from us_stock_daily_bars
+          where provider = 'MASSIVE' and adjustment_state = 'adjusted'
+        )
+        select
+          summary.*,
+          (select count(*)::integer from eligible where trading_dates >= %s) as symbols_with_history,
+          (select count(*)::integer from eligible) as available_symbols
+        from summary
+        """,
+        [US_MODEL_REQUIRED_DATES],
+    )
+    return _json_rows([dict(cur.fetchone() or {})])[0]
 
 
 def get_us_market_summary() -> dict[str, Any]:
@@ -273,11 +356,32 @@ def get_us_picks(*, limit: int = 25, list_type: str = "cat") -> dict[str, Any]:
 
 def get_us_model_status() -> dict[str, Any]:
     with _connect() as conn, conn.cursor() as cur:
-        coverage = _coverage(cur)
+        coverage = _adjusted_bar_coverage(cur)
     trading_dates = int(coverage.get("trading_dates") or 0)
-    history_ready = trading_dates >= US_MODEL_REQUIRED_DATES
-    blockers = [] if history_ready else [f"Requires {US_MODEL_REQUIRED_DATES} trading dates; {trading_dates} are available."]
-    blockers.append("The US 5-day model has not been trained or walk-forward validated yet.")
+    symbols_with_history = int(coverage.get("symbols_with_history") or coverage.get("latest_symbols") or 0)
+    history_ready = trading_dates >= US_MODEL_REQUIRED_DATES and symbols_with_history >= US_MODEL_REQUIRED_SYMBOLS
+    candidate = None
+    deployment = None
+    try:
+        candidate = get_latest_model_for_profile("US", US_MODEL_PROFILE, sync=False)
+        deployment = get_active_deployment("US", sync=False)
+    except Exception:
+        pass
+    validation_status = str((candidate or {}).get("validation_status") or "pending")
+    training_ready = candidate is not None
+    walk_forward_ready = validation_status == "passed"
+    active = bool(deployment and candidate and deployment.get("model_id") == candidate.get("id"))
+    blockers: list[str] = []
+    if trading_dates < US_MODEL_REQUIRED_DATES:
+        blockers.append(f"Requires {US_MODEL_REQUIRED_DATES} adjusted trading dates; {trading_dates} are available.")
+    if symbols_with_history < US_MODEL_REQUIRED_SYMBOLS:
+        blockers.append(
+            f"Requires {US_MODEL_REQUIRED_SYMBOLS} symbols with complete adjusted history; {symbols_with_history} are available."
+        )
+    if not training_ready:
+        blockers.append("The US 5-day model has not been trained yet.")
+    elif not walk_forward_ready:
+        blockers.append(f"The latest US model validation status is {validation_status}.")
     return {
         **_context(as_of=coverage.get("latest_trade_date")),
         "profile": {
@@ -285,18 +389,24 @@ def get_us_model_status() -> dict[str, Any]:
             "label": "US 5D Model",
             "horizon_trading_days": 5,
             "benchmark": US_BENCHMARK,
-            "status": "insufficient_history" if not history_ready else "not_trained",
+            "status": "insufficient_history" if not history_ready else "not_trained" if not training_ready else validation_status,
+            "model_version": (candidate or {}).get("model_version"),
+            "training_date": (candidate or {}).get("training_date"),
+            "active": active,
         },
         "gate": {
-            "ready": False,
+            "ready": history_ready and walk_forward_ready and active,
             "required_trading_dates": US_MODEL_REQUIRED_DATES,
             "available_trading_dates": trading_dates,
+            "required_symbols_with_history": US_MODEL_REQUIRED_SYMBOLS,
+            "available_symbols_with_history": symbols_with_history,
             "history_ready": history_ready,
-            "training_ready": False,
-            "walk_forward_ready": False,
+            "training_ready": training_ready,
+            "walk_forward_ready": walk_forward_ready,
             "blockers": blockers,
         },
-        "metrics": None,
+        "metrics": (candidate or {}).get("validation_metrics"),
+        "deployment": deployment,
         "data_freshness": {"prices": coverage.get("latest_trade_date")},
     }
 

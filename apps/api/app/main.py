@@ -18,6 +18,7 @@ from app.routers.fei_keywords_us import router as fei_keywords_us_router
 from app.routers.fei_selection import router as fei_selection_router
 from app.routers.us_selection import router as us_selection_router
 from app.routers.logs import router as logs_router
+from app.routers.markets import router as markets_router
 from app.routers.model import router as model_router
 from app.routers.overview import router as overview_router
 from app.routers.paper import router as paper_router
@@ -52,9 +53,9 @@ async def lifespan(_app: FastAPI):
         stop_auto_pipeline_scheduler()
 
 app = FastAPI(
-    title="Aistock Control Panel API",
+    title="AiStockCN Platform API",
     version="0.1.0",
-    description="Observability, workflow control, and paper-trading integration API for the A-share quant workflow.",
+    description="Market capabilities, quantitative workflows, portfolios, and controlled execution for AiStockCN.",
     lifespan=lifespan,
 )
 
@@ -116,6 +117,7 @@ async def restrict_api_clients(request: Request, call_next):
 
 app.include_router(status_router)
 app.include_router(logs_router)
+app.include_router(markets_router)
 app.include_router(data_router)
 app.include_router(fei_keywords_router)
 app.include_router(fei_keywords_us_router)
@@ -132,7 +134,7 @@ app.include_router(pre_explosion_router)
 @app.get("/")
 def root() -> dict[str, object]:
     return {
-        "name": "Aistock Control Panel API",
+        "name": "AiStockCN Platform API",
         "routes": [
             "/api/status/batch",
             "/api/status/workflow",
@@ -143,6 +145,7 @@ def root() -> dict[str, object]:
             "/api/status/us-selection",
             "/api/logs/batch",
             "/api/logs/reference",
+            "/api/markets/{market}/capabilities",
             "/api/data/summary",
             "/api/data/pipeline",
             "/api/data/explorer/catalog",

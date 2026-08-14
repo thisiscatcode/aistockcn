@@ -141,6 +141,31 @@ create table if not exists research_financial_sync_status (
   error_message text,
   synced_at timestamptz not null default now()
 );
+
+alter table research_financial_facts add column if not exists market text not null default 'US';
+alter table research_financial_facts add column if not exists issuer_id text;
+alter table research_financial_facts add column if not exists source_provider text not null default 'SEC';
+alter table research_financial_facts add column if not exists validation_status text not null default 'validated';
+alter table research_financial_facts add column if not exists validation_checks jsonb not null default '{}'::jsonb;
+alter table research_financial_facts add column if not exists source_document_id text;
+update research_financial_facts set issuer_id = 'US:' || symbol where issuer_id is null;
+alter table research_financial_sync_status add column if not exists market text not null default 'US';
+alter table research_financial_sync_status add column if not exists issuer_id text;
+update research_financial_sync_status set issuer_id = 'US:' || symbol where issuer_id is null;
+
+do $$
+declare constraint_row record;
+begin
+  for constraint_row in
+    select conrelid::regclass::text as table_name, conname
+    from pg_constraint
+    where contype = 'f'
+      and confrelid = 'us_stock_master'::regclass
+      and conrelid in ('research_financial_facts'::regclass, 'research_financial_sync_status'::regclass)
+  loop
+    execute format('alter table %I drop constraint %I', constraint_row.table_name, constraint_row.conname);
+  end loop;
+end $$;
 """
 
 

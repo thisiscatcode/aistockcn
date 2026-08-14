@@ -1,7 +1,7 @@
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
 import { Panel } from "@/components/cards";
-import { getPaperDbDailyHistory, getPaperHoldings, getPaperTargets, getPortfolioOverview, type OverviewTopPick } from "@/lib/api";
+import { getPaperDbDailyHistory, getPaperHoldings, getPortfolioOverview, type OverviewTopPick } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatDisplayValue, formatNumber } from "@/lib/format";
 import type { PanelLocale } from "@/lib/i18n";
@@ -203,11 +203,11 @@ function PnlCalendar({
   return (
     <section className="panel overview-calendar-panel" aria-label="P/L Calendar">
       <div className="overview-calendar-toolbar">
-        <a className="calendar-nav-button" href={`/overview?month=${monthKey(previousMonth)}`} aria-label={`Previous month, ${monthTitle(previousMonth, locale)}`}>
+        <a className="calendar-nav-button" href={`/cn/portfolio?month=${monthKey(previousMonth)}`} aria-label={`Previous month, ${monthTitle(previousMonth, locale)}`}>
           &lt;
         </a>
         <span className="pill">{monthTitle(pnlCalendar.monthDate, locale)}</span>
-        <a className="calendar-nav-button" href={`/overview?month=${monthKey(nextMonth)}`} aria-label={`Next month, ${monthTitle(nextMonth, locale)}`}>
+        <a className="calendar-nav-button" href={`/cn/portfolio?month=${monthKey(nextMonth)}`} aria-label={`Next month, ${monthTitle(nextMonth, locale)}`}>
           &gt;
         </a>
       </div>
@@ -372,15 +372,13 @@ export default async function OverviewPage({
   const requestedMonthDate = parseMonthParam(params.month);
   const requestedMonthRange = requestedMonthDate ? monthDateRange(requestedMonthDate) : null;
   const name = displayName(user.username);
-  const [overview, dailyHistory, holdingsSnapshot, targets] = await Promise.all([
+  const [overview, dailyHistory, holdingsSnapshot] = await Promise.all([
     getPortfolioOverview(),
     getPaperDbDailyHistory(120, 5000, requestedMonthRange?.startDate, requestedMonthRange?.endDate).catch(() => ({ rows: 0, daily: [] })),
-    getPaperHoldings(1000, 300, 5000).catch(() => ({ positions: [], positions_rows: 0, raw_positions_rows: 0 })),
-    getPaperTargets(200).catch(() => ({ rows: 0, targets: [] }))
+    getPaperHoldings(1000, 300, 5000).catch(() => ({ positions: [], positions_rows: 0, raw_positions_rows: 0 }))
   ]);
   const dailyRows = dailyHistory.daily as DashboardRow[];
   const positionRows = (holdingsSnapshot.positions as DashboardRow[]).map(positionDisplayRow);
-  const intendedOrderRows = plannedOrderRows(targets.targets as DashboardRow[]);
 
   return (
     <Shell
@@ -491,12 +489,6 @@ export default async function OverviewPage({
         </div>
       </section>
 
-      <Panel title="Planned Orders" aside={<span className="pill">{formatNumber(intendedOrderRows.length, user.locale)} intended</span>}>
-        <p className="table-note">
-          Intended buy/sell orders from the latest rebalance target file. These are visible before broker submission and still appear outside active trading hours.
-        </p>
-        <DataTable rows={intendedOrderRows} columns={plannedOrderColumns} emptyLabel="No intended buy/sell orders." locale={user.locale} pageSize={50} />
-      </Panel>
     </Shell>
   );
 }

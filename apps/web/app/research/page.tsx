@@ -95,7 +95,7 @@ function formatChange(value: number | null | undefined) {
 function viewHref(symbol: string, view: ResearchView, question?: string) {
   const params = new URLSearchParams({ symbol, view });
   if (question) params.set("question", question);
-  return `/research?${params.toString()}` as Route;
+  return `/us/research?${params.toString()}` as Route;
 }
 
 
@@ -121,7 +121,7 @@ export default async function ResearchPage({
     if (query) returnParams.set("q", query);
     if (view !== "overview") returnParams.set("view", view);
     if (initialQuestion) returnParams.set("question", initialQuestion);
-    const returnTo = `/research${returnParams.size ? `?${returnParams.toString()}` : ""}`;
+    const returnTo = `/us/research${returnParams.size ? `?${returnParams.toString()}` : ""}`;
     redirect(`/login?return_to=${encodeURIComponent(returnTo)}`);
   }
 
@@ -161,7 +161,7 @@ export default async function ResearchPage({
               <div>
                 <h2>Research a company</h2>
               </div>
-              <form className="research-search-form" action="/research" method="get">
+              <form className="research-search-form" action="/us/research" method="get">
                 <label className="sr-only" htmlFor="research-company-search">Company or ticker</label>
                 <div>
                   <input id="research-company-search" name="q" type="search" defaultValue={query} placeholder="Ticker or company name" autoComplete="off" autoFocus />
@@ -195,8 +195,8 @@ export default async function ResearchPage({
         ) : (
           <>
             <section className="research-company-toolbar">
-              <Link href="/research" className="research-back-link">All companies</Link>
-              <form className="research-inline-search" action="/research" method="get">
+              <Link href="/us/research" className="research-back-link">All companies</Link>
+              <form className="research-inline-search" action="/us/research" method="get">
                 <label className="sr-only" htmlFor="research-change-company">Change company</label>
                 <input id="research-change-company" name="q" type="search" placeholder="Change company or ticker" autoComplete="off" />
                 <button type="submit">Search</button>
@@ -237,7 +237,7 @@ export default async function ResearchPage({
               {view === "overview" ? (
                 <div className="research-overview-dashboard">
                   <section className="research-query-panel">
-                    <form className="research-query-form" action="/research" method="get">
+                    <form className="research-query-form" action="/us/research" method="get">
                       <input type="hidden" name="symbol" value={company.symbol} />
                       <input type="hidden" name="view" value="ask" />
                       <label className="sr-only" htmlFor="research-overview-question">Ask about {company.symbol}</label>

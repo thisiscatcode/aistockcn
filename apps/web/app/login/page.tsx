@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getMessages } from "@/lib/i18n";
@@ -11,15 +12,16 @@ export default async function LoginPage({
   searchParams?: Promise<{ error?: string; return_to?: string }>;
 }) {
   const user = await getCurrentUser();
+  const defaultDestination = (await cookies()).get("aistockcn_market")?.value === "US" ? "/us/overview" : "/cn/overview";
   if (user) {
-    redirect("/overview");
+    redirect(defaultDestination);
   }
 
   const params = (await searchParams) ?? {};
   const showError = params.error === "invalid";
   const returnTo = params.return_to?.startsWith("/") && !params.return_to.startsWith("//")
     ? params.return_to
-    : "/overview";
+    : defaultDestination;
   const en = getMessages("en");
 
   return (

@@ -41,6 +41,25 @@ def normalize_us_symbol(value: Any) -> str:
     return symbol
 
 
+def normalize_research_market(value: Any) -> str:
+    market = str(value or "US").strip().upper()
+    if market not in {"CN", "US"}:
+        raise ResearchError("unsupported_market")
+    return market
+
+
+def normalize_research_symbol(value: Any, market: Any = "US") -> str:
+    normalized_market = normalize_research_market(market)
+    if normalized_market == "US":
+        return normalize_us_symbol(value)
+    symbol = str(value or "").strip().upper()
+    symbol = re.sub(r"^(?:SH|SZ|BJ)[.:]?", "", symbol)
+    symbol = re.sub(r"\.(?:SH|SZ|BJ)$", "", symbol)
+    if not re.fullmatch(r"\d{6}", symbol):
+        raise ResearchError("invalid_symbol")
+    return symbol
+
+
 @contextmanager
 def _connect(settings: Settings | None = None) -> Iterator[Any]:
     resolved = settings or get_settings()
@@ -94,10 +113,42 @@ left join lateral (
 """
 
 
-def search_companies(*, query: str = "", limit: int = 12) -> dict[str, Any]:
+def search_companies(*, query: str = "", limit: int = 12, market: str = "US") -> dict[str, Any]:
     safe_limit = max(1, min(int(limit), 30))
+    normalized_market = normalize_research_market(market)
     normalized_query = str(query or "").strip()
     wildcard = f"%{normalized_query}%"
+
+    if normalized_market == "CN":
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select symbol, exchange as market, name as stock_name, name_zh as stock_name_zh,
+                           null::text as stock_type, null::text as stock_industry,
+                           null::text as stock_industry_en, null::text as stock_industry_short,
+                           null::numeric as market_cap, null::numeric as earnings_per_share,
+                           null::numeric as pe_ratio, currency,
+                           null::date as trade_date, null::numeric as close, null::numeric as price_diff,
+                           null::numeric as volume, null::numeric as turnover, null::numeric as average_trade
+                    from research_issuers
+                    where market = 'CN'
+                      and (%s = '' or symbol ilike %s or coalesce(name, '') ilike %s or coalesce(name_zh, '') ilike %s)
+                    order by case when symbol = %s then 0 else 1 end, symbol
+                    limit %s
+                    """,
+                    [normalized_query, wildcard, wildcard, wildcard, normalized_query, safe_limit],
+                )
+                companies = [dict(row) for row in cur.fetchall()]
+                cur.execute("select count(*) from research_issuers where market = 'CN'")
+                total_active = int(cur.fetchone()["count"])
+        return {
+            "market": normalized_market,
+            "query": normalized_query,
+            "rows": len(companies),
+            "total_active": total_active,
+            "companies": records_to_json(companies),
+        }
 
     where = """
       where m.is_active = true
@@ -136,6 +187,7 @@ def search_companies(*, query: str = "", limit: int = 12) -> dict[str, Any]:
             total_active = int(cur.fetchone()["count"])
 
     return {
+        "market": normalized_market,
         "query": normalized_query,
         "rows": len(companies),
         "total_active": total_active,
@@ -143,9 +195,42 @@ def search_companies(*, query: str = "", limit: int = 12) -> dict[str, Any]:
     }
 
 
-def get_company_snapshot(*, symbol: str, history_limit: int = 30) -> dict[str, Any]:
-    normalized_symbol = normalize_us_symbol(symbol)
+def get_company_snapshot(*, symbol: str, history_limit: int = 30, market: str = "US") -> dict[str, Any]:
+    normalized_market = normalize_research_market(market)
+    normalized_symbol = normalize_research_symbol(symbol, normalized_market)
     safe_history_limit = max(5, min(int(history_limit), 260))
+
+    if normalized_market == "CN":
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select symbol, exchange as market, name as stock_name, name_zh as stock_name_zh,
+                           currency, null::text as stock_industry, null::text as stock_industry_en,
+                           null::numeric as close, null::numeric as price_diff, null::date as trade_date
+                    from research_issuers where market = 'CN' and symbol = %s
+                    """,
+                    [normalized_symbol],
+                )
+                company = cur.fetchone()
+                if not company:
+                    raise ResearchError("company_not_found")
+                cur.execute(
+                    "select count(*) filter (where status = 'indexed') as indexed_documents from research_documents where market = 'CN' and symbol = %s",
+                    [normalized_symbol],
+                )
+                document_coverage = dict(cur.fetchone() or {})
+        return {
+            "market": "CN",
+            "company": records_to_json([dict(company)])[0],
+            "history": [],
+            "coverage": {"observations": 0, "date_min": None, "date_max": None},
+            "research_readiness": {
+                "market_data": "available_in_quant_platform",
+                "official_filings": "ready" if int(document_coverage.get("indexed_documents") or 0) else "not_indexed",
+                "financial_facts": "validation_required",
+            },
+        }
 
     with _connect() as conn:
         with conn.cursor() as cur:
@@ -208,6 +293,7 @@ def get_company_snapshot(*, symbol: str, history_limit: int = 30) -> dict[str, A
             financial_coverage = dict(cur.fetchone() or {})
 
     return {
+        "market": normalized_market,
         "company": records_to_json([dict(company)])[0],
         "history": records_to_json(history),
         "coverage": records_to_json([coverage])[0],
@@ -848,7 +934,11 @@ def answer_research_question(
     if financial_summary:
         evidence.extend(financial_summary.get("evidence") or [])
 
-    return {
+    result = {
+        "market": "US",
+        "currency": "USD",
+        "language": "en",
+        "source_provider": ["SEC", "AiStockCN market data"],
         "symbol": normalized_symbol,
         "question": normalized_question,
         "answer": synthesis["answer"],
@@ -867,6 +957,7 @@ def answer_research_question(
             for item in document_context
         ],
         "data_evidence": evidence,
+        "financial_evidence": [item for item in evidence if str(item.get("source") or "").startswith("SEC")],
         "model_inference": synthesis["model_inference"],
         "limitations": (
             ["Only the highest-ranked retrieved filing passages were supplied to the model."]
@@ -921,6 +1012,8 @@ def answer_research_question(
         "model": {"provider": "ollama", "name": settings.research_llm_model},
         "duration_ms": round((time.perf_counter() - started_at) * 1000, 1),
     }
+    result["execution_trace"] = result["agent_steps"]
+    return result
 
 
 def compare_research_companies(*, symbols: list[str], question: str) -> dict[str, Any]:
@@ -1015,7 +1108,11 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
         if deterministic_comparison:
             inference = [answer, *inference][:3]
             answer = deterministic_comparison
-    return {
+    result = {
+        "market": "US",
+        "currency": "USD",
+        "language": "en",
+        "source_provider": ["SEC", "AiStockCN market data"],
         "symbols": normalized_symbols,
         "question": normalized_question,
         "answer": answer,
@@ -1040,3 +1137,6 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
         ],
         "model": {"provider": "ollama", "name": settings.research_llm_model},
     }
+    result["execution_trace"] = result["agent_steps"]
+    result["limitations"] = ["Market data can be delayed and this output is research assistance, not investment advice."]
+    return result

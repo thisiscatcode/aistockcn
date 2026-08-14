@@ -4,6 +4,7 @@ import { getUsMarketSummary, getUsStocks } from "@/lib/api";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatNumber } from "@/lib/format";
 import { UsShell } from "../us-components";
+import { ProductSubnav } from "@/components/product-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function UsDataPage({
   ]);
   const rows = response.stocks.map((stock) => ({
     symbol: stock.symbol,
-    symbol_href: `/research?symbol=${encodeURIComponent(stock.symbol)}`,
+    symbol_href: `/us/research?symbol=${encodeURIComponent(stock.symbol)}`,
     company: stock.name,
     exchange: stock.exchange,
     industry: stock.industry,
@@ -34,6 +35,12 @@ export default async function UsDataPage({
 
   return (
     <UsShell user={user} title="US Market Data" subtitle="NASDAQ and NYSE universe">
+      <ProductSubnav active="explorer" items={[
+        { key: "signals", label: "Signals", href: "/us/quant?view=signals" as never },
+        { key: "methodology", label: "Methodology", href: "/us/quant?view=methodology" as never },
+        { key: "walk-forward", label: "Walk-forward", href: "/us/quant?view=walk-forward" as never },
+        { key: "explorer", label: "Explorer", href: "/us/quant?view=explorer" as never }
+      ]} />
       <section className="metrics-grid">
         <MetricCard label="Active Companies" value={formatNumber(summary.coverage.active_symbols, user.locale)} />
         <MetricCard label="Stored Bars" value={formatNumber(summary.coverage.total_bars, user.locale)} hint="Daily observations" />
@@ -42,10 +49,11 @@ export default async function UsDataPage({
       </section>
 
       <Panel title="Company Search" aside={<span className="pill">{formatNumber(response.total, user.locale)} matches</span>}>
-        <form className="us-stock-search" action="/us/data" method="get">
+        <form className="us-stock-search" action="/us/quant" method="get">
+          <input type="hidden" name="view" value="explorer" />
           <input name="search" defaultValue={search} placeholder="Search AAPL, company name or industry" aria-label="Search US companies" />
           <button type="submit">Search</button>
-          {search ? <a href="/us/data">Clear</a> : null}
+          {search ? <a href="/us/quant?view=explorer">Clear</a> : null}
         </form>
         <DataTable
           rows={rows}

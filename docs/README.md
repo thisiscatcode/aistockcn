@@ -8,7 +8,7 @@ This documentation describes the live AiStockCN financial research product, its 
 
 | Audience | Document | Purpose |
 | --- | --- | --- |
-| Investors and product users | [User Guide](USER_GUIDE.md) | Navigate A-shares, US Intelligence and Research Copilot |
+| Investors and product users | [User Guide](USER_GUIDE.md) | Navigate the unified US and A-share product workflow |
 | Product and engineering | [Research Copilot](RESEARCH_COPILOT.md) | Understand cited answers, financial tools, RAG and filing-change detection |
 | Engineers and reviewers | [System Design](SYSTEM_DESIGN_SPEC.md) | Review services, data boundaries, security and reliability |
 | Operators | [System Manual](SYSTEM_MANUAL.md) | Build, start, validate and troubleshoot the platform |
@@ -22,7 +22,7 @@ AiStockCN combines:
 - a production universe of 5,000+ China A-shares and 5,000+ US-listed equities;
 - market-data ingestion, feature engineering, model training and walk-forward evaluation;
 - rules-based and model-derived selection workflows;
-- source-grounded company research over SEC filings and standardized financial facts;
+- source-grounded company research over SEC and official China disclosures;
 - cited natural-language answers, company comparison and filing-change detection;
 - portfolio and paper-execution controls with explicit model lineage;
 - separate customer and administrator surfaces.
@@ -39,7 +39,8 @@ The repository follows four rules:
 ## Live product
 
 - Product: [aistockcn.com](https://aistockcn.com)
-- Research Copilot: [aistockcn.com/research](https://aistockcn.com/research)
+- US Research: [aistockcn.com/us/research](https://aistockcn.com/us/research)
+- A-share Research: [aistockcn.com/cn/research](https://aistockcn.com/cn/research)
 - Current server runtime: Docker Compose with separate API, worker and frontend services
 
 AiStockCN is a research and evidence-navigation product. It does not provide individualized investment advice or guarantee investment outcomes.

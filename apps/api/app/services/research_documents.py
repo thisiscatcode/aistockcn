@@ -12,7 +12,7 @@ import fitz
 from fastapi import UploadFile
 
 from app.config import Settings, get_settings
-from app.services.research import ResearchError, normalize_us_symbol
+from app.services.research import ResearchError, normalize_research_market, normalize_research_symbol
 from app.services.research_chunking import chunk_page_text
 from app.services.research_models import embed_texts
 
@@ -258,6 +258,85 @@ create index if not exists research_coverage_jobs_claim_idx
   on research_coverage_jobs(status, priority_rank, created_at);
 """
 
+MARKET_NEUTRAL_RESEARCH_SCHEMA_SQL = """
+create table if not exists research_issuers (
+  id text primary key,
+  market text not null check (market in ('CN', 'US')),
+  symbol text not null,
+  exchange text,
+  source_issuer_id text,
+  name text,
+  name_zh text,
+  currency text not null,
+  language text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (market, symbol)
+);
+
+insert into research_issuers (id, market, symbol, exchange, source_issuer_id, name, name_zh, currency, language)
+select 'US:' || symbol, 'US', symbol, market, null, stock_name, stock_name_zh, coalesce(nullif(currency, ''), 'USD'), 'en'
+from us_stock_master
+on conflict (market, symbol) do update set
+  exchange = excluded.exchange,
+  name = excluded.name,
+  name_zh = excluded.name_zh,
+  currency = excluded.currency,
+  updated_at = now();
+
+insert into research_issuers (id, market, symbol, exchange, source_issuer_id, name, name_zh, currency, language)
+select 'CN:' || code, 'CN', code, upper(exchange), code, name, name, 'CNY', 'zh'
+from stock_master
+where coalesce(is_active, true) = true
+on conflict (market, symbol) do update set
+  exchange = excluded.exchange,
+  name = excluded.name,
+  name_zh = excluded.name_zh,
+  updated_at = now();
+
+alter table research_documents add column if not exists market text not null default 'US';
+alter table research_documents add column if not exists issuer_id text;
+alter table research_documents add column if not exists source_provider text not null default 'SEC';
+alter table research_documents add column if not exists exchange text;
+alter table research_documents add column if not exists announcement_id text;
+alter table research_documents add column if not exists report_period date;
+alter table research_documents add column if not exists language text not null default 'en';
+alter table research_documents add column if not exists currency text not null default 'USD';
+update research_documents set market = 'US', issuer_id = 'US:' || symbol where issuer_id is null;
+create index if not exists research_documents_market_symbol_idx on research_documents(market, symbol, filing_date desc nulls last);
+create unique index if not exists research_documents_market_sha_idx on research_documents(market, symbol, sha256);
+create unique index if not exists research_documents_announcement_idx on research_documents(market, source_provider, announcement_id) where announcement_id is not null;
+
+alter table research_document_chunks add column if not exists search_vector_simple tsvector
+  generated always as (to_tsvector('simple', content)) stored;
+create index if not exists research_chunks_search_simple_idx on research_document_chunks using gin(search_vector_simple);
+
+alter table research_evaluation_runs add column if not exists market text not null default 'US';
+alter table research_evaluation_runs add column if not exists retrieval_profile jsonb not null default '{}'::jsonb;
+alter table research_agent_runs add column if not exists market text not null default 'US';
+alter table research_filing_change_runs add column if not exists market text not null default 'US';
+alter table research_company_coverage add column if not exists market text not null default 'US';
+alter table research_coverage_jobs add column if not exists market text not null default 'US';
+
+do $$
+declare constraint_row record;
+begin
+  for constraint_row in
+    select conrelid::regclass::text as table_name, conname
+    from pg_constraint
+    where contype = 'f'
+      and confrelid = 'us_stock_master'::regclass
+      and conrelid in (
+        'research_documents'::regclass,
+        'research_filing_change_runs'::regclass,
+        'research_company_coverage'::regclass
+      )
+  loop
+    execute format('alter table %I drop constraint %I', constraint_row.table_name, constraint_row.conname);
+  end loop;
+end $$;
+"""
+
 
 class ResearchDocumentError(ResearchError):
     pass
@@ -313,6 +392,7 @@ def init_research_document_schema() -> None:
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(RESEARCH_SCHEMA_SQL)
+            cur.execute(MARKET_NEUTRAL_RESEARCH_SCHEMA_SQL)
         conn.commit()
 
 
@@ -329,9 +409,11 @@ async def save_uploaded_pdf(
     filing_date: date | None,
     fiscal_year: int | None,
     source_url: str | None,
+    market: str = "US",
 ) -> dict[str, Any]:
     settings = get_settings()
-    normalized_symbol = normalize_us_symbol(symbol)
+    normalized_market = normalize_research_market(market)
+    normalized_symbol = normalize_research_symbol(symbol, normalized_market)
     filename = Path(upload.filename or "document.pdf").name
     if not filename.lower().endswith(".pdf"):
         raise ResearchDocumentError("pdf_required")
@@ -364,12 +446,12 @@ async def save_uploaded_pdf(
         raise ResearchDocumentError("invalid_pdf")
 
     sha256 = digest.hexdigest()
-    object_key = f"research-documents/{normalized_symbol}/{document_id}.pdf" if settings.research_s3_bucket else None
+    object_key = f"research-documents/{normalized_market}/{normalized_symbol}/{document_id}.pdf" if settings.research_s3_bucket else None
     with _write_connection(settings) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select * from research_documents where symbol = %s and sha256 = %s",
-                [normalized_symbol, sha256],
+                "select * from research_documents where market = %s and symbol = %s and sha256 = %s",
+                [normalized_market, normalized_symbol, sha256],
             )
             existing = cur.fetchone()
             if existing:
@@ -388,8 +470,10 @@ async def save_uploaded_pdf(
                     insert into research_documents (
                       id, symbol, filename, document_type, filing_date, fiscal_year,
                       source_url, storage_path, object_key, sha256, size_bytes, status,
-                      source_format, native_page_numbers
-                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'uploaded', 'pdf', true)
+                      source_format, native_page_numbers, market, issuer_id, source_provider,
+                      language, currency
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'uploaded', 'pdf', true,
+                      %s, %s, %s, %s, %s)
                     returning *
                     """,
                     [
@@ -404,6 +488,11 @@ async def save_uploaded_pdf(
                         object_key,
                         sha256,
                         size,
+                        normalized_market,
+                        f"{normalized_market}:{normalized_symbol}",
+                        "USER_UPLOAD",
+                        "zh" if normalized_market == "CN" else "en",
+                        "CNY" if normalized_market == "CN" else "USD",
                     ],
                 )
                 row = dict(cur.fetchone())
@@ -468,14 +557,15 @@ def index_research_document(document_id: str) -> dict[str, Any]:
         if not chunks:
             raise ResearchDocumentError("document_has_no_extractable_text")
 
-        embeddings = embed_texts([str(chunk[4]) for chunk in chunks])
+        market = str(document.get("market") or "US")
+        embeddings = embed_texts([str(chunk[4]) for chunk in chunks], market=market)
         if len(embeddings) != len(chunks):
             raise ResearchDocumentError("embedding_count_mismatch")
         embedded_chunks = [
             (
                 *chunk,
                 "[" + ",".join(f"{value:.8f}" for value in embedding) + "]",
-                settings.research_embedding_model,
+                settings.research_cn_embedding_model if market == "CN" else settings.research_embedding_model,
             )
             for chunk, embedding in zip(chunks, embeddings, strict=True)
         ]
@@ -575,17 +665,19 @@ def claim_next_uploaded_document() -> str | None:
     return document_id
 
 
-def list_research_documents(*, symbol: str | None = None) -> dict[str, Any]:
+def list_research_documents(*, symbol: str | None = None, market: str = "US") -> dict[str, Any]:
     params: list[Any] = []
-    where = ""
+    normalized_market = normalize_research_market(market)
+    where = "where market = %s"
+    params.append(normalized_market)
     if symbol:
-        where = "where symbol = %s"
-        params.append(normalize_us_symbol(symbol))
+        where += " and symbol = %s"
+        params.append(normalize_research_symbol(symbol, normalized_market))
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                select id, symbol, filename, document_type, filing_date, fiscal_year,
+                select id, market, symbol, filename, document_type, filing_date, fiscal_year,
                        source_url, sha256, size_bytes, page_count, chunk_count, status,
                        error_message, source_format, native_page_numbers, sec_cik,
                        sec_accession_number, sec_primary_document, source_metadata,
@@ -598,7 +690,7 @@ def list_research_documents(*, symbol: str | None = None) -> dict[str, Any]:
                 params,
             )
             rows = [dict(row) for row in cur.fetchall()]
-    return {"rows": len(rows), "documents": rows}
+    return {"market": normalized_market, "rows": len(rows), "documents": rows}
 
 
 def get_research_document(document_id: str) -> dict[str, Any]:

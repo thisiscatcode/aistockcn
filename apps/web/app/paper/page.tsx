@@ -712,13 +712,17 @@ export default async function PaperPage({
 
   return (
     <Shell
-      title={copy.paper.title}
-      subtitle={copy.paper.subtitle}
+      title="A-Share Execution"
+      subtitle="Planned orders, fills and controlled execution"
       locale={user.locale}
       username={user.username}
       role={user.role}
     >
       <AutoRefresh intervalSeconds={15} />
+      <section className="product-stage-heading">
+        <div><span className="stage-icon">⇄</span><div><h1>A-Share Execution</h1><p>Planned orders, fills and controlled broker actions.</p></div></div>
+        <span className="capability-label status-live">Live</span>
+      </section>
       {flash ? <p className={`banner banner-${flash.tone}`}>{flash.text}</p> : null}
       {!gateway.healthy ? <p className="banner banner-error">{copy.paper.gatewayOffline}</p> : null}
       {overview.live_error ? (

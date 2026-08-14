@@ -17,9 +17,46 @@ from app.services import research_chunking as research_chunking_service
 from app.services import research_financials as research_financials_service
 from app.services import research_filing_changes as research_filing_changes_service
 from app.services import research_sec as research_sec_service
+from app.services import research_cn_disclosures as research_cn_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_market_scoped_symbol_normalization(self) -> None:
+        self.assertEqual(research_service.normalize_research_symbol("sh.600519", "CN"), "600519")
+        self.assertEqual(research_service.normalize_research_symbol("000001.sz", "CN"), "000001")
+        self.assertEqual(research_service.normalize_research_symbol(" brk.b ", "US"), "BRK.B")
+        with self.assertRaises(research_service.ResearchError):
+            research_service.normalize_research_symbol("600519;drop", "CN")
+
+    def test_chinese_filing_change_preserves_bilateral_evidence(self) -> None:
+        older = "公司经营可能受到供应链波动影响，原材料价格存在不确定性。" * 12
+        newer = "原材料供应商高度集中，供应中断将对生产经营造成重大不利影响。" * 12
+        candidates = research_filing_changes_service.build_change_candidates([
+            (self._filing_pair(older=older, newer=newer, similarity=0.68), "older_to_newer")
+        ])
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0]["older_evidence"]["page_number"], 8)
+        self.assertEqual(candidates[0]["newer_evidence"]["page_number"], 11)
+
+    def test_cninfo_discovery_keeps_official_announcement_lineage(self) -> None:
+        payload = {
+            "announcements": [{
+                "secCode": "600519", "secName": "贵州茅台", "orgId": "gssh0600519",
+                "announcementId": "123456", "announcementTitle": "2025年年度报告",
+                "announcementTime": 1773964800000, "adjunctUrl": "finalpage/2026/123456.PDF"
+            }]
+        }
+        with mock.patch.object(research_cn_service, "_issuer_map", return_value={"600519": {"org_id": "gssh0600519", "name": "贵州茅台"}}), mock.patch.object(
+            research_cn_service, "_request", return_value=json.dumps(payload).encode("utf-8")
+        ):
+            result = research_cn_service.discover_cn_disclosures(
+                symbol="600519", document_types=["annual_report"], years=3, limit_per_type=1
+            )
+        filing = result["filings"][0]
+        self.assertEqual(filing["exchange"], "SSE")
+        self.assertEqual(filing["announcement_id"], "123456")
+        self.assertEqual(filing["report_period"], date(2025, 12, 31))
+        self.assertTrue(filing["source_url"].startswith("https://static.cninfo.com.cn/"))
     def _filing_pair(self, *, older: str, newer: str, similarity: float) -> dict[str, object]:
         return {
             "older_chunk_id": "old-chunk",

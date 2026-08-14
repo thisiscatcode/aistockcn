@@ -11,6 +11,24 @@ export const US_MARKET_API_BASE_URL =
   process.env.US_MARKET_API_BASE_URL ??
   "http://127.0.0.1:8004";
 
+export type MarketStage = "overview" | "research" | "quant" | "portfolio" | "execution";
+export type CapabilityStatus = "live" | "in_validation" | "planned" | "degraded";
+export type MarketCapability = {
+  market: "CN" | "US";
+  stage: MarketStage;
+  status: CapabilityStatus;
+  mode: string;
+  as_of: string;
+  actions: string[];
+  blockers: string[];
+};
+export type MarketCapabilities = {
+  market: "CN" | "US";
+  as_of: string;
+  stages: MarketCapability[];
+  by_stage: Partial<Record<MarketStage, MarketCapability>>;
+};
+
 type FetchJsonOptions = {
   timeoutMs?: number;
   baseUrl?: string;
@@ -38,6 +56,10 @@ async function fetchJson<T>(path: string, options: FetchJsonOptions = {}): Promi
       clearTimeout(timeout);
     }
   }
+}
+
+export function getMarketCapabilities(market: "CN" | "US") {
+  return fetchJson<MarketCapabilities>(`/api/markets/${market}/capabilities`, { timeoutMs: 10000 });
 }
 
 export type BatchStatus = {
@@ -898,14 +920,20 @@ export type ResearchEvidence = {
 };
 
 export type ResearchAnswer = {
+  market?: "CN" | "US";
+  currency?: string;
+  language?: string;
+  source_provider?: string[];
   symbol: string;
   question: string;
   answer: string;
   document_evidence: ResearchEvidence[];
   data_evidence: ResearchEvidence[];
+  financial_evidence?: ResearchEvidence[];
   model_inference: string[];
   limitations: string[];
   agent_steps: Array<{ tool: string; status: string; detail: string }>;
+  execution_trace?: Array<{ tool: string; status: string; detail: string }>;
   tool_plan?: { tools: string[]; reason: string; planner: string };
   duration_ms?: number;
   model: { provider: string; name: string };
@@ -1101,24 +1129,24 @@ export type FilingChangeRunList = {
   runs: FilingChangeRun[];
 };
 
-export function getResearchCompanies(query = "", limit = 12) {
-  const params = new URLSearchParams({ query, limit: String(limit) });
+export function getResearchCompanies(query = "", limit = 12, market: "CN" | "US" = "US") {
+  const params = new URLSearchParams({ query, limit: String(limit), market });
   return fetchJson<ResearchCompanySearch>(`/api/research/companies?${params.toString()}`, {
     timeoutMs: 10000,
     baseUrl: RESEARCH_API_BASE_URL
   });
 }
 
-export function getResearchCompany(symbol: string, historyLimit = 30) {
-  const params = new URLSearchParams({ history_limit: String(historyLimit) });
+export function getResearchCompany(symbol: string, historyLimit = 30, market: "CN" | "US" = "US") {
+  const params = new URLSearchParams({ history_limit: String(historyLimit), market });
   return fetchJson<ResearchCompanySnapshot>(
     `/api/research/companies/${encodeURIComponent(symbol)}?${params.toString()}`,
     { timeoutMs: 10000, baseUrl: RESEARCH_API_BASE_URL }
   );
 }
 
-export function getResearchDocuments(symbol?: string) {
-  const params = new URLSearchParams();
+export function getResearchDocuments(symbol?: string, market: "CN" | "US" = "US") {
+  const params = new URLSearchParams({ market });
   if (symbol) params.set("symbol", symbol);
   const query = params.size ? `?${params.toString()}` : "";
   return fetchJson<ResearchDocumentList>(`/api/research/documents${query}`, {
@@ -1234,6 +1262,8 @@ export type UsModelStatus = UsMarketContext & {
     ready: boolean;
     required_trading_dates: number;
     available_trading_dates: number;
+    required_symbols_with_history: number;
+    available_symbols_with_history: number;
     history_ready: boolean;
     training_ready: boolean;
     walk_forward_ready: boolean;

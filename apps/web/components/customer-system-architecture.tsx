@@ -1,100 +1,47 @@
-const architectureSteps = [
-  { number: "01", title: "Ingest", detail: "BaoStock + AKShare", tone: "cyan" },
-  { number: "02", title: "Normalise", detail: "Parquet + PyArrow", tone: "blue" },
-  { number: "03", title: "Engineer", detail: "Training + inference", tone: "violet" },
-  { number: "04", title: "Model", detail: "LightGBM profiles", tone: "indigo" },
-  { number: "05", title: "Validate", detail: "Walk-forward tests", tone: "magenta" },
-  { number: "06", title: "Operate", detail: "Signals + paper trades", tone: "green" }
+const productSteps = [
+  { number: "01", icon: "✦", title: "Research", detail: "Filings, financials and company questions", tone: "cyan" },
+  { number: "02", icon: "✓", title: "Verify", detail: "Original documents, pages and calculations", tone: "blue" },
+  { number: "03", icon: "⌁", title: "Quantify", detail: "Reproducible signals and walk-forward tests", tone: "violet" },
+  { number: "04", icon: "◆", title: "Portfolio", detail: "Holdings, targets and research baskets", tone: "magenta" },
+  { number: "05", icon: "⇄", title: "Execute", detail: "Validation-gated, controlled execution", tone: "green" }
 ];
 
-const capabilityCards = [
-  {
-    label: "Data foundation",
-    title: "Traceable market-data pipeline",
-    body: "The stock universe, daily prices, valuation data and reference datasets move through explicit, inspectable artifacts with freshness and coverage checks.",
-    tags: ["Data lineage", "Parquet", "Quality gates"]
-  },
-  {
-    label: "Quant research",
-    title: "Models tested out of sample",
-    body: "Training and inference remain separate. Model profiles are evaluated with expanding-window walk-forward tests before their scores enter the operating workflow.",
-    tags: ["LightGBM", "No leakage", "Walk-forward"]
-  },
-  {
-    label: "Operations",
-    title: "Signals connected to execution",
-    body: "Ranked targets, portfolio state, orders and fills stay reviewable while batch progress, failure reasons and recovery state remain visible to operators.",
-    tags: ["Signal ranking", "Paper trading", "Telemetry"]
-  }
+const principles = [
+  { label: "Evidence first", title: "Conclusions you can inspect", body: "Material claims link to document pages, financial periods and deterministic calculations. Model inference is labelled separately." },
+  { label: "Test before use", title: "Signals evaluated out of sample", body: "Market-specific features and models pass leakage controls, walk-forward validation and registry gates before activation." },
+  { label: "One product", title: "Research connected to decisions", body: "US stocks and A-shares share one workflow while preserving each market’s sources, calendar, costs and execution rules." }
 ];
 
 export function CustomerSystemArchitecture() {
   return (
-    <section className="case-embedded customer-system-architecture" aria-label="AiStockCN system architecture">
-      <section className="case-section" id="system-architecture">
+    <main className="case-embedded customer-system-architecture" id="product-flow">
+      <section className="case-section">
         <div className="case-section-heading">
-          <div>
-            <p className="case-kicker">System architecture</p>
-            <h2>One continuous path from market data to execution</h2>
-          </div>
-          <p>
-            AiStockCN connects data ingestion, feature engineering, model validation, signal generation and
-            paper execution through explicit artifacts and observable operating states.
-          </p>
+          <div><p className="case-kicker">One connected workflow</p><h2>From company evidence to tested decisions</h2></div>
+          <p>Research, validation, quantitative analysis, portfolios and execution remain traceable across both supported markets.</p>
         </div>
-
-        <div className="case-flow" role="list" aria-label="AiStockCN data and model workflow">
-          {architectureSteps.map((step, index) => (
+        <div className="case-flow product-flow" role="list">
+          {productSteps.map((step, index) => (
             <div className={`case-flow-step case-flow-${step.tone}`} role="listitem" key={step.number}>
-              <div className="case-flow-top">
-                <span>{step.number}</span>
-                <i aria-hidden="true">{index < architectureSteps.length - 1 ? "→" : "✓"}</i>
-              </div>
-              <strong>{step.title}</strong>
-              <small>{step.detail}</small>
+              <div className="case-flow-top"><span>{step.number}</span><i aria-hidden="true">{index < productSteps.length - 1 ? "→" : "✓"}</i></div>
+              <strong><b aria-hidden="true">{step.icon}</b>{step.title}</strong><small>{step.detail}</small>
             </div>
           ))}
         </div>
       </section>
-
-      <section className="case-section" id="platform-capabilities">
+      <section className="case-section" id="quantitative-methodology">
         <div className="case-section-heading">
-          <div>
-            <p className="case-kicker">Platform capabilities</p>
-            <h2>Research quality and operations in the same system</h2>
-          </div>
-          <p>
-            Each layer exposes its inputs, outputs and current state, so research results can be traced and
-            operating decisions can be reviewed without relying on hidden process state.
-          </p>
+          <div><p className="case-kicker">Product principles</p><h2>Evidence, validation and control by design</h2></div>
+          <p>Every layer exposes its source, effective date and readiness state—without turning operational telemetry into customer UI.</p>
         </div>
-
         <div className="case-capability-grid">
-          {capabilityCards.map((card, index) => (
+          {principles.map((card, index) => (
             <article className="case-capability-card" key={card.label}>
-              <div className="case-capability-index">0{index + 1}</div>
-              <p className="case-capability-label">{card.label}</p>
-              <h3>{card.title}</h3>
-              <p>{card.body}</p>
-              <div className="case-tags">
-                {card.tags.map((tag) => <span key={tag}>{tag}</span>)}
-              </div>
+              <div className="case-capability-index">0{index + 1}</div><p className="case-capability-label">{card.label}</p><h3>{card.title}</h3><p>{card.body}</p>
             </article>
           ))}
         </div>
       </section>
-
-      <section className="case-stack-section">
-        <div>
-          <p className="case-kicker">Integrated platform</p>
-          <h2>Financial data, quantitative models and live operations.</h2>
-        </div>
-        <div className="case-stack-list" aria-label="AiStockCN technology stack">
-          <span>Python</span><span>FastAPI</span><span>Pandas</span><span>PyArrow</span>
-          <span>LightGBM</span><span>scikit-learn</span><span>PostgreSQL</span><span>Next.js</span>
-          <span>React</span><span>Docker Compose</span><span>REST APIs</span><span>Futu Gateway</span>
-        </div>
-      </section>
-    </section>
+    </main>
   );
 }

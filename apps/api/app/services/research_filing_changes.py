@@ -6,11 +6,11 @@ from datetime import date, datetime
 from typing import Any
 from uuid import uuid4
 
-from app.services.research import ResearchError, normalize_us_symbol
+from app.services.research import ResearchError, normalize_research_market, normalize_research_symbol
 from app.services.research_documents import _write_connection
 
 
-ALGORITHM_VERSION = "filing-change-v1.1"
+ALGORITHM_VERSION = "filing-change-v1.2-bilingual"
 DEFAULT_PARAMETERS: dict[str, Any] = {
     "added_deleted_similarity_max": 0.62,
     "unchanged_similarity_min": 0.985,
@@ -33,15 +33,26 @@ TOPIC_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Operations and controls", ("internal control", "material weakness", "operation", "personnel", "employee")),
     ("Climate and environment", ("climate", "environment", "carbon", "weather")),
     ("General risk disclosure", ("risk", "uncertain", "adverse", "material effect", "threat")),
+    ("网络安全与数据", ("网络安全", "数据安全", "信息安全", "隐私", "数据泄露")),
+    ("监管与法律", ("监管", "诉讼", "法律程序", "合规", "行政处罚")),
+    ("竞争", ("竞争", "市场份额", "价格压力")),
+    ("供应链", ("供应链", "供应商", "原材料", "库存", "短缺")),
+    ("需求与收入", ("营业收入", "销售", "需求", "客户", "订单")),
+    ("盈利与成本", ("利润", "毛利率", "费用", "成本", "减值")),
+    ("流动性与资本", ("流动性", "现金流", "资本", "债务", "信用")),
+    ("管理层展望", ("管理层", "预计", "展望", "战略", "目标", "预测")),
+    ("一般风险披露", ("风险", "不确定", "不利影响", "重大影响", "可能导致")),
 )
 
 STRONG_LANGUAGE = (
     "material adverse", "significant", "substantial", "severe", "critical", "heightened",
     "increasingly", "material weakness", "likely", "unable", "adversely affect", "will",
+    "重大不利", "显著", "大幅", "严重", "关键", "加剧", "重大缺陷", "将",
 )
 HEDGED_LANGUAGE = (
     "may", "might", "could", "potential", "possible", "generally", "from time to time",
     "not expected", "unlikely",
+    "可能", "或许", "潜在", "预计不会", "一般而言", "不排除",
 )
 
 
@@ -73,7 +84,7 @@ def _topic(text: str) -> tuple[str, float]:
 
 def _language_strength(text: str) -> float:
     lowered = text.lower()
-    words = max(1, len(lowered.split()))
+    words = max(1, len(lowered.split()), len(re.findall(r"[\u3400-\u9fff]", lowered)) // 2)
     strong = sum(lowered.count(term) for term in STRONG_LANGUAGE)
     hedged = sum(lowered.count(term) for term in HEDGED_LANGUAGE)
     numeric = len(re.findall(r"(?:\$|\b)\d+(?:\.\d+)?%?", lowered))
@@ -228,7 +239,7 @@ def build_change_candidates(
 def _document_pair(cur: Any, older_document_id: str, newer_document_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     cur.execute(
         """
-        select id, symbol, filename, document_type, filing_date, fiscal_year, source_url, sha256,
+        select id, market, symbol, filename, document_type, filing_date, fiscal_year, source_url, sha256,
                source_format, native_page_numbers, status, chunk_count
         from research_documents where id in (%s, %s)
         """,
@@ -240,6 +251,8 @@ def _document_pair(cur: Any, older_document_id: str, newer_document_id: str) -> 
     older, newer = rows[older_document_id], rows[newer_document_id]
     if older["symbol"] != newer["symbol"]:
         raise FilingChangeError("filing_change_symbol_mismatch")
+    if str(older.get("market") or "US") != str(newer.get("market") or "US"):
+        raise FilingChangeError("filing_change_market_mismatch")
     if older["document_type"] != "annual_report" or newer["document_type"] != "annual_report":
         raise FilingChangeError("filing_change_annual_reports_required")
     if older["status"] != "indexed" or newer["status"] != "indexed":
@@ -264,8 +277,10 @@ def create_filing_change_run(
     requested_by: str | None,
     parameters: dict[str, Any] | None = None,
     retry_of_run_id: str | None = None,
+    market: str = "US",
 ) -> dict[str, Any]:
-    normalized_symbol = normalize_us_symbol(symbol)
+    normalized_market = normalize_research_market(market)
+    normalized_symbol = normalize_research_symbol(symbol, normalized_market)
     if older_document_id == newer_document_id:
         raise FilingChangeError("filing_change_documents_must_differ")
     resolved = {**DEFAULT_PARAMETERS, **(parameters or {})}
@@ -276,6 +291,8 @@ def create_filing_change_run(
             older, newer = _document_pair(cur, older_document_id, newer_document_id)
             if str(older["symbol"]) != normalized_symbol:
                 raise FilingChangeError("filing_change_symbol_mismatch")
+            if str(older.get("market") or "US") != normalized_market:
+                raise FilingChangeError("filing_change_market_mismatch")
             cur.execute(
                 """
                 select array_remove(array_agg(distinct embedding_model), null) as models
@@ -297,14 +314,14 @@ def create_filing_change_run(
                 """
                 insert into research_filing_change_runs (
                   id, symbol, older_document_id, newer_document_id, status,
-                  algorithm_version, parameters, requested_by, retry_of_run_id
-                ) values (%s, %s, %s, %s, 'queued', %s, %s::jsonb, %s, %s)
+                  algorithm_version, parameters, requested_by, retry_of_run_id, market
+                ) values (%s, %s, %s, %s, 'queued', %s, %s::jsonb, %s, %s, %s)
                 returning *
                 """,
                 [
                     run_id, normalized_symbol, older_document_id, newer_document_id,
                     ALGORITHM_VERSION, json.dumps(resolved), (requested_by or "").strip()[:120] or None,
-                    retry_of_run_id,
+                    retry_of_run_id, normalized_market,
                 ],
             )
             result = dict(cur.fetchone())
@@ -495,17 +512,18 @@ def _run_select() -> str:
     """
 
 
-def list_filing_change_runs(*, symbol: str, limit: int = 20) -> dict[str, Any]:
-    normalized_symbol = normalize_us_symbol(symbol)
+def list_filing_change_runs(*, symbol: str, limit: int = 20, market: str = "US") -> dict[str, Any]:
+    normalized_market = normalize_research_market(market)
+    normalized_symbol = normalize_research_symbol(symbol, normalized_market)
     safe_limit = max(1, min(int(limit), 100))
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                _run_select() + " where r.symbol = %s order by r.created_at desc limit %s",
-                [normalized_symbol, safe_limit],
+                _run_select() + " where r.market = %s and r.symbol = %s order by r.created_at desc limit %s",
+                [normalized_market, normalized_symbol, safe_limit],
             )
             runs = [dict(row) for row in cur.fetchall()]
-    return {"symbol": normalized_symbol, "rows": len(runs), "runs": runs}
+    return {"market": normalized_market, "symbol": normalized_symbol, "rows": len(runs), "runs": runs}
 
 
 def get_filing_change_run(run_id: str) -> dict[str, Any]:
@@ -544,6 +562,7 @@ def rerun_filing_change_detection(*, run_id: str, requested_by: str | None) -> d
         requested_by=requested_by,
         parameters=dict(previous.get("parameters") or {}),
         retry_of_run_id=run_id,
+        market=str(previous.get("market") or "US"),
     )
 
 

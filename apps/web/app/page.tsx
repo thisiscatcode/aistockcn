@@ -6,8 +6,8 @@ import { CustomerHomePage } from "@/components/customer-home-page";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "AiStockCN — Systematic Equity Research Platform",
-  description: "Live market data, quantitative research, model signals and source-grounded company research."
+  title: "AiStockCN — AI Equity Research and Quantitative Trading",
+  description: "Evidence-grounded AI research, tested quantitative signals and controlled execution for US and China equities."
 };
 
 

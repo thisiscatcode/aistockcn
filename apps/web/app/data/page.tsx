@@ -9,6 +9,7 @@ import {
 import { requireAuth } from "@/lib/auth";
 import { formatBytes, formatDateTime, formatNumber } from "@/lib/format";
 import { getMessages } from "@/lib/i18n";
+import { ProductSubnav } from "@/components/product-subnav";
 
 export const dynamic = "force-dynamic";
 
@@ -167,6 +168,12 @@ export default async function DataPage({
       username={user.username}
       role={user.role}
     >
+      <ProductSubnav active="explorer" items={[
+        { key: "signals", label: "Signals", href: "/cn/quant?view=signals" as never },
+        { key: "methodology", label: "Methodology", href: "/cn/quant?view=methodology" as never },
+        { key: "walk-forward", label: "Walk-forward", href: "/cn/quant?view=walk-forward" as never },
+        { key: "explorer", label: "Explorer", href: "/cn/quant?view=explorer" as never }
+      ]} />
       <section className="metrics-grid">
         <MetricCard label="Current Dataset" value={dataset.label} hint={dataset.key} />
         <MetricCard label="Total Rows" value={formatNumber(result.total_rows, user.locale)} hint="Rows in saved parquet" />

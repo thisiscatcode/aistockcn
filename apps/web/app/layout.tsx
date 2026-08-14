@@ -6,8 +6,8 @@ import { ReactNode } from "react";
 import { PageRestoreCleanup } from "@/components/page-restore-cleanup";
 
 export const metadata: Metadata = {
-  title: "AiStockCN Research Copilot",
-  description: "Evidence-grounded research across live US equity data, deterministic calculations and model inference."
+  title: "AiStockCN",
+  description: "AI-powered equity research and quantitative trading for US and China markets."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

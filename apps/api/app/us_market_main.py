@@ -2,17 +2,27 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.routers.us_market import router as us_market_router
+from app.services.us_market import init_us_model_data_schema
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    init_us_model_data_schema()
+    yield
 
 app = FastAPI(
     title="AiStockCN US Market API",
     version="0.1.0",
-    description="Read-only US equity product API, isolated from the existing A-share control API.",
+    description="US equity data, quantitative signals, portfolio research, and execution-readiness gates.",
+    lifespan=lifespan,
 )
 
 

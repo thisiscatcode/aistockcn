@@ -19,11 +19,11 @@ This manual covers the current Docker Compose runtime, quantitative pipeline, re
 | Service | Process | Responsibility |
 | --- | --- | --- |
 | `panel-web` | Next.js | Public product, authentication and server-side API gateway |
-| `panel-api` | `uvicorn app.main:app` | A-share data, models, portfolios and operations |
+| `panel-api` | `uvicorn app.main:app` | Shared capability contract plus A-share data, models, portfolios and operations |
 | `us-market-api` | `uvicorn app.us_market_main:app` | Read-only US market product data |
 | `research-api` | `uvicorn app.research_main:app` | Research requests, documents, facts and evaluation |
 | `research-worker` | `python -m app.research_worker` | Extraction, embeddings and filing-change jobs |
-| `research-coverage-worker` | `python -m app.research_coverage_worker` | Issuer-level SEC and financial-fact orchestration |
+| `research-coverage-worker` | `python -m app.research_coverage_worker` | Issuer-level filing and financial-fact orchestration |
 | `data-prep` | Python task container | Market-data, feature, training and backtest jobs |
 
 ## Configuration
@@ -60,6 +60,22 @@ docker compose ps
 ```
 
 Do not include `panel-web-fei` in an ordinary AiStockCN rebuild. It has an independent production boundary.
+
+## US adjusted-history and model candidate
+
+Backfill provider-adjusted OHLCV with durable lineage and a resumable run ID:
+
+```bash
+docker compose run --rm --entrypoint python data-prep scripts/backfill_us_daily_bars.py --years 3
+```
+
+Train the isolated `us_5d_v1` profile and run purged expanding-window validation:
+
+```bash
+docker compose run --rm --entrypoint python data-prep scripts/train_us_5d_model.py
+```
+
+The training command writes an immutable candidate and validation record. It never activates the model or enables US order submission.
 
 ## Health verification
 

@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.config import get_settings
-from app.services.research import normalize_us_symbol
+from app.services.research import normalize_research_market, normalize_research_symbol
 from app.services.research_documents import ResearchDocumentError, _write_connection
-from app.services.research_models import embed_texts, rerank_pairs
+from app.services.research_models import embed_texts, model_profile, rerank_pairs
 
 
 def _vector_literal(values: list[float]) -> str:
@@ -26,6 +26,13 @@ def _candidate(row: dict[str, Any]) -> dict[str, Any]:
         "locator": row.get("locator") or f"page {row['page_number']}",
         "native_page_numbers": bool(row.get("native_page_numbers", True)),
         "source_format": row.get("source_format") or "pdf",
+        "market": row.get("market") or "US",
+        "language": row.get("language") or "en",
+        "currency": row.get("currency") or "USD",
+        "source_provider": row.get("source_provider") or "SEC",
+        "exchange": row.get("exchange"),
+        "announcement_id": row.get("announcement_id"),
+        "report_period": row.get("report_period"),
         "content": row["content"],
     }
 
@@ -36,8 +43,10 @@ def retrieve_document_evidence(
     question: str,
     top_k: int = 6,
     candidate_limit: int = 24,
+    market: str = "US",
 ) -> dict[str, Any]:
-    normalized_symbol = normalize_us_symbol(symbol)
+    normalized_market = normalize_research_market(market)
+    normalized_symbol = normalize_research_symbol(symbol, normalized_market)
     normalized_question = " ".join(str(question or "").split())
     if not normalized_question:
         raise ResearchDocumentError("question_required")
@@ -47,19 +56,22 @@ def retrieve_document_evidence(
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "select count(*) as count from research_documents where symbol = %s and status = 'indexed'",
-                [normalized_symbol],
+                "select count(*) as count from research_documents where market = %s and symbol = %s and status = 'indexed'",
+                [normalized_market, normalized_symbol],
             )
             indexed_document_count = int(cur.fetchone()["count"])
     settings = get_settings()
+    profile = model_profile(normalized_market)
     if indexed_document_count == 0:
         return {
+            "market": normalized_market,
             "symbol": normalized_symbol,
             "question": normalized_question,
             "retrieval": {
                 "strategy": "hybrid_rrf_cross_encoder",
-                "embedding_model": settings.research_embedding_model,
-                "reranker_model": settings.research_reranker_model,
+                "embedding_model": profile["embedding_model"],
+                "reranker_model": profile["reranker_model"],
+                "fts_config": profile["fts_config"],
                 "indexed_documents": 0,
                 "lexical_candidates": 0,
                 "vector_candidates": 0,
@@ -68,7 +80,7 @@ def retrieve_document_evidence(
             "results": [],
         }
 
-    embeddings = embed_texts([normalized_question])
+    embeddings = embed_texts([normalized_question], market=normalized_market)
     if not embeddings:
         raise ResearchDocumentError("query_embedding_failed")
     query_vector = _vector_literal(embeddings[0])
@@ -76,23 +88,26 @@ def retrieve_document_evidence(
     select_fields = """
       c.id as chunk_id, c.document_id, c.page_number, c.locator_type, c.locator, c.content,
       d.filename, d.document_type, d.filing_date, d.fiscal_year, d.source_url,
-      d.native_page_numbers, d.source_format
+      d.native_page_numbers, d.source_format, d.market, d.language, d.currency,
+      d.source_provider, d.exchange, d.announcement_id, d.report_period
     """
+    search_column = "c.search_vector_simple" if normalized_market == "CN" else "c.search_vector"
+    fts_config = "simple" if normalized_market == "CN" else "english"
     with _write_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
                 select {select_fields},
-                       ts_rank_cd(c.search_vector, websearch_to_tsquery('english', %s)) as lexical_score
+                       ts_rank_cd({search_column}, websearch_to_tsquery('{fts_config}', %s)) as lexical_score
                 from research_document_chunks c
                 join research_documents d on d.id = c.document_id
-                where d.symbol = %s
+                where d.market = %s and d.symbol = %s
                   and d.status = 'indexed'
-                  and c.search_vector @@ websearch_to_tsquery('english', %s)
+                  and {search_column} @@ websearch_to_tsquery('{fts_config}', %s)
                 order by lexical_score desc
                 limit %s
                 """,
-                [normalized_question, normalized_symbol, normalized_question, safe_candidate_limit],
+                [normalized_question, normalized_market, normalized_symbol, normalized_question, safe_candidate_limit],
             )
             lexical_rows = [dict(row) for row in cur.fetchall()]
 
@@ -102,13 +117,13 @@ def retrieve_document_evidence(
                        (c.embedding <=> %s::vector) as vector_distance
                 from research_document_chunks c
                 join research_documents d on d.id = c.document_id
-                where d.symbol = %s
+                where d.market = %s and d.symbol = %s
                   and d.status = 'indexed'
                   and c.embedding is not null
                 order by c.embedding <=> %s::vector
                 limit %s
                 """,
-                [query_vector, normalized_symbol, query_vector, safe_candidate_limit],
+                [query_vector, normalized_market, normalized_symbol, query_vector, safe_candidate_limit],
             )
             vector_rows = [dict(row) for row in cur.fetchall()]
 
@@ -131,6 +146,7 @@ def retrieve_document_evidence(
         reranker_scores = rerank_pairs(
             normalized_question,
             [str(item["content"]) for item in rerank_candidates],
+            market=normalized_market,
         )
         for item, score in zip(rerank_candidates, reranker_scores, strict=True):
             item["reranker_score"] = score
@@ -152,12 +168,14 @@ def retrieve_document_evidence(
     else:
         results = rerank_candidates[:safe_top_k]
     return {
+        "market": normalized_market,
         "symbol": normalized_symbol,
         "question": normalized_question,
         "retrieval": {
             "strategy": "hybrid_rrf_cross_encoder",
-            "embedding_model": settings.research_embedding_model,
-            "reranker_model": settings.research_reranker_model,
+            "embedding_model": profile["embedding_model"],
+            "reranker_model": profile["reranker_model"],
+            "fts_config": profile["fts_config"],
             "indexed_documents": indexed_document_count,
             "lexical_candidates": len(lexical_rows),
             "vector_candidates": len(vector_rows),

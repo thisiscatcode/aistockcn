@@ -212,7 +212,7 @@ export async function requireAuth() {
 export async function requireAdmin() {
   const user = await requireAuth();
   if (user.role !== "admin") {
-    redirect("/overview?error=forbidden");
+    redirect("/cn/overview?error=forbidden");
   }
   return user;
 }

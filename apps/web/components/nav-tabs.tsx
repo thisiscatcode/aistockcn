@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MouseEvent, useEffect, useState } from "react";
 
-export function NavTabs({ items }: { items: Array<{ href: Route; label: string; icon?: string }> }) {
+export function NavTabs({ items }: { items: Array<{ href: Route; label: string; icon?: string; status?: string }> }) {
   const pathname = usePathname();
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
 
@@ -43,6 +43,9 @@ export function NavTabs({ items }: { items: Array<{ href: Route; label: string; 
           >
             {item.icon ? <span className="nav-link-icon" aria-hidden="true">{item.icon}</span> : null}
             <span className="nav-link-label">{item.label}</span>
+            {item.status ? (
+              <span className={`nav-capability-dot status-${item.status}`} title={item.status.replaceAll("_", " ")} aria-label={item.status.replaceAll("_", " ")} />
+            ) : null}
           </Link>
         );
       })}

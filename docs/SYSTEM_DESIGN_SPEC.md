@@ -1,6 +1,6 @@
 # AiStockCN System Design
 
-AiStockCN is a multi-market financial research and operations platform. It combines market-data pipelines, quantitative model governance, portfolio workflows and source-grounded US company research behind one authenticated product.
+AiStockCN is a unified multi-market product for source-grounded company research, quantitative model governance, portfolio workflows and controlled execution.
 
 **Audience:** product engineering, AI engineering, quantitative research and operations
 
@@ -43,9 +43,11 @@ flowchart LR
 
 | Surface | Authorization | Backend |
 | --- | --- | --- |
-| A-share Overview, Explorer, Picks and Paper | Investor or administrator | `panel-api` |
-| US Overview, Explorer, Picks and Paper | Investor or administrator | `us-market-api` plus selected panel services |
-| Research Copilot | Investor or administrator | `research-api` |
+| CN/US Overview | Investor or administrator | `panel-api` and `us-market-api` |
+| CN/US Research | Investor or administrator | `research-api` plus market services |
+| CN/US Quant | Investor or administrator | market API plus Model Registry |
+| CN/US Portfolio | Investor or administrator | account state or research baskets |
+| CN/US Execution | Investor or administrator | controlled CN workflow or US readiness-only gates |
 | Platform operations | Administrator | `panel-api` |
 | Research operations and evaluation | Administrator | `research-api` |
 
@@ -57,7 +59,7 @@ The web application is the public boundary. Internal FastAPI services bind to lo
 
 `apps/web` provides authentication, authorization, market-aware navigation and server-side request forwarding. It owns the customer presentation boundary and prevents browser clients from reaching internal APIs directly.
 
-The A-share interface retains its established route family. US pages use a dedicated workstation shell and left navigation. Research Copilot is shared from the US workspace and uses company-level task navigation inside the selected security.
+Both markets use the same shell and five-stage navigation. Canonical routes are `/cn/{stage}` and `/us/{stage}`. The market switcher retains the current stage, while legacy URLs redirect with their query parameters intact.
 
 ### Panel API
 
@@ -92,10 +94,10 @@ PostgreSQL queues use atomic claims with `FOR UPDATE SKIP LOCKED`. Work state an
 
 ```mermaid
 erDiagram
-    COMPANY ||--o{ DOCUMENT : has
+    ISSUER ||--o{ DOCUMENT : has
     DOCUMENT ||--o{ CHUNK : contains
-    COMPANY ||--o{ FINANCIAL_FACT : reports
-    COMPANY ||--o{ RESEARCH_RUN : scopes
+    ISSUER ||--o{ FINANCIAL_FACT : reports
+    ISSUER ||--o{ RESEARCH_RUN : scopes
     RESEARCH_RUN ||--o{ RETRIEVED_EVIDENCE : records
     DOCUMENT ||--o{ FILING_CHANGE_RUN : compares
     FILING_CHANGE_RUN ||--o{ FILING_CHANGE : yields
@@ -103,9 +105,10 @@ erDiagram
 
     DOCUMENT {
       uuid id
+      string market
       string symbol
-      string accession
-      string source_type
+      string source_provider
+      string source_id
       string locator_type
       string sha256
       string status
@@ -139,15 +142,19 @@ Actual schema initialization is implemented in the research document, financial 
 ## Retrieval and answer generation
 
 1. Document extraction preserves PDF page numbers or honest SEC HTML passage locators.
-2. Text is split into overlapping chunks and embedded with `BAAI/bge-small-en-v1.5`.
-3. PostgreSQL English full-text search produces lexical candidates.
+2. Text is split into overlapping chunks and embedded with the market profile: `BAAI/bge-small-en-v1.5` for US English or `BAAI/bge-small-zh-v1.5` for Chinese filings.
+3. PostgreSQL `english` or `simple` full-text search plus `pg_trgm` produces lexical candidates.
 4. `pgvector` cosine similarity produces semantic candidates.
 5. Reciprocal-rank fusion combines both result sets.
-6. A PyTorch cross-encoder reranks the candidate passages.
+6. A market-specific PyTorch cross-encoder reranks the candidate passages.
 7. The agent receives a bounded evidence set plus approved tool output.
 8. The server attaches citation metadata and validates the structured response.
 
 The evidence record exists independently from the model's prose. This makes a cited claim inspectable even if the synthesis layer is changed.
+
+## Market capability contract
+
+`GET /api/markets/{market}/capabilities` returns each stage's market, status, mode, as-of time, permitted actions and blockers. It derives US model readiness from adjusted-history coverage and Model Registry validation; CN execution derives permission from the active deployment and paper flag. Frontend code does not invent availability.
 
 ## Deterministic financial boundary
 

@@ -281,7 +281,7 @@ def _save_sec_filing(filing: dict[str, Any], *, settings: Settings) -> dict[str,
     storage_path = upload_dir / f"{document_id}.html"
     storage_path.write_bytes(content)
     object_key = (
-        f"research-documents/{filing['symbol']}/{document_id}.html"
+        f"research-documents/US/{filing['symbol']}/{document_id}.html"
         if settings.research_s3_bucket
         else None
     )
@@ -301,9 +301,11 @@ def _save_sec_filing(filing: dict[str, Any], *, settings: Settings) -> dict[str,
                       id, symbol, filename, document_type, filing_date, fiscal_year,
                       source_url, storage_path, object_key, sha256, size_bytes, status, source_format,
                       native_page_numbers, sec_cik, sec_accession_number, sec_primary_document,
-                      source_metadata
+                      source_metadata, market, issuer_id, source_provider, exchange, language, currency,
+                      report_period
                     ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'uploaded',
-                              'sec_html', false, %s, %s, %s, %s::jsonb)
+                              'sec_html', false, %s, %s, %s, %s::jsonb,
+                              'US', %s, 'SEC', %s, 'en', 'USD', %s)
                     returning *
                     """,
                     [
@@ -313,6 +315,8 @@ def _save_sec_filing(filing: dict[str, Any], *, settings: Settings) -> dict[str,
                         filing.get("fiscal_year"),
                         filing["source_url"], str(storage_path), object_key, digest, len(content), filing["cik"],
                         accession_number, filing["primary_document"], json.dumps(source_metadata),
+                        f"US:{filing['symbol']}", None,
+                        date.fromisoformat(str(filing["report_date"])) if filing.get("report_date") else None,
                     ],
                 )
                 if object_key:

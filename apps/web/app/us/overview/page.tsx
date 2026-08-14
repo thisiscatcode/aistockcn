@@ -15,7 +15,7 @@ export default async function UsOverviewPage() {
   const pickRows = overview.top_picks.map((pick) => ({
     rank: pick.rank,
     symbol: pick.symbol,
-    symbol_href: `/research?symbol=${encodeURIComponent(pick.symbol)}`,
+    symbol_href: `/us/research?symbol=${encodeURIComponent(pick.symbol)}`,
     name: pick.name,
     exchange: pick.exchange,
     industry: pick.industry,
@@ -32,7 +32,7 @@ export default async function UsOverviewPage() {
         <MetricCard label="Active Companies" value={formatNumber(coverage.active_symbols, user.locale)} hint="NASDAQ and NYSE" />
         <MetricCard label="Latest Market Date" value={formatDate(coverage.latest_trade_date, user.locale)} hint={`${formatNumber(coverage.latest_symbols, user.locale)} symbols`} />
         <MetricCard label="Daily Coverage" value={`${formatNumber(coverage.latest_coverage_pct, user.locale, { maximumFractionDigits: 1 })}%`} hint="Latest date / active universe" />
-        <MetricCard label="History" value={`${formatNumber(coverage.trading_dates, user.locale)} days`} hint={`${formatNumber(gate.required_trading_dates, user.locale)} required for US model`} />
+        <MetricCard label="Adjusted History" value={`${formatNumber(gate.available_trading_dates, user.locale)} days`} hint={`${formatNumber(gate.available_symbols_with_history, user.locale)} / ${formatNumber(gate.required_symbols_with_history, user.locale)} symbols ready`} />
         <MetricCard label="Selection" value={overview.selection.method === "rules_based" ? "Rules-based" : overview.selection.method} hint={formatDate(overview.selection.date, user.locale)} />
         <MetricCard label="US Paper" value="Gated" hint="Unlocks only after model validation" />
       </section>
@@ -41,7 +41,7 @@ export default async function UsOverviewPage() {
         <Panel title="US Data Readiness" aside={<span className={`pill ${coverage.latest_coverage_pct >= 95 ? "live" : ""}`}>{coverage.latest_coverage_pct >= 95 ? "Healthy" : "Partial"}</span>}>
           <GateChecklist items={[
             { label: "Current daily market data", ready: coverage.latest_coverage_pct >= 95, detail: `${coverage.latest_coverage_pct}% of the active universe is present on the latest date.` },
-            { label: "Model training history", ready: gate.history_ready, detail: `${gate.available_trading_dates} of ${gate.required_trading_dates} required trading dates are available.` },
+            { label: "Model training history", ready: gate.history_ready, detail: `${gate.available_trading_dates} / ${gate.required_trading_dates} adjusted dates; ${gate.available_symbols_with_history} / ${gate.required_symbols_with_history} symbols ready.` },
             { label: "US 5D model", ready: gate.training_ready, detail: "Training begins only after the historical-data gate passes." },
             { label: "Walk-forward validation", ready: gate.walk_forward_ready, detail: "Paper trading remains disabled until out-of-sample validation passes." }
           ]} />
@@ -58,7 +58,7 @@ export default async function UsOverviewPage() {
         </Panel>
       </section>
 
-      <Panel title="Latest US Selection" aside={<a className="panel-link" href="/us/picks">View all picks →</a>}>
+      <Panel title="Latest US Selection" aside={<a className="panel-link" href="/us/quant?view=signals">View all signals →</a>}>
         <DataTable
           rows={pickRows}
           columns={[

@@ -1,6 +1,6 @@
 # AiStockCN User Guide
 
-AiStockCN provides one authenticated workspace for China A-share workflows, US market intelligence and source-grounded company research.
+AiStockCN provides one authenticated workflow for AI company research, verification, quantitative analysis, portfolios and controlled execution in US stocks and China A-shares.
 
 **Audience:** investors, analysts and product users
 
@@ -10,32 +10,30 @@ AiStockCN provides one authenticated workspace for China A-share workflows, US m
 
 After sign-in, AiStockCN opens the A-share Overview. Use the market switcher to move between:
 
-- **A-Shares** — portfolio, market data, ranked signals and paper workflow in RMB and Shanghai time.
-- **US Stocks** — US market data, company research, rules-based selections and the USD paper workspace in New York time.
+- **A-Shares** — official-disclosure research, signals, portfolio state and controlled execution in RMB and Shanghai time.
+- **US Stocks** — cited company research, US signals, research portfolios and execution-readiness gates in USD and New York time.
 
 Market currencies, model artifacts and execution rules remain separate. Switching the interface never combines the two portfolios.
 
-## US Intelligence navigation
+## Unified navigation
 
-The US workspace uses one persistent navigation rail:
+Both markets use one persistent navigation rail:
 
 | Page | Use it for |
 | --- | --- |
-| **Overview** | Market coverage, product status and latest US selection |
-| **Research Copilot** | Company financials, filings, cited Q&A, changes and comparison |
-| **Explorer** | Search NASDAQ and NYSE companies and inspect daily observations |
-| **Picks** | Review the latest rules-based Cat and Lobster selections |
-| **Paper** | Review the USD simulation account and its activation status |
+| **Overview** | Market and account context for the selected market |
+| **Research** | Company evidence, filings, cited Q&A, changes and comparison |
+| **Quant** | Signals, methodology, walk-forward validation and Explorer |
+| **Portfolio** | A-share holdings or US research and validated target baskets |
+| **Execution** | A-share orders and controls or US readiness gates |
 
-Administrators additionally see System, Data Jobs, Models and Admin. These operational tools are intentionally absent from investor accounts.
+Operational pages such as Data Jobs, Models, Monitoring and Research Operations are available only from the administrator area and are absent from investor navigation.
 
-![US market overview](assets/us-market-overview.png)
+![AiStockCN unified product homepage](assets/product-home.png)
 
 ## Research a company
 
-Open **Research Copilot**, then search by ticker or company name. Selecting a company opens its Summary.
-
-![Research Copilot company summary](assets/research-copilot.png)
+Open **Research**, then search by ticker or company name. Selecting a US company opens its full research workspace. Selecting an A-share company lets the user sync official filings and inspect their source state.
 
 The security header shows the latest available price context, P/E, EPS and volume. Company research is organized into six tasks:
 
@@ -71,8 +69,6 @@ For PDFs, citations use the original page number. SEC HTML has no stable native 
 
 Open **Changes**, choose the older and newer annual filings, then run change detection.
 
-![Filing change detection](assets/filing-change-detection.png)
-
 The workflow identifies candidate additions, deletions, strengthened language, weakened language and material rewrites. Each result preserves both original excerpts and both source locators.
 
 Review decisions are explicit:
@@ -87,14 +83,25 @@ Rerunning a comparison creates a linked historical run instead of overwriting th
 
 Open **Compare** from a selected company, add one or two peers, then enter a common research question. Use comparable periods and units when interpreting financial values. The result uses the same document, financial and calculation boundaries for every company.
 
-## A-share workspace
+## A-share workflow
 
 The established A-share interface provides:
 
-- **Overview** — portfolio summary, current positions, AI picks and planned orders;
-- **Explorer** — inspect and export saved datasets;
-- **Picks** — ranked signals from the selected profile and active deployment;
-- **Paper** — account state, target holdings, positions, orders and reconciliation history.
+- **Overview** — market and account summary;
+- **Research** — company lookup and official report synchronization;
+- **Quant** — ranked signals, model methodology, walk-forward records and Explorer;
+- **Portfolio** — P&L, holdings and target weights;
+- **Execution** — planned orders, order history and daemon controls.
+
+## Capability status
+
+All five stages remain visible. A small status indicator is returned by `GET /api/markets/{market}/capabilities` and means:
+
+- **Live** — the server currently permits the listed customer actions;
+- **In validation** — evidence or model validation is active, with restricted actions;
+- **Planned** — the page explains the intended workflow but exposes no fake action or empty operational table.
+
+US Execution is readiness-only: it does not connect a Futu US account and cannot generate or submit broker orders.
 
 Administrator-only pages expose pipeline control, model validation, activation history and system monitoring.
 

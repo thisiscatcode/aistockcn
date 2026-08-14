@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import date
-from typing import Iterator
+from typing import Iterator, Literal
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -43,6 +43,7 @@ from app.services.research_filing_changes import (
 from app.services.research_observability import record_agent_run
 from app.services.research_retrieval import retrieve_document_evidence
 from app.services.research_sec import discover_sec_filings, sync_sec_filings
+from app.services.research_cn_disclosures import discover_cn_disclosures, sync_cn_disclosures
 
 
 router = APIRouter(prefix="/api/research", tags=["research"])
@@ -51,32 +52,46 @@ _research_stream_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix
 
 
 class ResearchQuestionRequest(BaseModel):
+    market: Literal["CN", "US"] = "US"
     symbol: str = Field(min_length=1, max_length=15)
     question: str = Field(min_length=1, max_length=800)
 
 
 class ResearchRetrieveRequest(BaseModel):
+    market: Literal["CN", "US"] = "US"
     symbol: str = Field(min_length=1, max_length=15)
     question: str = Field(min_length=1, max_length=800)
     top_k: int = Field(default=6, ge=1, le=12)
 
 
 class ResearchComparisonRequest(BaseModel):
+    market: Literal["CN", "US"] = "US"
     symbols: list[str] = Field(min_length=2, max_length=3)
     question: str = Field(min_length=1, max_length=800)
 
 
 class ResearchSECFilingRequest(BaseModel):
+    market: Literal["US"] = "US"
     symbol: str = Field(min_length=1, max_length=15)
     forms: list[str] = Field(default_factory=lambda: ["10-K", "10-Q", "8-K"], min_length=1, max_length=6)
     limit_per_form: int = Field(default=1, ge=1, le=5)
 
 
 class ResearchSECFinancialRequest(BaseModel):
+    market: Literal["US"] = "US"
     symbol: str = Field(min_length=1, max_length=15)
 
 
+class ResearchCNDisclosureRequest(BaseModel):
+    market: Literal["CN"] = "CN"
+    symbol: str = Field(min_length=6, max_length=12)
+    document_types: list[str] = Field(default_factory=lambda: ["annual_report", "semiannual_report", "quarterly_report"], min_length=1, max_length=3)
+    years: int = Field(default=3, ge=1, le=10)
+    limit_per_type: int = Field(default=2, ge=1, le=5)
+
+
 class FilingChangeRunRequest(BaseModel):
+    market: Literal["CN", "US"] = "US"
     symbol: str = Field(min_length=1, max_length=15)
     older_document_id: str = Field(min_length=1, max_length=100)
     newer_document_id: str = Field(min_length=1, max_length=100)
@@ -100,9 +115,12 @@ def _filing_change_http_error(exc: ResearchError) -> HTTPException:
 
 
 @router.get("/documents")
-def research_documents(symbol: str | None = Query(default=None, max_length=15)) -> dict[str, object]:
+def research_documents(
+    symbol: str | None = Query(default=None, max_length=15),
+    market: Literal["CN", "US"] = Query(default="US"),
+) -> dict[str, object]:
     try:
-        return list_research_documents(symbol=symbol)
+        return list_research_documents(symbol=symbol, market=market)
     except ResearchError as exc:
         raise HTTPException(status_code=400, detail={"code": str(exc), "message": str(exc)}) from exc
 
@@ -124,6 +142,7 @@ async def upload_research_document(
     filing_date: date | None = Form(default=None),
     fiscal_year: int | None = Form(default=None),
     source_url: str | None = Form(default=None),
+    market: Literal["CN", "US"] = Form(default="US"),
 ) -> dict[str, object]:
     try:
         document = await save_uploaded_pdf(
@@ -133,6 +152,7 @@ async def upload_research_document(
             filing_date=filing_date,
             fiscal_year=fiscal_year,
             source_url=source_url,
+            market=market,
         )
         if (
             get_settings().research_inline_indexing
@@ -159,6 +179,29 @@ def discover_research_sec_filings(request: ResearchSECFilingRequest) -> dict[str
         code = str(exc)
         status_code = 404 if code == "sec_cik_not_found" else 502 if code == "sec_request_failed" else 400
         raise HTTPException(status_code=status_code, detail={"code": code, "message": code}) from exc
+
+
+@router.post("/documents/cn/discover")
+def discover_research_cn_disclosures(request: ResearchCNDisclosureRequest) -> dict[str, object]:
+    try:
+        return discover_cn_disclosures(symbol=request.symbol, document_types=request.document_types, years=request.years, limit_per_type=request.limit_per_type)
+    except ResearchDocumentError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=404 if code == "cn_issuer_not_found" else 502 if code.endswith("request_failed") else 400, detail={"code": code, "message": code}) from exc
+
+
+@router.post("/documents/cn/sync", status_code=status.HTTP_202_ACCEPTED)
+def sync_research_cn_disclosures(request: ResearchCNDisclosureRequest, background_tasks: BackgroundTasks) -> dict[str, object]:
+    try:
+        result = sync_cn_disclosures(symbol=request.symbol, document_types=request.document_types, years=request.years, limit_per_type=request.limit_per_type)
+        if get_settings().research_inline_indexing:
+            for document in result.get("documents", []):
+                if not document.get("duplicate") and document.get("status") == "uploaded":
+                    background_tasks.add_task(index_research_document_safely, str(document["id"]))
+        return result
+    except ResearchDocumentError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=404 if code == "cn_issuer_not_found" else 502 if code.endswith("request_failed") else 400, detail={"code": code, "message": code}) from exc
 
 
 @router.post("/documents/sec/sync", status_code=status.HTTP_202_ACCEPTED)
@@ -241,9 +284,10 @@ def research_document_file(document_id: str) -> FileResponse:
 def research_filing_change_runs(
     symbol: str = Query(min_length=1, max_length=15),
     limit: int = Query(default=20, ge=1, le=100),
+    market: Literal["CN", "US"] = Query(default="US"),
 ) -> dict[str, object]:
     try:
-        return list_filing_change_runs(symbol=symbol, limit=limit)
+        return list_filing_change_runs(symbol=symbol, limit=limit, market=market)
     except ResearchError as exc:
         raise _filing_change_http_error(exc) from exc
 
@@ -260,6 +304,7 @@ def create_research_filing_change_run(
             newer_document_id=request.newer_document_id,
             requested_by=x_research_actor,
             parameters={"max_changes": request.max_changes},
+            market=request.market,
         )
     except ResearchError as exc:
         raise _filing_change_http_error(exc) from exc
@@ -308,6 +353,7 @@ def research_retrieve(request: ResearchRetrieveRequest) -> dict[str, object]:
             symbol=request.symbol,
             question=request.question,
             top_k=request.top_k,
+            market=request.market,
         )
     except ResearchDocumentError as exc:
         code = str(exc)
@@ -315,22 +361,26 @@ def research_retrieve(request: ResearchRetrieveRequest) -> dict[str, object]:
 
 
 @router.get("/evaluations")
-def research_evaluations(limit: int = Query(default=10, ge=1, le=30)) -> dict[str, object]:
-    return list_evaluation_runs(limit=limit)
+def research_evaluations(
+    limit: int = Query(default=10, ge=1, le=30),
+    market: Literal["CN", "US"] | None = Query(default=None),
+) -> dict[str, object]:
+    return list_evaluation_runs(limit=limit, market=market)
 
 
 @router.post("/evaluations/run")
-def research_evaluation_run() -> dict[str, object]:
-    return run_reranker_evaluation()
+def research_evaluation_run(market: Literal["CN", "US"] = Query(default="US")) -> dict[str, object]:
+    return run_reranker_evaluation(market=market)
 
 
 @router.get("/companies")
 def research_companies(
     query: str = Query(default="", max_length=120),
     limit: int = Query(default=12, ge=1, le=30),
+    market: Literal["CN", "US"] = Query(default="US"),
 ) -> dict[str, object]:
     try:
-        return search_companies(query=query, limit=limit)
+        return search_companies(query=query, limit=limit, market=market)
     except ResearchError as exc:
         raise HTTPException(status_code=503, detail={"code": str(exc), "message": str(exc)}) from exc
 
@@ -339,9 +389,10 @@ def research_companies(
 def research_company_snapshot(
     symbol: str,
     history_limit: int = Query(default=30, ge=5, le=260),
+    market: Literal["CN", "US"] = Query(default="US"),
 ) -> dict[str, object]:
     try:
-        return get_company_snapshot(symbol=symbol, history_limit=history_limit)
+        return get_company_snapshot(symbol=symbol, history_limit=history_limit, market=market)
     except ResearchError as exc:
         status_code = 404 if str(exc) == "company_not_found" else 400
         raise HTTPException(status_code=status_code, detail={"code": str(exc), "message": str(exc)}) from exc
@@ -350,6 +401,8 @@ def research_company_snapshot(
 @router.post("/ask")
 def research_question(request: ResearchQuestionRequest) -> dict[str, object]:
     try:
+        if request.market != "US":
+            raise ResearchError("cn_research_answer_in_validation")
         result = answer_research_question(symbol=request.symbol, question=request.question)
         record_agent_run(
             run_type="question",
@@ -379,6 +432,8 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
         started_at = time.perf_counter()
         yield f"event: status\ndata: {json.dumps({'stage': 'planning', 'message': 'Selecting research tools'})}\n\n"
         try:
+            if request.market != "US":
+                raise ResearchError("cn_research_answer_in_validation")
             plan = plan_research_tools(question=request.question)
             yield f"event: plan\ndata: {json.dumps(plan)}\n\n"
             yield f"event: status\ndata: {json.dumps({'stage': 'executing', 'message': 'Running validated tools'})}\n\n"
@@ -439,6 +494,8 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
 def research_comparison(request: ResearchComparisonRequest) -> dict[str, object]:
     started_at = time.perf_counter()
     try:
+        if request.market != "US":
+            raise ResearchError("cn_research_answer_in_validation")
         result = compare_research_companies(symbols=request.symbols, question=request.question)
         record_agent_run(
             run_type="comparison",

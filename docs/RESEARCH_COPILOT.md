@@ -1,16 +1,16 @@
 # AiStockCN Research Copilot
 
-Research Copilot is AiStockCN's source-grounded US equity research workspace. It combines SEC filings, standardized financial facts, market data, deterministic calculations and a multi-step AI agent in the authenticated product at [aistockcn.com/research](https://aistockcn.com/research).
+Research is AiStockCN's source-grounded company workspace for US stocks and China A-shares. It combines original filings, financial evidence, market data, deterministic calculations and multi-step agent execution at [US Research](https://aistockcn.com/us/research) and [A-share Research](https://aistockcn.com/cn/research).
 
 **Audience:** product, financial research and AI engineering
 
 **Documentation baseline:** 14 August 2026
 
-![Research Copilot company summary](assets/research-copilot.png)
+![AiStockCN unified product homepage](assets/product-home.png)
 
 ## Product capabilities
 
-- Search AiStockCN's production universe of 5,000+ actively tracked US-listed equities.
+- Search AiStockCN's production universe of 5,000+ actively tracked US equities and 5,000+ A-shares.
 - Review company identity, price context, standardized financials and original filings in one workspace.
 - Ask natural-language questions with citations to the underlying document or financial fact.
 - Compare two or three companies through one consistent evidence and calculation process.
@@ -25,7 +25,7 @@ Citation metadata is server-owned. The language model cannot create or alter the
 | Response layer | Contract |
 | --- | --- |
 | `evidence` | Retrieved filing passages with stored source identity and locator metadata |
-| `financial_evidence` | Typed SEC facts and deterministic calculations with period, unit and accession lineage |
+| `financial_evidence` | Validated facts and deterministic calculations with period, unit and source lineage |
 | `inference` | Model interpretation generated only from approved tool output and bounded evidence |
 | `limitations` | Data scope, as-of dates and interpretation constraints |
 | `trace` | Approved tools executed by the research agent |
@@ -51,8 +51,8 @@ flowchart LR
     W --> A["FastAPI Research API"]
     A --> P["Schema-constrained planner"]
     P --> T["Server tool allow-list"]
-    T --> M["US market data"]
-    T --> F["SEC financial facts"]
+    T --> M["Market-scoped data"]
+    T --> F["Validated financial facts"]
     T --> C["Deterministic calculations"]
     T --> H["Hybrid document retrieval"]
     H --> L["PostgreSQL full-text search"]
@@ -77,7 +77,7 @@ The planner and synthesizer run through local Ollama. The current runtime theref
 3. FastAPI removes unknown tools and enforces the server-side allow-list.
 4. The executor calls market, financial, calculation and retrieval tools as required.
 5. Lexical and vector candidates are fused with reciprocal-rank fusion.
-6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks candidate passages with PyTorch.
+6. A market-specific PyTorch cross-encoder reranks candidate passages.
 7. Financial changes, returns and volatility are calculated by deterministic code.
 8. The model synthesizes a response from the bounded evidence supplied to it.
 9. Server-Sent Events report lifecycle progress and heartbeats during long requests.
@@ -85,7 +85,7 @@ The planner and synthesizer run through local Ollama. The current runtime theref
 
 ## Filing ingestion
 
-Research Copilot supports SEC discovery and customer-supplied PDF documents.
+Research supports SEC discovery, official China disclosures and customer-supplied PDF documents.
 
 ### SEC filings
 
@@ -95,11 +95,19 @@ Research Copilot supports SEC discovery and customer-supplied PDF documents.
 - SEC fair-access identification and request pacing are applied by the server.
 - Company Facts support both US-GAAP and IFRS taxonomies while retaining the original concept and currency.
 
+### China A-share disclosures
+
+- The official CNINFO issuer map resolves exchange identity for SSE, SZSE and BSE companies.
+- Annual, semiannual and quarterly reports retain announcement ID, exchange, report period and original PDF URL.
+- PDF bytes are verified and deduplicated by SHA-256 before indexing.
+- Chinese retrieval uses `BAAI/bge-small-zh-v1.5`, PostgreSQL `simple` FTS, `pg_trgm`, pgvector and `BAAI/bge-reranker-base`.
+- Extracted financial values are not eligible for deterministic evidence until unit, period and statement checks pass.
+
 ### Document processing
 
 ```mermaid
 flowchart LR
-    S["SEC EDGAR or PDF upload"] --> D["Immutable source record"]
+    S["SEC, official China disclosure or PDF upload"] --> D["Immutable source record"]
     D --> Q["PostgreSQL work queue"]
     Q --> E["Text and locator extraction"]
     E --> C["Overlapping chunks"]
@@ -126,8 +134,6 @@ Deterministic tools calculate:
 The model may choose the tool and explain the result, but it does not recalculate or overwrite the numeric answer.
 
 ## Filing Change Detection
-
-![Filing change detection](assets/filing-change-detection.png)
 
 Filing Change Detection is an auditable comparison workflow rather than a free-form document summary:
 
@@ -172,7 +178,7 @@ This makes retrieval changes measurable instead of relying on visual inspection 
 | `panel-web` | Authenticated product UI and server-side API gateway |
 | `research-api` | Research requests, filings, facts, retrieval and evaluation endpoints |
 | `research-worker` | Extraction, chunking, embeddings and filing-change work |
-| `research-coverage-worker` | Issuer-level SEC and financial-fact orchestration |
+| `research-coverage-worker` | Issuer-level filing and financial-fact orchestration |
 | PostgreSQL / pgvector | Metadata, facts, queues, chunks, vectors, runs and review history |
 | Ollama | Local structured planning and evidence synthesis |
 

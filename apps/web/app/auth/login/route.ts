@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { SESSION_COOKIE, appOrigin, authenticateUser, createSessionToken, sessionSecret, useSecureCookies } from "@/lib/auth";
 
-function safeReturnTo(value: FormDataEntryValue | null) {
+function safeReturnTo(value: FormDataEntryValue | null, market: string | undefined) {
   const path = String(value ?? "").trim();
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
-    return "/overview";
+    return market === "US" ? "/us/overview" : "/cn/overview";
   }
   return path;
 }
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const username = String(formData.get("username") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  const returnTo = safeReturnTo(formData.get("return_to"));
+  const returnTo = safeReturnTo(formData.get("return_to"), request.cookies.get("aistockcn_market")?.value);
   const origin = appOrigin(request);
   const secureCookies = useSecureCookies(request);
   const user = authenticateUser(username, password);
