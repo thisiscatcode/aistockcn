@@ -1,162 +1,204 @@
-# AiStockCN — Financial Data & AI Research Platform
+# AiStockCN — Source-Grounded AI Research for US and China Equities
 
-AiStockCN is a live financial-data platform for A-shares and United States equities, with an integrated, source-grounded US Equity Research Copilot. The established A-share workflow remains intact while the main product adds a separate US market workspace for company data, screening, model readiness and operations.
+AiStockCN brings market data, company filings, standardized financials and AI-assisted research into one authenticated product. It covers more than 5,000 actively tracked US-listed equities and more than 5,000 China A-shares, helping investors move from company discovery to evidence-backed analysis without switching between disconnected tools.
 
-Research Copilot maintains a persistent 100-company US filing knowledge base. It prioritises existing Fei favourites, then major and actively traded companies, and records filing, indexing and financial-fact readiness so customers do not have to initialise every company manually.
+The integrated Research Copilot answers company questions, compares businesses and detects material filing changes while keeping original documents, financial facts, model inference and limitations clearly separated.
 
-- Customer product: [aistockcn.com](https://aistockcn.com)
+- Product: [aistockcn.com](https://aistockcn.com)
 - Research Copilot: [aistockcn.com/research](https://aistockcn.com/research)
-- Technical deep dive: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
+- Product and operating guide: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
 - Documentation index: [docs/README.md](docs/README.md)
 
-The Research Copilot is part of the authenticated AiStockCN product and shares its navigation and login session. Its API and background workers remain separate services so long-running document and analysis work cannot block the customer interface.
+## Product at a glance
 
-## Product overview
+| Product capability | What it delivers |
+| --- | --- |
+| Market intelligence | Search and analyse 5,000+ US equities and 5,000+ China A-shares within one platform |
+| Company research | Ask natural-language questions across market data, SEC filings and standardized financials |
+| Verifiable answers | Open the original document, page or SEC HTML passage behind a claim |
+| Financial analysis | Use normalized SEC XBRL facts and deterministic calculations for revenue, profit, margins and cash flow |
+| Company comparison | Compare two or three businesses through the same evidence and calculation workflow |
+| Filing change detection | Identify added, removed, strengthened or weakened disclosures with both versions shown side by side |
 
-The Research Copilot is attached directly to AiStockCN's existing US equity database and operational platform. It gives users one research workflow for company filings, market data, deterministic calculations and source-grounded AI analysis.
+## What users can do
 
-## Product surfaces
+### Research a company
 
-| Surface | Purpose | Current runtime |
-| --- | --- | --- |
-| `aistockcn.com` | Customer-facing market, quantitative and research platform | Live |
-| `aistockcn.com/us/overview` | US market data, screening and model-readiness workspace | Live, backed by an isolated read-only US API |
-| `aistockcn.com/research` | US equity document research, filing-change detection, comparison and retrieval evaluation | Live within the authenticated product |
+Select a US-listed company and ask about revenue, profitability, margins, risks, guidance, management language or recent market performance. The agent chooses from approved financial-data, document-search and calculation tools, then returns one structured response.
 
-## United States market workspace
+### Verify every conclusion
 
-The main product exposes a dedicated `/us/*` route family without replacing or migrating the existing A-share pages:
+Document claims retain their source identity throughout ingestion and retrieval. Native PDFs link to the original page. SEC HTML filings use honest passage locators and are never presented as paginated documents.
 
-- `/us/overview` — active universe, latest coverage, selection and product gates;
-- `/us/data` — NASDAQ and NYSE company search with current daily observations;
-- `/us/models` — the truthful readiness state for the independent `us_5d_v1` pipeline;
-- `/us/picks` — existing rules-based US selection, explicitly separated from ML predictions;
-- `/us/paper` — a disabled-by-default paper-trading surface that unlocks only after validation;
-- `/us/system-monitor` and `/us/batch` — US ingestion coverage and recent job history.
+### Compare companies
 
-The US workspace is served by a dedicated `us-market-api`. It reads the existing US company and market tables without changing the A-share control API or the independently deployed Web-Fei frontend.
+Run a consistent two- or three-company comparison using standardized financial facts, market calculations and retrieved filing evidence instead of independent free-form summaries.
 
-## Research Copilot capabilities
+### Detect material filing changes
 
-- Search and select companies from the existing US equity universe.
-- Sync the latest 10-K, 10-Q and 8-K filings directly from the official SEC EDGAR archive, with no paid data API key.
-- Normalize SEC Company Facts into canonical revenue, profit, EPS, cash-flow and balance-sheet periods with taxonomy, accession and filing lineage.
-- Calculate annual and quarterly changes, margins and free cash flow deterministically; numeric answers are rendered by the financial tool instead of being recalculated by the LLM.
-- Upload annual reports and company filings as PDFs.
-- Preserve SEC accession lineage, original URLs and honest source locators throughout ingestion and retrieval. PDFs use native page numbers; SEC HTML uses passage locators and is never presented as paginated.
-- Ask company-specific questions in natural language with streamed progress events.
-- Compare two or three companies through a structured multi-step agent workflow.
-- Compare two indexed annual reports with reciprocal semantic matching; retain bilateral original-text citations, versioned run parameters, failures, reruns and human review history.
-- Query market data and run deterministic return and volatility calculations through server-side tools.
-- Combine PostgreSQL full-text search and `pgvector` similarity search using reciprocal-rank fusion.
-- Rerank candidate passages with a PyTorch cross-encoder.
-- Display document evidence separately from model inference and limitations.
-- Run a retrieval benchmark that records Top-1 accuracy, MRR and lexical-baseline results.
-- Operate without a paid OpenAI key by using a local Ollama model.
+Compare two annual reports to surface additions, deletions, strengthened language, weakened language and rewrites. Every proposed change includes both original passages, reproducible run parameters, history and a human-review decision.
 
 ## Evidence contract
 
-Citation metadata is never invented by the language model. The server attaches the source document ID, filename, page number and source URL from retrieved database records. The response schema keeps three concepts separate:
+Citation metadata is not generated by the language model. The server attaches document identity, filename, locator, page number and source URL from stored source records.
 
-1. **Document evidence** — retrieved passages with verifiable source metadata.
-2. **Model inference** — synthesis produced only from the supplied evidence and tool results.
-3. **Limitations** — missing documents, incomplete coverage or other reasons to qualify the answer.
+| Response layer | Meaning |
+| --- | --- |
+| **Document evidence** | Retrieved filing passages with verifiable source metadata |
+| **Financial and market evidence** | Database facts and deterministic calculations with an as-of date and source locator |
+| **Model inference** | Interpretation produced only from the supplied evidence and approved tool output |
+| **Limitations** | Data scope, as-of dates and other context required to interpret the response correctly |
+
+Verified evidence remains available independently from model-generated interpretation.
+
+## Product surfaces
+
+### Customer workspace
+
+| Surface | Purpose |
+| --- | --- |
+| `/overview` | China A-share portfolio and market workflow |
+| `/us/overview` | US market coverage, screening and product status |
+| `/us/data` | NASDAQ and NYSE company search and daily market observations |
+| `/us/picks` | Rules-based US selection snapshots |
+| `/us/paper` | USD paper-trading account and portfolio controls |
+| `/research` | Company overview, cited Q&A, financials, filings, filing changes and comparison |
+
+### Operations workspace
+
+Administrative data is kept out of the customer research flow:
+
+| Surface | Purpose |
+| --- | --- |
+| `/admin/research` | Filing coverage, ingestion state, failures and retrieval evaluation |
+| `/us/models` | US model training and walk-forward governance |
+| `/us/system-monitor` | US market-data pipeline health and run history |
+| `/us/batch` | Scheduled US ingestion jobs |
+
+All administrative routes enforce the administrator role on the server.
+
+## Research agent
+
+A research request is executed as a validated multi-step workflow:
+
+1. The authenticated frontend submits a company-scoped question.
+2. A local LLM produces a schema-constrained JSON tool plan.
+3. FastAPI removes unknown tools and enforces the server-side allow-list.
+4. The executor queries company data, standardized SEC facts, market history and document retrieval as required.
+5. PostgreSQL full-text and `pgvector` candidates are fused with reciprocal-rank fusion.
+6. A PyTorch cross-encoder reranks the retrieved passages.
+7. Deterministic tools calculate financial changes, returns and volatility.
+8. The local model synthesizes only the supplied evidence and tool output.
+9. SSE lifecycle events and heartbeats keep the customer informed during long-running analysis.
+10. The API returns evidence, inference, limitations and an execution trace as structured data.
+
+The current planner and synthesizer run through local Ollama, so the product does not require a paid OpenAI API key.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["User"] --> W["Next.js research frontend"]
-    W --> A["FastAPI research API"]
-    A --> L["Structured agent planner and synthesis\nOllama qwen2.5:3b"]
-    A --> M["AiStockCN US market data\nPostgreSQL"]
-    A --> S["SEC EDGAR\nsubmissions + filing archive"]
-    A --> X["SEC XBRL Company Facts\ncanonical financial periods"]
-    A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
-    H --> R["PyTorch cross-encoder reranker"]
-    A --> Q["PostgreSQL ingestion queue\nSKIP LOCKED"]
-    A --> C["Versioned filing-change detector\nbilateral citations + human review"]
-    Q --> K["Background document worker"]
-    S --> K
-    K --> V["Source locators, chunks and vectors\nPostgreSQL / pgvector"]
+    U["Authenticated user"] --> W["Next.js product"]
+
+    W --> C["A-share platform API"]
+    W --> M["US market API"]
+    W --> R["Research API"]
+
+    C --> CN["5,000+ A-shares\nmarket, models and portfolios"]
+    M --> US["5,000+ US equities\nprices, fundamentals and selections"]
+
+    R --> P["Schema-constrained agent\ntool planning + execution"]
+    P --> X["SEC XBRL\nfinancial facts"]
+    P --> S["SEC EDGAR and uploaded PDFs\nsource documents"]
+    P --> D["Deterministic financial\nand market calculations"]
+    P --> H["Hybrid retrieval\nPostgreSQL FTS + pgvector + RRF"]
+    H --> RR["PyTorch cross-encoder\nreranker"]
+    P --> L["Local Ollama\nevidence synthesis"]
+
+    R --> Q["PostgreSQL work queue"]
+    Q --> K["Background ingestion workers"]
+    K --> V["Documents, chunks, vectors\nand source lineage"]
     V --> H
-    A --> O["Structured logs, traces\nand evaluation runs"]
-    X --> L
+
+    R --> O["Structured logs, run history\nand retrieval evaluation"]
+    X --> P
+    US --> P
+    P --> A["Cited answer\nevidence + inference + limitations"]
+    A --> W
 ```
 
-The operational product has a second isolated path: the main Next.js frontend calls `us-market-api` for `/us/*`, while all existing A-share routes continue to call the established panel API.
+The research API and document workers are separate from the customer frontend, so ingestion and long-running analysis do not block ordinary navigation. US market services are isolated from the established A-share execution path while remaining part of the same customer product.
 
-### Research request lifecycle
+## Filing ingestion and retrieval
 
-1. The authenticated frontend submits a company-scoped question.
-2. The local LLM creates a JSON tool plan; the API removes tools outside the server allow-list.
-3. The executor searches documents, queries company data and performs deterministic calculations as required.
-4. Hybrid retrieval fuses lexical and vector candidates.
-5. A PyTorch cross-encoder reranks the candidate passages.
-6. The LLM synthesizes the supplied evidence and tool output.
-7. The API returns a structured response containing evidence, inference, limitations and an execution trace.
+- Discover and synchronize 10-K, 10-Q and 8-K filings from the official SEC EDGAR archive.
+- Upload annual reports and company filings as PDFs.
+- Preserve SEC CIK, accession number, filing date, source URL and native locator type.
+- Normalize SEC Company Facts into canonical annual and quarterly financial periods.
+- Extract page-aware PDF text and honest SEC HTML passages.
+- Chunk and embed documents in background workers backed by a PostgreSQL queue using `SKIP LOCKED`.
+- Fuse lexical and vector retrieval, then rerank candidates with a PyTorch cross-encoder.
+- Evaluate retrieval with Top-1 accuracy, mean reciprocal rank and a lexical baseline.
+
+## Reliability and safety
+
+- Financial values and percentage changes are calculated by deterministic tools rather than recomputed by the LLM.
+- Model plans and final output use validated structured schemas.
+- Citation metadata is attached from database records after retrieval.
+- Long-running responses emit SSE progress events and regular heartbeats.
+- Bounded evidence context keeps inference efficient and predictable.
+- Clear recovery actions support retryable requests.
+- Verified evidence remains accessible independently from model synthesis.
+- Ingestion runs, filing-change runs and human reviews retain durable history.
+- Customer and administrative workflows use separate role-protected surfaces.
+
+## Underlying financial platform
+
+Research Copilot operates on the same live platform that supports:
+
+- full-universe China A-share and US market-data workflows;
+- feature engineering and inference snapshots;
+- LightGBM training, scoring and model profiles;
+- expanding-window walk-forward backtesting;
+- atomic model activation through a PostgreSQL Model Registry;
+- selection snapshots and operational monitoring;
+- validation-gated paper-trading reconciliation;
+- long-running market-data and reference-data orchestration.
 
 ## Implementation map
 
 | Area | Implementation |
 | --- | --- |
-| FastAPI and streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
-| Multi-step agent and tool calling | `apps/api/app/services/research.py` |
-| SEC discovery and filing sync | `apps/api/app/services/research_sec.py` |
+| FastAPI and SSE streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
+| Multi-step agent and tool execution | `apps/api/app/services/research.py` |
+| SEC filing discovery and sync | `apps/api/app/services/research_sec.py` |
 | SEC XBRL normalization and calculations | `apps/api/app/services/research_financials.py` |
-| Filing change runs, evidence and review | `apps/api/app/services/research_filing_changes.py` |
-| PDF/HTML ingestion and background work | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
+| Filing change detection and review | `apps/api/app/services/research_filing_changes.py` |
+| PDF/HTML ingestion and workers | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
 | Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
 | PyTorch reranking | `apps/api/app/services/research_models.py` |
 | Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
-| Next.js research UI | `apps/web/app/research/` |
+| Customer research UI | `apps/web/app/research/` |
 | US market product UI | `apps/web/app/us/` |
-| Isolated US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
-| Model Registry and atomic activation | `apps/api/app/services/model_registry.py`, `scripts/create_model_registry.sql` |
-| Immutable trained-model snapshots | `model_registry_artifacts.py`, `train_profile_runner.py` |
-| Registry-resolved paper execution | `paper_trade_futu.py` |
-| Docker environment | `docker-compose.yml`, `apps/api/Dockerfile.research` |
+| US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
+| Model Registry | `apps/api/app/services/model_registry.py`, `scripts/create_model_registry.sql` |
+| Container environment | `docker-compose.yml`, `apps/api/Dockerfile`, `apps/web/Dockerfile` |
 | Tests | `tests/test_research_service.py` and the wider `tests/` suite |
 
-## Typical research workflow
-
-1. Select a US-listed company.
-2. Sync SEC filings and standardized financial facts, or upload a PDF, and wait for indexing to complete.
-3. Ask about revenue, profitability, risks or changes in management commentary.
-4. Compare two annual reports and inspect each proposed addition, deletion, strengthening, weakening or rewrite against both original passages.
-5. Confirm, reject or flag each filing change for editing; reruns remain separate historical records.
-6. Inspect the cited filename, exact page or HTML passage locator, and original source alongside the model inference.
-7. Compare two or three companies using the same document, market-data and calculation tools.
-8. Review retrieval quality through the evaluation page when maintaining or changing the search pipeline.
-
-## Underlying AiStockCN platform
-
-The original platform remains part of the same repository and provides the production context for the copilot:
-
-- full-universe A-share and US market-data workflows;
-- feature engineering and inference snapshots;
-- LightGBM training, scoring and model profiles;
-- expanding-window walk-forward backtesting;
-- a PostgreSQL Model Registry that atomically controls the active model used by Models, Picks and Paper Trading;
-- selection snapshots and operational monitoring;
-- paper-trading reconciliation through an external gateway;
-- FastAPI and Next.js control surfaces;
-- long-running batch and reference-data orchestration.
-
-## Stack
+## Technology
 
 - **Frontend:** Next.js 15, React 19, TypeScript
 - **Backend:** FastAPI, Uvicorn, Python 3.12
-- **AI/RAG:** Ollama, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
-- **Quant/ML:** Pandas, PyArrow, LightGBM, scikit-learn
-- **Operations:** Docker Compose, structured logging, retry, rate limiting and background workers
+- **AI and RAG:** Ollama, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
+- **Financial and ML:** Pandas, PyArrow, LightGBM, scikit-learn
+- **Operations:** Docker Compose, structured logging, retries, rate limiting and background workers
 
 ## Repository layout
 
 ```text
-apps/api/             FastAPI APIs, agent, retrieval and ingestion worker
-apps/web/             Next.js customer and research interfaces
-docs/                 Product, architecture, results and operating docs
+apps/api/             FastAPI APIs, agent, retrieval and ingestion workers
+apps/web/             Authenticated customer and research interfaces
+docs/                 Product, architecture, results and operating documentation
 run/                  Safe example configuration and model profiles
 scripts/              SQL migrations and operational runners
 tests/                Unit and integration-style service tests
@@ -165,38 +207,38 @@ tests/                Unit and integration-style service tests
 
 ## Local development
 
-Local setup connects to existing platform services and does not seed market data. The Research Copilot expects:
+AiStockCN uses real platform services rather than seeded sample data. A local integration environment requires:
 
 - Docker and Docker Compose;
-- a reachable PostgreSQL database with the existing AiStockCN schema and `pgvector`;
-- a reachable Ollama service with `qwen2.5:3b`;
-- local authentication values in `run/panel.env` and `run/panel_users.json`.
+- PostgreSQL with the AiStockCN schema and `pgvector`;
+- an Ollama service with `qwen2.5:3b` on the configured AI-services network;
+- authentication values in `run/panel.env` and `run/panel_users.json`.
 
 ```bash
 cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 
-docker build -t aistockcn-research-api:20260813-filing-change-v1 -f apps/api/Dockerfile.research .
-docker build -t aistockcn-panel-web:20260813-filing-change-v1 -f apps/web/Dockerfile .
-docker compose up -d research-api research-worker panel-web
-docker compose ps research-api research-worker panel-web
+docker compose build research-api panel-web
+docker compose up -d research-api research-worker research-coverage-worker us-market-api panel-web
+docker compose ps research-api research-worker research-coverage-worker us-market-api panel-web
 ```
 
-The current Compose file connects to the platform's existing external database and AI-service networks. See [the detailed local-development notes](docs/RESEARCH_COPILOT.md#local-development) before starting from a new machine.
+The Compose environment connects to the platform's existing external database and AI-service networks. See [the detailed operating guide](docs/RESEARCH_COPILOT.md#local-development) before provisioning a new machine.
 
 ### Validation
 
 ```bash
-python3 -m pytest -q
 docker compose config --quiet
+docker compose run --rm --no-deps -v "$PWD/tests:/tests:ro" research-api \
+  python -m unittest discover -s /tests -p 'test_research_service.py'
 npm --prefix apps/web run build
 ```
 
-## Security and repository boundaries
+## Security and responsible use
 
-Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`. Never use example credentials unchanged.
+Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`; example credentials must never be used unchanged.
 
-Web-Fei is an operationally protected frontend maintained in the separate private [aistockcn-web-fei](https://github.com/thisiscatcode/aistockcn-web-fei) repository. Its current production checkout remains in `apps/web-fei`; US product development does not modify or rebuild it, change its API contracts, or alter the tables it consumes.
+Research Copilot is an evidence-navigation and analysis system, not investment advice. Users should verify cited filings and financial data before making financial decisions.
 
 ## Documentation
 

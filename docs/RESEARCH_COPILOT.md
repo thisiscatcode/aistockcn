@@ -2,18 +2,13 @@
 
 Production-oriented US equity research integrated with AiStockCN's existing market-data platform, authentication and navigation at `aistockcn.com/research`.
 
-## Core company knowledge base
+## Equity and filing intelligence
 
-Research Copilot maintains a pre-indexed coverage set of 100 US-listed companies so a customer does not begin with an empty workspace. Company priority is deterministic:
+Research Copilot operates on AiStockCN's production universe of more than 5,000 actively tracked US-listed equities. Issuer identity is normalized through SEC CIK lineage so multiple share classes remain connected to the correct filing source.
 
-1. Fei favourite stocks, ordered by their existing `display_num` preference.
-2. Widely followed core companies.
-3. The latest Cat/Lobster selection snapshots.
-4. Twenty-session average dollar trading volume.
+US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. Both US-GAAP and IFRS Company Facts retain their original taxonomy, reporting currency and accession lineage.
 
-Only companies with an SEC CIK count toward the 100-company target, and share classes with the same CIK count as one issuer. US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. Both US-GAAP and IFRS Company Facts retain their original taxonomy, reporting currency and accession lineage. For each company, the coverage service targets two annual filings, one recent filing and SEC XBRL financial facts.
-
-The `research-coverage-worker` owns the durable bootstrap queue, atomic job claiming, bounded retries and readiness reconciliation. Documents are indexed by the separate research workers. `GET /api/research/coverage` exposes company-level progress, errors and readiness to the administrator interface.
+The `research-coverage-worker` manages durable filing orchestration, atomic job claiming, bounded retries and source reconciliation. Documents are processed by separate research workers. `GET /api/research/coverage` provides company-level operational telemetry to the administrator interface.
 
 Operational state is deliberately separated from the customer research workflow. `/research` contains company analysis, documents, financials, filing changes and grounded Q&A. Coverage queues, indexing progress, failures and retrieval evaluation are restricted to administrators at `/admin/research`.
 
@@ -36,7 +31,7 @@ The interface uses a neutral cool-grey canvas, white analytical surfaces and nav
 
 - Company search over the existing US equity universe and market-history tables.
 - Official SEC EDGAR discovery and sync for 10-K, 10-Q, 8-K, 20-F, 40-F and 6-K filings, using accession-number deduplication and declared fair-access identification.
-- A durable 100-company coverage queue with Fei favourites first, bounded retries and visible company-level readiness.
+- Durable issuer-level filing orchestration with atomic work claiming, bounded retries and operational telemetry.
 - SEC Company Facts ingestion with canonical US-GAAP concept priorities, annual/quarterly/instant periods and original accession lineage.
 - Deterministic revenue, profit, EPS, margin, cash-flow, free-cash-flow and balance-sheet calculations. The LLM does not recalculate these numeric facts.
 - PDF upload with validation, SHA-256 deduplication and page-preserving extraction.
@@ -45,7 +40,7 @@ The interface uses a neutral cool-grey canvas, white analytical surfaces and nav
 - Natural-language answers that render document evidence separately from model inference and preserve server-owned source locators.
 - A local Ollama `qwen2.5:3b` planner/synthesizer; no paid OpenAI key is required.
 - Structured tool plans, server-side tool allow-listing, SSE progress events with long-running heartbeats and multi-company comparison.
-- Bounded model context, schema-constrained JSON output and an evidence-only fallback keep slow or malformed local-model responses from becoming opaque network failures.
+- Bounded model context, schema-constrained JSON output and independent evidence preservation keep responses reliable and reviewable.
 - A live reranker benchmark with persisted Top-1 accuracy, MRR and lexical-baseline results.
 - Request IDs, structured latency logs, retries with exponential backoff, rate limiting and privacy-conscious run telemetry.
 - Docker Compose services for the API, background worker and frontend.
@@ -64,7 +59,7 @@ flowchart LR
     A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
     H --> R["PyTorch cross-encoder\nreranker"]
     A --> Q["PostgreSQL queue\nSKIP LOCKED"]
-    Q --> B["Coverage worker\n100-company sync + retry"]
+    Q --> B["Coverage worker\nissuer sync + retry"]
     B --> E
     B --> X
     A --> C["Filing change runs\nversioned rules + review history"]
@@ -102,7 +97,7 @@ Every completed research response separates:
 
 - `evidence`: retrieved document passages carrying server-owned document and locator metadata;
 - `inference`: model synthesis generated from evidence and deterministic tool output;
-- `limitations`: unavailable filings, missing coverage and other qualifications;
+- `limitations`: data scope, as-of dates and other interpretation constraints;
 - `trace`: the allow-listed tools executed by the agent.
 
 This prevents a fluent model answer from being presented as documentary evidence. Users can follow the original source link and inspect the cited PDF page or SEC HTML passage.
@@ -116,7 +111,7 @@ This prevents a fluent model answer from being presented as documentary evidence
 5. Hybrid retrieval combines PostgreSQL English FTS and cosine search over BGE vectors using reciprocal-rank fusion when qualitative filing evidence is required.
 6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks the candidate passages with PyTorch.
 7. The local LLM synthesizes only from the supplied context; numeric-only financial questions use deterministic synthesis.
-8. The API emits SSE lifecycle events and 10-second heartbeats, then returns a structured response with evidence, inference, limitations and trace. If synthesis fails, verified evidence remains available with an explicit degraded status.
+8. The API emits SSE lifecycle events and 10-second heartbeats, then returns a structured response with evidence, inference, limitations and trace. Verified evidence remains independently accessible from model synthesis.
 
 ## Local development
 

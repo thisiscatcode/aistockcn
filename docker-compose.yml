@@ -60,6 +60,9 @@ services:
       - "127.0.0.1:8004:8000"
 
   research-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     image: aistockcn-research-api:20260813-streaming-v1
     restart: unless-stopped
     working_dir: /app
@@ -133,6 +136,9 @@ services:
       - paper-db
 
   panel-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     image: aistockcn-panel-web:20260813-us-workstation-v5
     restart: unless-stopped
     working_dir: /app
