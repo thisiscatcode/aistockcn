@@ -17,8 +17,8 @@ const capabilityCards = [
   {
     label: "Agent execution",
     title: "Structured plans with allow-listed tools",
-    body: "A schema-constrained model creates a JSON plan. FastAPI validates it before executing company lookup, market history, deterministic calculations and document retrieval, with progress streamed over SSE.",
-    tags: ["Tool calling", "Structured output", "SSE"]
+    body: "A typed LangGraph workflow plans, executes and validates each request. FastAPI allow-lists tools, streams progress over SSE and exposes node, tool, latency and fallback traces.",
+    tags: ["LangGraph", "Tool calling", "Structured output"]
   },
   {
     label: "Measured quality",

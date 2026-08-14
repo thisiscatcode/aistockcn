@@ -97,18 +97,19 @@ All administrative routes enforce the administrator role on the server.
 
 ## Research agent
 
-A research request is executed as a validated multi-step workflow:
+A research request is executed as a validated LangGraph state workflow:
 
 1. The authenticated frontend submits a company-scoped question.
-2. The configured Groq model produces a schema-constrained JSON tool plan.
+2. A typed LangGraph `plan` node asks the configured Groq model for a schema-constrained JSON tool plan.
 3. FastAPI removes unknown tools and enforces the server-side allow-list.
 4. The executor queries company data, standardized SEC facts, market history and document retrieval as required.
 5. PostgreSQL full-text and `pgvector` candidates are fused with reciprocal-rank fusion.
 6. A PyTorch cross-encoder reranks the retrieved passages.
 7. Deterministic tools calculate financial changes, returns and volatility.
-8. The configured model synthesizes only the supplied evidence and tool output.
-9. SSE lifecycle events and heartbeats keep the customer informed during long-running analysis.
-10. The API returns evidence, inference, limitations and an execution trace as structured data.
+8. The configured model synthesizes only the supplied evidence and tool output, using server-assigned evidence IDs.
+9. A deterministic `validate_citations` node rejects invented citation IDs and reports citation validity separately.
+10. SSE lifecycle events keep the customer informed while node and tool timings are persisted for evaluation.
+11. The API returns evidence, inference, limitations, LangGraph trace and citation validation as structured data.
 
 The production planner and synthesizer use Groq's OpenAI-compatible API with strict JSON schemas and a bounded timeout. If the provider is unavailable or rate-limited, the service falls back to a deterministic plan and verified evidence instead of inventing an answer.
 
@@ -125,7 +126,7 @@ flowchart LR
     C --> CN["5,000+ A-shares<br/>market, models and portfolios"]
     M --> US["5,000+ US equities<br/>prices, fundamentals and selections"]
 
-    R --> P["Schema-constrained agent<br/>tool planning and execution"]
+    R --> P["LangGraph state workflow<br/>plan, execute and validate"]
     P --> X["SEC XBRL<br/>validated financial facts"]
     P --> S["SEC and China official disclosures<br/>plus uploaded PDFs"]
     P --> D["Deterministic financial<br/>and market calculations"]
@@ -210,7 +211,7 @@ Research Copilot operates on the same live platform that supports:
 
 - **Frontend:** Next.js 15, React 19, TypeScript
 - **Backend:** FastAPI, Uvicorn, Python 3.12
-- **AI and RAG:** Groq GPT-OSS, structured tool planning, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
+- **AI and RAG:** LangGraph, Groq GPT-OSS, structured tool planning, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
 - **Financial and ML:** Pandas, PyArrow, LightGBM, scikit-learn
 - **Operations:** Docker Compose, structured logging, retries, rate limiting and background workers
 

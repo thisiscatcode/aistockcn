@@ -70,18 +70,19 @@ flowchart LR
 
 The planner and synthesizer use Groq's OpenAI-compatible API with strict JSON schemas. The provider call has one end-to-end latency budget; rate limits and provider failures degrade to verified evidence rather than unsupported prose.
 
-## Agent execution
+## LangGraph agent execution
 
 1. The frontend submits a company-scoped request through an authenticated server route.
-2. The configured model creates a schema-constrained JSON plan.
+2. A typed LangGraph `plan` node creates a schema-constrained JSON plan.
 3. FastAPI removes unknown tools and enforces the server-side allow-list.
 4. The executor calls market, financial, calculation and retrieval tools as required.
 5. Lexical and vector candidates are fused with reciprocal-rank fusion.
 6. A market-specific PyTorch cross-encoder reranks candidate passages.
 7. Financial changes, returns and volatility are calculated by deterministic code.
-8. The model synthesizes a response from the bounded evidence supplied to it.
-9. Server-Sent Events report lifecycle progress and heartbeats during long requests.
-10. The API validates and returns the structured response.
+8. The model synthesizes a response from bounded evidence with server-assigned `D1`, `D2` citation identifiers.
+9. A LangGraph validation node checks every identifier against returned evidence and records pass, warning, degraded or failed status.
+10. Server-Sent Events report progress; graph nodes and tool calls record separate timings.
+11. The API persists privacy-conscious trace metrics and returns the structured response.
 
 ## Filing ingestion
 
@@ -181,6 +182,7 @@ This makes retrieval changes measurable instead of relying on visual inspection 
 | `research-coverage-worker` | Issuer-level filing and financial-fact orchestration |
 | PostgreSQL / pgvector | Metadata, facts, queues, chunks, vectors, runs and review history |
 | Groq GPT-OSS | Remote structured planning and bounded evidence synthesis |
+| LangGraph | Typed plan, execution and citation-validation state workflow |
 
 ## Local integration environment
 

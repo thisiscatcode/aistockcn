@@ -157,6 +157,7 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
               <div><span>Evidence</span><small>Server-verified</small></div>
               {answer.document_evidence.map((item) => (
                 <section key={item.id} className="is-document-evidence">
+                  {item.citation_id ? <span className="research-citation-id">{item.citation_id}</span> : null}
                   <p>{item.claim}</p>
                   {item.document_id && item.page_number ? (
                     <a
@@ -201,16 +202,42 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
 
           <details className="research-agent-trace">
             <summary>
-              <span>How this answer was produced</span>
-              <small>{answer.agent_steps.length} steps{answer.duration_ms ? ` · ${(answer.duration_ms / 1000).toFixed(1)}s` : ""}</small>
+              <span>Agent trace</span>
+              <small>
+                {answer.graph?.framework ?? "Workflow"} · {answer.agent_steps.length} tools
+                {answer.duration_ms ? ` · ${(answer.duration_ms / 1000).toFixed(1)}s` : ""}
+              </small>
             </summary>
             {answer.tool_plan ? <p className="research-plan-reason">{answer.tool_plan.reason}</p> : null}
-            <ol>
+            <div className="research-trace-meta">
+              <span className={`research-citation-status is-${answer.citation_validation?.status ?? "warning"}`}>
+                Citations {answer.citation_validation?.status ?? "not checked"}
+              </span>
+              <small>
+                {answer.graph?.version ?? "legacy workflow"}
+                {answer.run_id ? ` · ${answer.run_id.slice(0, 8)}` : ""}
+              </small>
+            </div>
+            {answer.graph_trace?.length ? (
+              <section className="research-graph-trace" aria-label="LangGraph nodes">
+                {answer.graph_trace.map((step, index) => (
+                  <article key={`${step.node}-${index}`} className={`is-${step.status}`}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <div><strong>{step.node.replaceAll("_", " ")}</strong><small>{step.detail}</small></div>
+                    <b>{step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}</b>
+                  </article>
+                ))}
+              </section>
+            ) : null}
+            <ol className="research-tool-trace">
               {answer.agent_steps.map((step, index) => (
                 <li key={`${step.tool}-${index}`}>
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <strong>{step.tool.replaceAll("_", " ")}</strong>
-                  <small>{step.detail}</small>
+                  <small>
+                    {step.detail}
+                    {step.duration_ms !== undefined ? ` · ${step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}` : ""}
+                  </small>
                 </li>
               ))}
             </ol>

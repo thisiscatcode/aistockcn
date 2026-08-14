@@ -15,12 +15,12 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.services.research import (
     ResearchError,
-    answer_research_question,
     compare_research_companies,
     get_company_snapshot,
     plan_research_tools,
     search_companies,
 )
+from app.services.research_graph import run_research_graph
 from app.services.research_documents import (
     ResearchDocumentError,
     get_research_document,
@@ -49,6 +49,20 @@ from app.services.research_cn_disclosures import discover_cn_disclosures, sync_c
 router = APIRouter(prefix="/api/research", tags=["research"])
 logger = logging.getLogger(__name__)
 _research_stream_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="research-stream")
+
+
+def _agent_trace_payload(result: dict[str, object]) -> list[dict[str, object]]:
+    graph_trace = [
+        {"kind": "graph", **dict(item)}
+        for item in (result.get("graph_trace") or [])
+        if isinstance(item, dict)
+    ]
+    tool_trace = [
+        {"kind": "tool", "node": item.get("tool"), **dict(item)}
+        for item in (result.get("agent_steps") or [])
+        if isinstance(item, dict)
+    ]
+    return [*graph_trace, *tool_trace]
 
 
 class ResearchQuestionRequest(BaseModel):
@@ -403,8 +417,8 @@ def research_question(request: ResearchQuestionRequest) -> dict[str, object]:
     try:
         if request.market != "US":
             raise ResearchError("cn_research_answer_in_validation")
-        result = answer_research_question(symbol=request.symbol, question=request.question)
-        record_agent_run(
+        result = run_research_graph(symbol=request.symbol, question=request.question)
+        run_id = record_agent_run(
             run_type="question",
             symbols=[str(result["symbol"])],
             question=request.question,
@@ -412,7 +426,12 @@ def research_question(request: ResearchQuestionRequest) -> dict[str, object]:
             duration_ms=float(result.get("duration_ms") or 0),
             evidence_count=len(result.get("document_evidence") or []) + len(result.get("data_evidence") or []),
             tool_plan=result.get("tool_plan"),
+            trace=_agent_trace_payload(result),
+            citation_metrics=result.get("citation_validation"),
+            model=result.get("model"),
+            graph_version=(result.get("graph") or {}).get("version"),
         )
+        result["run_id"] = run_id
         return result
     except ResearchError as exc:
         code = str(exc)
@@ -434,11 +453,15 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
         try:
             if request.market != "US":
                 raise ResearchError("cn_research_answer_in_validation")
+            planner_started_at = time.perf_counter()
             plan = plan_research_tools(question=request.question)
+            plan["planner_duration_ms"] = round(
+                (time.perf_counter() - planner_started_at) * 1000, 1
+            )
             yield f"event: plan\ndata: {json.dumps(plan)}\n\n"
             yield f"event: status\ndata: {json.dumps({'stage': 'executing', 'message': 'Running validated tools'})}\n\n"
             future = _research_stream_executor.submit(
-                answer_research_question,
+                run_research_graph,
                 symbol=request.symbol,
                 question=request.question,
                 tool_plan=plan,
@@ -449,7 +472,7 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
                     break
                 except FutureTimeoutError:
                     yield f"event: status\ndata: {json.dumps({'stage': 'synthesizing', 'message': 'Analyzing cited evidence'})}\n\n"
-            record_agent_run(
+            run_id = record_agent_run(
                 run_type="question_stream",
                 symbols=[str(result["symbol"])],
                 question=request.question,
@@ -457,7 +480,12 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
                 duration_ms=float(result.get("duration_ms") or 0),
                 evidence_count=len(result.get("document_evidence") or []) + len(result.get("data_evidence") or []),
                 tool_plan=plan,
+                trace=_agent_trace_payload(result),
+                citation_metrics=result.get("citation_validation"),
+                model=result.get("model"),
+                graph_version=(result.get("graph") or {}).get("version"),
             )
+            result["run_id"] = run_id
             for step in result.get("agent_steps", []):
                 yield f"event: tool\ndata: {json.dumps(step, default=str)}\n\n"
             yield f"event: result\ndata: {json.dumps(result, default=str)}\n\n"
@@ -504,6 +532,12 @@ def research_comparison(request: ResearchComparisonRequest) -> dict[str, object]
             status="completed",
             duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
             evidence_count=len(result.get("document_evidence") or []),
+            trace=[
+                {"kind": "tool", "node": item.get("tool"), **dict(item)}
+                for item in result.get("agent_steps") or []
+                if isinstance(item, dict)
+            ],
+            model=result.get("model"),
         )
         return result
     except ResearchError as exc:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
@@ -129,6 +130,10 @@ create table if not exists research_agent_runs (
   duration_ms double precision,
   evidence_count integer not null default 0,
   tool_plan jsonb,
+  trace jsonb not null default '[]'::jsonb,
+  citation_metrics jsonb not null default '{}'::jsonb,
+  model jsonb not null default '{}'::jsonb,
+  graph_version text,
   error_code text,
   created_at timestamptz not null default now()
 );
@@ -314,6 +319,10 @@ create index if not exists research_chunks_search_simple_idx on research_documen
 alter table research_evaluation_runs add column if not exists market text not null default 'US';
 alter table research_evaluation_runs add column if not exists retrieval_profile jsonb not null default '{}'::jsonb;
 alter table research_agent_runs add column if not exists market text not null default 'US';
+alter table research_agent_runs add column if not exists trace jsonb not null default '[]'::jsonb;
+alter table research_agent_runs add column if not exists citation_metrics jsonb not null default '{}'::jsonb;
+alter table research_agent_runs add column if not exists model jsonb not null default '{}'::jsonb;
+alter table research_agent_runs add column if not exists graph_version text;
 alter table research_filing_change_runs add column if not exists market text not null default 'US';
 alter table research_company_coverage add column if not exists market text not null default 'US';
 alter table research_coverage_jobs add column if not exists market text not null default 'US';
@@ -389,14 +398,91 @@ def _write_connection(settings: Settings | None = None) -> Iterator[Any]:
 
 
 def init_research_document_schema() -> None:
-    with _write_connection() as conn:
-        with conn.cursor() as cur:
-            # API and worker containers start together during deploys. Serialize DDL so
-            # concurrent idempotent migrations cannot deadlock on PostgreSQL catalog locks.
-            cur.execute("select pg_advisory_xact_lock(%s)", (87_072_401,))
-            cur.execute(RESEARCH_SCHEMA_SQL)
-            cur.execute(MARKET_NEUTRAL_RESEARCH_SCHEMA_SQL)
-        conn.commit()
+    _run_schema_migration(
+        migration_id="research_documents_v3_langgraph_observability",
+        lock_id=87_072_401,
+        statements=(RESEARCH_SCHEMA_SQL, MARKET_NEUTRAL_RESEARCH_SCHEMA_SQL),
+        required_columns=(
+            ("research_agent_runs", "trace"),
+            ("research_agent_runs", "citation_metrics"),
+            ("research_agent_runs", "model"),
+            ("research_agent_runs", "graph_version"),
+        ),
+    )
+
+
+def _run_schema_migration(
+    *,
+    migration_id: str,
+    lock_id: int,
+    statements: tuple[str, ...],
+    required_columns: tuple[tuple[str, str], ...] = (),
+) -> None:
+    """Apply each schema version once, with serialized and retryable DDL."""
+    last_error: Exception | None = None
+    for attempt in range(5):
+        try:
+            with _write_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("select pg_advisory_xact_lock(%s)", (lock_id,))
+                    cur.execute(
+                        """
+                        create table if not exists research_schema_migrations (
+                          migration_id text primary key,
+                          applied_at timestamptz not null default now()
+                        )
+                        """
+                    )
+                    cur.execute(
+                        "select 1 from research_schema_migrations where migration_id = %s",
+                        [migration_id],
+                    )
+                    if cur.fetchone():
+                        conn.commit()
+                        return
+
+                    # Existing deployments predate the version registry. If every
+                    # column introduced by this version exists, register it without
+                    # replaying catalog-heavy ALTER statements.
+                    existing_columns = 0
+                    for table_name, column_name in required_columns:
+                        cur.execute(
+                            """
+                            select 1
+                            from information_schema.columns
+                            where table_schema = current_schema()
+                              and table_name = %s
+                              and column_name = %s
+                            """,
+                            [table_name, column_name],
+                        )
+                        existing_columns += 1 if cur.fetchone() else 0
+                    already_applied = bool(required_columns) and existing_columns == len(required_columns)
+                    if not already_applied:
+                        for statement in statements:
+                            cur.execute(statement)
+                    cur.execute(
+                        "insert into research_schema_migrations (migration_id) values (%s)",
+                        [migration_id],
+                    )
+                conn.commit()
+            return
+        except Exception as exc:
+            last_error = exc
+            retryable_types = (
+                (
+                    psycopg.errors.DeadlockDetected,
+                    psycopg.errors.LockNotAvailable,
+                    psycopg.errors.SerializationFailure,
+                )
+                if psycopg is not None
+                else ()
+            )
+            if not isinstance(exc, retryable_types) or attempt == 4:
+                raise
+            time.sleep(0.25 * (2 ** attempt))
+    if last_error is not None:  # pragma: no cover - loop either returns or raises
+        raise last_error
 
 
 def _clean_document_type(value: str) -> str:

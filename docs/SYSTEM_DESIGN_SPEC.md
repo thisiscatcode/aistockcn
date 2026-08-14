@@ -29,7 +29,8 @@ flowchart LR
     M --> US["US universe, prices, selections"]
     R --> SEC["SEC filings and Company Facts"]
     R --> PG["PostgreSQL / pgvector"]
-    R --> L["Groq GPT-OSS API"]
+    R --> LG["LangGraph state workflow"]
+    LG --> L["Groq GPT-OSS API"]
 
     R --> Q["Durable research queues"]
     Q --> DW["Document workers"]
@@ -235,6 +236,7 @@ Services are restarted independently, so research ingestion does not require reb
 ## Observability
 
 - request IDs and structured API latency logs;
+- LangGraph node traces, per-tool latency and citation-validation metrics;
 - pipeline state and per-step artifacts;
 - research run and filing-change history;
 - document and job status in the administrator workspace;

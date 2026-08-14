@@ -11,6 +11,7 @@ import torch
 from app.services.research_documents import _write_connection
 from app.services.research_models import rerank_pairs
 from app.services.research_models import model_profile
+from app.services.research_observability import get_agent_quality_summary
 
 
 BENCHMARK_CASES = [
@@ -174,7 +175,7 @@ def list_evaluation_runs(limit: int = 10, market: str | None = None) -> dict[str
             cur.execute(
                 """
                 select id, market, benchmark_name, model_name, retrieval_profile, case_count, top1_accuracy,
-                       mean_reciprocal_rank, baseline_top1_accuracy, duration_ms, created_at
+                       mean_reciprocal_rank, baseline_top1_accuracy, details, duration_ms, created_at
                 from research_evaluation_runs
                 where (%s::text is null or market = %s::text)
                 order by created_at desc
@@ -183,4 +184,8 @@ def list_evaluation_runs(limit: int = 10, market: str | None = None) -> dict[str
                 [market.upper() if market else None, market.upper() if market else None, safe_limit],
             )
             runs = [dict(row) for row in cur.fetchall()]
-    return {"rows": len(runs), "runs": runs}
+    return {
+        "rows": len(runs),
+        "runs": runs,
+        "live_quality": get_agent_quality_summary(limit=100),
+    }

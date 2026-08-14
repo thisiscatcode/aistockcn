@@ -9,7 +9,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.services.research import ResearchError, normalize_us_symbol
-from app.services.research_documents import _write_connection
+from app.services.research_documents import _run_schema_migration, _write_connection
 from app.services.research_sec import _sec_request, resolve_sec_cik
 
 
@@ -170,11 +170,17 @@ end $$;
 
 
 def init_research_financial_schema() -> None:
-    with _write_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("select pg_advisory_xact_lock(%s)", (87_072_402,))
-            cur.execute(RESEARCH_FINANCIAL_SCHEMA_SQL)
-        conn.commit()
+    _run_schema_migration(
+        migration_id="research_financials_v2_market_validation",
+        lock_id=87_072_402,
+        statements=(RESEARCH_FINANCIAL_SCHEMA_SQL,),
+        required_columns=(
+            ("research_financial_facts", "market"),
+            ("research_financial_facts", "validation_status"),
+            ("research_financial_facts", "validation_checks"),
+            ("research_financial_facts", "issuer_id"),
+        ),
+    )
 
 
 def _safe_date(value: Any) -> date | None:

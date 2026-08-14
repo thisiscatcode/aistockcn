@@ -16,6 +16,7 @@ from app.services.research_llm import (
     model_metadata,
     provider_name,
 )
+from app.services.research_citations import validate_research_citations
 
 try:
     import psycopg
@@ -493,15 +494,17 @@ def _generate_research_synthesis(
 
     prompt_documents = [
         {
+            "evidence_id": f"D{index + 1}",
             "filename": item.get("filename"),
             "locator": item.get("locator") or f"page {item.get('page_number')}",
             "content": str(item.get("content") or "")[:240],
         }
-        for item in document_context[:3]
+        for index, item in enumerate(document_context[:3])
     ]
     filing_instruction = (
-        "Use filing claims only when directly supported by the supplied document passages, and cite the exact "
-        "supplied locator in the prose as [filename, locator]. Never describe an HTML passage as a PDF page."
+        "Use filing claims only when directly supported by the supplied document passages. Put the supplied "
+        "evidence identifier such as [D1] immediately after each filing-based claim. Never invent an identifier "
+        "or describe an HTML passage as a PDF page."
         if document_context
         else
         "The SEC filing corpus returned no relevant passages, so do not claim knowledge of revenue, earnings "
@@ -527,15 +530,20 @@ def _generate_research_synthesis(
                         "items": {"type": "string"},
                         "maxItems": 3,
                     },
+                    "cited_evidence_ids": {
+                        "type": "array",
+                        "items": {"type": "string", "pattern": "^D[1-9][0-9]*$"},
+                        "maxItems": 3,
+                    },
                 },
-                "required": ["answer", "model_inference"],
+                "required": ["answer", "model_inference", "cited_evidence_ids"],
             },
             prompt=(
                 "You are an equity research copilot. Answer only from the supplied market and document context. "
                 f"{filing_instruction} {financial_instruction} "
                 "If the question needs evidence that is not supplied, state that limitation. "
-                "Return JSON only with keys answer (string) and "
-                "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct. "
+                "Return JSON only with keys answer (string), model_inference (array of at most 3 short strings), "
+                "and cited_evidence_ids (the evidence IDs actually cited in answer). Keep facts and interpretation distinct. "
                 "Keep the answer under 100 words and return at most 2 brief inferences.\n\n"
                 f"Question: {question}\n"
                 f"Company context: {json.dumps(model_company_context, default=str)}\n"
@@ -548,13 +556,22 @@ def _generate_research_synthesis(
         raise ResearchError(str(exc)) from exc
     answer = str(generated.get("answer") or "").strip()
     inferences = generated.get("model_inference")
+    cited_evidence_ids = generated.get("cited_evidence_ids")
     if not answer:
         raise ResearchError("research_model_invalid_response")
     if not isinstance(inferences, list):
         inferences = []
+    if not isinstance(cited_evidence_ids, list):
+        cited_evidence_ids = []
+    declared_ids = [str(item).strip() for item in cited_evidence_ids if str(item).strip()][:3]
+    available_ids = {f"D{index + 1}" for index in range(len(prompt_documents))}
+    verified_declared_ids = [item for item in declared_ids if item in available_ids]
+    if verified_declared_ids and not re.search(r"\[D\d+\]", answer):
+        answer = f"{answer.rstrip()} " + " ".join(f"[{item}]" for item in verified_declared_ids)
     return {
         "answer": answer,
         "model_inference": [str(item).strip() for item in inferences if str(item).strip()][:3],
+        "cited_evidence_ids": declared_ids,
     }
 
 
@@ -781,6 +798,7 @@ def answer_research_question(
     tool_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     started_at = time.perf_counter()
+    stage_timings: dict[str, float] = {}
     normalized_symbol = normalize_us_symbol(symbol)
     normalized_question = " ".join(str(question or "").split())
     if not normalized_question:
@@ -788,31 +806,44 @@ def answer_research_question(
     if len(normalized_question) > 800:
         raise ResearchError("question_too_long")
 
+    stage_started = time.perf_counter()
     snapshot = get_company_snapshot(symbol=normalized_symbol, history_limit=60)
     company = snapshot["company"]
     history = snapshot["history"]
     calculations = _market_calculations(history)
+    stage_timings["company_lookup"] = round((time.perf_counter() - stage_started) * 1000, 1)
     settings = get_settings()
+    stage_started = time.perf_counter()
     plan = tool_plan or plan_research_tools(question=normalized_question, settings=settings)
+    stage_timings["agent_planner"] = round((time.perf_counter() - stage_started) * 1000, 1)
     selected_tools = list(plan.get("tools") or [])
+    stage_started = time.perf_counter()
     retrieval = (
         _retrieve_document_evidence(symbol=normalized_symbol, question=normalized_question)
         if "hybrid_document_search" in selected_tools
         else {"results": [], "retrieval": {"strategy": "not_selected_by_agent"}}
     )
     document_context = list(retrieval.get("results") or [])
+    stage_timings["hybrid_document_search"] = round((time.perf_counter() - stage_started) * 1000, 1)
     financial_summary: dict[str, Any] | None = None
     financial_error: str | None = None
+    stage_started = time.perf_counter()
     if "sec_financial_facts" in selected_tools:
         financial_summary, financial_error = _run_sec_financial_tool(normalized_symbol)
+    stage_timings["sec_financial_facts"] = round((time.perf_counter() - stage_started) * 1000, 1)
     financial_context = _compact_financial_context(financial_summary) if financial_summary else None
     deterministic_financial_answer = (
         _deterministic_financial_answer(summary=financial_summary, question=normalized_question)
         if financial_summary and financial_summary.get("latest_annual") else None
     )
     synthesis_error: str | None = None
+    stage_started = time.perf_counter()
     if deterministic_financial_answer and not _question_requires_qualitative_synthesis(normalized_question):
-        synthesis = {"answer": deterministic_financial_answer, "model_inference": []}
+        synthesis = {
+            "answer": deterministic_financial_answer,
+            "model_inference": [],
+            "cited_evidence_ids": [],
+        }
     else:
         try:
             synthesis = _generate_research_synthesis(
@@ -834,7 +865,11 @@ def answer_research_question(
                 raise
             synthesis_error = str(exc)
             if deterministic_financial_answer:
-                synthesis = {"answer": deterministic_financial_answer, "model_inference": []}
+                synthesis = {
+                    "answer": deterministic_financial_answer,
+                    "model_inference": [],
+                    "cited_evidence_ids": [],
+                }
             elif document_context:
                 synthesis = {
                     "answer": (
@@ -842,12 +877,14 @@ def answer_research_question(
                         "evidence for this question is shown below."
                     ),
                     "model_inference": [],
+                    "cited_evidence_ids": [],
                 }
             else:
                 raise
         if deterministic_financial_answer and not synthesis_error:
             synthesis["model_inference"] = [synthesis["answer"], *synthesis["model_inference"]][:3]
             synthesis["answer"] = deterministic_financial_answer
+    stage_timings["evidence_synthesis"] = round((time.perf_counter() - stage_started) * 1000, 1)
 
     latest_date = company.get("trade_date")
     evidence: list[dict[str, Any]] = [
@@ -896,6 +933,7 @@ def answer_research_question(
         "answer": synthesis["answer"],
         "document_evidence": [
             {
+                "citation_id": f"D{index + 1}",
                 "id": item["chunk_id"],
                 "document_id": item["document_id"],
                 "claim": item["content"],
@@ -906,11 +944,12 @@ def answer_research_question(
                 "source_url": item.get("source_url"),
                 "reranker_score": item.get("reranker_score"),
             }
-            for item in document_context
+            for index, item in enumerate(document_context)
         ],
         "data_evidence": evidence,
         "financial_evidence": [item for item in evidence if str(item.get("source") or "").startswith("SEC")],
         "model_inference": synthesis["model_inference"],
+        "cited_evidence_ids": synthesis.get("cited_evidence_ids") or [],
         "limitations": (
             ["Only the highest-ranked retrieved filing passages were supplied to the model."]
             if document_context
@@ -924,14 +963,30 @@ def answer_research_question(
                 "tool": "agent_planner",
                 "status": "completed",
                 "detail": f"{plan.get('planner')}: {', '.join(selected_tools)}",
+                "duration_ms": stage_timings["agent_planner"],
             },
-            {"tool": "company_lookup", "status": "completed", "detail": normalized_symbol},
+            {
+                "tool": "company_lookup",
+                "status": "completed",
+                "detail": normalized_symbol,
+                "duration_ms": stage_timings["company_lookup"],
+            },
             *(
-                [{"tool": "market_history", "status": "completed", "detail": f"{len(history)} observations"}]
+                [{
+                    "tool": "market_history",
+                    "status": "completed",
+                    "detail": f"{len(history)} observations",
+                    "duration_ms": stage_timings["company_lookup"],
+                }]
                 if "market_history" in selected_tools else []
             ),
             *(
-                [{"tool": "financial_calculator", "status": "completed", "detail": "returns and volatility"}]
+                [{
+                    "tool": "financial_calculator",
+                    "status": "completed",
+                    "detail": "returns and volatility",
+                    "duration_ms": stage_timings["company_lookup"],
+                }]
                 if "financial_calculator" in selected_tools else []
             ),
             *(
@@ -941,6 +996,7 @@ def answer_research_question(
                     "detail": financial_error or (
                         f"{financial_summary.get('coverage', {}).get('fact_rows', 0)} canonical SEC XBRL facts"
                     ),
+                    "duration_ms": stage_timings["sec_financial_facts"],
                 }]
                 if "sec_financial_facts" in selected_tools else []
             ),
@@ -949,6 +1005,7 @@ def answer_research_question(
                     "tool": "hybrid_document_search",
                     "status": "completed",
                     "detail": f"{len(document_context)} reranked passages",
+                    "duration_ms": stage_timings["hybrid_document_search"],
                 }]
                 if "hybrid_document_search" in selected_tools else []
             ),
@@ -956,6 +1013,7 @@ def answer_research_question(
                 "tool": "evidence_synthesis",
                 "status": "degraded" if synthesis_error else "completed",
                 "detail": synthesis_error or settings.research_llm_model,
+                "duration_ms": stage_timings["evidence_synthesis"],
             },
         ],
         "tool_plan": plan,
@@ -964,6 +1022,9 @@ def answer_research_question(
         "model": model_metadata(settings),
         "duration_ms": round((time.perf_counter() - started_at) * 1000, 1),
     }
+    result["citation_validation"] = validate_research_citations(
+        result=result, synthesis_degraded=bool(synthesis_error)
+    )
     result["execution_trace"] = result["agent_steps"]
     return result
 

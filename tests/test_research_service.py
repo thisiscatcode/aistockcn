@@ -16,12 +16,61 @@ from app.services import research as research_service
 from app.services import research_chunking as research_chunking_service
 from app.services import research_financials as research_financials_service
 from app.services import research_filing_changes as research_filing_changes_service
+from app.services import research_graph as research_graph_service
 from app.services import research_llm as research_llm_service
+from app.services import research_citations as research_citation_service
 from app.services import research_sec as research_sec_service
 from app.services import research_cn_disclosures as research_cn_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_citation_validator_rejects_model_invented_ids(self) -> None:
+        result = {
+            "answer": "The filing identifies supply risk [D1] and another claim [D99].",
+            "cited_evidence_ids": ["D1", "D99"],
+            "document_evidence": [{"citation_id": "D1", "locator": "SEC filing HTML · passage 8"}],
+        }
+        validation = research_citation_service.validate_research_citations(result=result)
+        self.assertEqual(validation["status"], "failed")
+        self.assertEqual(validation["valid_citation_ids"], ["D1"])
+        self.assertEqual(validation["invalid_citation_ids"], ["D99"])
+
+    def test_citation_validator_requires_visible_answer_marker(self) -> None:
+        result = {
+            "answer": "Revenue increased year over year.",
+            "cited_evidence_ids": ["D1"],
+            "document_evidence": [{"citation_id": "D1", "locator": "SEC filing HTML · passage 8"}],
+        }
+        validation = research_citation_service.validate_research_citations(result=result)
+        self.assertEqual(validation["status"], "warning")
+        self.assertEqual(validation["valid_citation_ids"], [])
+        self.assertFalse(validation["answer_has_document_citation"])
+
+    def test_langgraph_runs_plan_execute_and_citation_validation_nodes(self) -> None:
+        plan = {"tools": ["company_lookup", "hybrid_document_search"], "planner": "test", "reason": "test"}
+        answer = {
+            "symbol": "AAPL",
+            "answer": "Supply concentration is a risk [D1].",
+            "document_evidence": [{"citation_id": "D1", "id": "chunk-1"}],
+            "data_evidence": [],
+            "cited_evidence_ids": ["D1"],
+            "agent_steps": [{"tool": "hybrid_document_search", "status": "completed", "detail": "1 passage"}],
+            "citation_validation": {},
+        }
+        with mock.patch.object(
+            research_graph_service, "answer_research_question", return_value=answer
+        ):
+            result = research_graph_service.run_research_graph(
+                symbol="AAPL", question="What risks matter?", tool_plan=plan
+            )
+
+        self.assertEqual(result["graph"]["framework"], "LangGraph")
+        self.assertEqual(
+            [item["node"] for item in result["graph_trace"]],
+            ["plan", "execute_tools_and_synthesize", "validate_citations"],
+        )
+        self.assertEqual(result["citation_validation"]["status"], "passed")
+
     def test_groq_provider_uses_strict_schema_and_bearer_auth(self) -> None:
         settings = SimpleNamespace(
             research_llm_provider="groq",

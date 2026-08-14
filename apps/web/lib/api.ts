@@ -902,6 +902,7 @@ export type ResearchFinancialSummary = {
 };
 
 export type ResearchEvidence = {
+  citation_id?: string;
   id: string;
   claim: string;
   source: string;
@@ -932,8 +933,22 @@ export type ResearchAnswer = {
   financial_evidence?: ResearchEvidence[];
   model_inference: string[];
   limitations: string[];
-  agent_steps: Array<{ tool: string; status: string; detail: string }>;
-  execution_trace?: Array<{ tool: string; status: string; detail: string }>;
+  agent_steps: Array<{ tool: string; status: string; detail: string; duration_ms?: number }>;
+  execution_trace?: Array<{ tool: string; status: string; detail: string; duration_ms?: number }>;
+  graph?: { framework: string; version: string; nodes: string[] };
+  graph_trace?: Array<{ node: string; status: string; detail: string; duration_ms: number }>;
+  citation_validation?: {
+    status: "passed" | "warning" | "failed" | "degraded";
+    available_document_citations: number;
+    cited_document_citations: number;
+    valid_citation_ids: string[];
+    invalid_citation_ids: string[];
+    answer_has_document_citation: boolean;
+    citation_validity_rate: number;
+    locator_source: string;
+  };
+  cited_evidence_ids?: string[];
+  run_id?: string | null;
   tool_plan?: { tools: string[]; reason: string; planner: string };
   duration_ms?: number;
   model: { provider: string; name: string };
@@ -997,6 +1012,28 @@ export type ResearchEvaluationRun = {
     reranker_top_score: number;
     baseline_relevant_rank: number;
     passed: boolean;
+  }>;
+};
+
+export type ResearchLiveQuality = {
+  sample_size: number;
+  completed_rate?: number | null;
+  citation_sample_size: number;
+  citation_pass_rate?: number | null;
+  degraded_rate?: number | null;
+  latency_ms: { p50?: number | null; p95?: number | null };
+  recent_runs: Array<{
+    id: string;
+    run_type: string;
+    symbols: string[];
+    status: string;
+    duration_ms?: number | null;
+    evidence_count: number;
+    citation_metrics?: { status?: string };
+    model?: { provider?: string; name?: string };
+    graph_version?: string | null;
+    error_code?: string | null;
+    created_at: string;
   }>;
 };
 
