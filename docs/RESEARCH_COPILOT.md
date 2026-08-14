@@ -1,147 +1,209 @@
 # AiStockCN Research Copilot
 
-Production-oriented US equity research integrated with AiStockCN's existing market-data platform, authentication and navigation at `aistockcn.com/research`.
+Research Copilot is AiStockCN's source-grounded US equity research workspace. It combines SEC filings, standardized financial facts, market data, deterministic calculations and a multi-step AI agent in the authenticated product at [aistockcn.com/research](https://aistockcn.com/research).
 
-## Equity and filing intelligence
+**Audience:** product, financial research and AI engineering
 
-Research Copilot operates on AiStockCN's production universe of more than 5,000 actively tracked US-listed equities. Issuer identity is normalized through SEC CIK lineage so multiple share classes remain connected to the correct filing source.
+**Documentation baseline:** 14 August 2026
 
-US domestic filings (`10-K`, `10-Q`, `8-K`) and foreign-private-issuer filings (`20-F`, `40-F`, `6-K`) are supported. Both US-GAAP and IFRS Company Facts retain their original taxonomy, reporting currency and accession lineage.
+![Research Copilot company summary](assets/research-copilot.png)
 
-The `research-coverage-worker` manages durable filing orchestration, atomic job claiming, bounded retries and source reconciliation. Documents are processed by separate research workers. `GET /api/research/coverage` provides company-level operational telemetry to the administrator interface.
+## Product capabilities
 
-Operational state is deliberately separated from the customer research workflow. `/research` contains company analysis, documents, financials, filing changes and grounded Q&A. Coverage queues, indexing progress, failures and retrieval evaluation are restricted to administrators at `/admin/research`.
+- Search AiStockCN's production universe of 5,000+ actively tracked US-listed equities.
+- Review company identity, price context, standardized financials and original filings in one workspace.
+- Ask natural-language questions with citations to the underlying document or financial fact.
+- Compare two or three companies through one consistent evidence and calculation process.
+- Detect added, removed, strengthened, weakened or materially rewritten annual-report language.
+- Preserve the boundary between evidence, deterministic output and model inference.
+- Inspect how an answer was produced without exposing internal operational controls to ordinary users.
 
-## US product interface
+## Evidence contract
 
-The US equity product uses a dedicated workstation shell and does not alter the A-share interface. Global US navigation lives in one persistent left rail. Repeated page-title chrome is omitted, and New York time remains available in the sidebar account area. Company Research has one secondary navigation level for the selected security: Summary, Ask AI, Financials, Filings, Changes and Compare. This prevents product navigation and company tasks from appearing as two competing headers.
+Citation metadata is server-owned. The language model cannot create or alter the document ID, filename, filing accession, page, passage locator or source URL displayed by the product.
 
-The interface uses a neutral cool-grey canvas, white analytical surfaces and navy navigation. Functional colour is consistent: blue for market context and primary actions, violet for AI, cyan for financial data, amber for filings, red for risks and disclosure changes, and green for comparison or positive status. Tables, inputs and buttons share one compact scale across Research, Market Overview, Explorer, Picks, Paper and US administration. On narrow screens the left rail becomes a horizontally scrollable bottom navigation, New York time moves to a thin utility row, and company task tabs remain independently scrollable.
-
-## Deployment status
-
-| Component | Status |
+| Response layer | Contract |
 | --- | --- |
-| Public Research Copilot | Live at `aistockcn.com/research` after authentication |
-| Customer platform | Live at `aistockcn.com` through one product frontend |
-| Current public runtime | Docker Compose on the existing AiStockCN host |
-| Paid LLM API | Not required; the current agent uses local Ollama |
+| `evidence` | Retrieved filing passages with stored source identity and locator metadata |
+| `financial_evidence` | Typed SEC facts and deterministic calculations with period, unit and accession lineage |
+| `inference` | Model interpretation generated only from approved tool output and bounded evidence |
+| `limitations` | Data scope, as-of dates and interpretation constraints |
+| `trace` | Approved tools executed by the research agent |
 
-## What is live
+PDFs retain native page numbers. SEC HTML filings use `SEC filing HTML · passage N` because the source has no reliable native pagination.
 
-- Company search over the existing US equity universe and market-history tables.
-- Official SEC EDGAR discovery and sync for 10-K, 10-Q, 8-K, 20-F, 40-F and 6-K filings, using accession-number deduplication and declared fair-access identification.
-- Durable issuer-level filing orchestration with atomic work claiming, bounded retries and operational telemetry.
-- SEC Company Facts ingestion with canonical US-GAAP concept priorities, annual/quarterly/instant periods and original accession lineage.
-- Deterministic revenue, profit, EPS, margin, cash-flow, free-cash-flow and balance-sheet calculations. The LLM does not recalculate these numeric facts.
-- PDF upload with validation, SHA-256 deduplication and page-preserving extraction.
-- Background ingestion worker using PostgreSQL `FOR UPDATE SKIP LOCKED`.
-- BGE embeddings in `pgvector`, PostgreSQL full-text search, reciprocal-rank fusion and a PyTorch cross-encoder reranker.
-- Natural-language answers that render document evidence separately from model inference and preserve server-owned source locators.
-- A local Ollama `qwen2.5:3b` planner/synthesizer; no paid OpenAI key is required.
-- Structured tool plans, server-side tool allow-listing, SSE progress events with long-running heartbeats and multi-company comparison.
-- Bounded model context, schema-constrained JSON output and independent evidence preservation keep responses reliable and reviewable.
-- A live reranker benchmark with persisted Top-1 accuracy, MRR and lexical-baseline results.
-- Request IDs, structured latency logs, retries with exponential backoff, rate limiting and privacy-conscious run telemetry.
-- Docker Compose services for the API, background worker and frontend.
-- Versioned filing-change runs with reciprocal semantic matching, bilateral original-text evidence, durable failures, rerun lineage and append-only human review decisions.
+## Customer workflow
 
-## Architecture
+1. Search by ticker or company name.
+2. Open the company Summary for price context, annual financials, filings and filing-change history.
+3. Select Ask AI, Financials, Filings, Changes or Compare.
+4. Ask a focused question or choose a suggested research task.
+5. Inspect the cited evidence separately from the model interpretation.
+6. Open the original filing or fact lineage when a claim affects a decision.
+
+Coverage orchestration, ingestion telemetry, failures and retrieval evaluation are administrator functions under `/admin/research`; they are not mixed into the customer research page.
+
+## Research request architecture
 
 ```mermaid
 flowchart LR
-    U["User"] --> W["Next.js research frontend"]
-    W --> A["FastAPI research API"]
-    A --> P["Structured agent planner\nOllama qwen2.5:3b"]
-    A --> D["AiStockCN US market data\nPostgreSQL"]
-    A --> E["SEC EDGAR\nsubmissions + filing archive"]
-    A --> X["SEC XBRL Company Facts\nfinancial fact normalization"]
-    A --> H["Hybrid retrieval\nFTS + pgvector + RRF"]
-    H --> R["PyTorch cross-encoder\nreranker"]
-    A --> Q["PostgreSQL queue\nSKIP LOCKED"]
-    Q --> B["Coverage worker\nissuer sync + retry"]
-    B --> E
-    B --> X
-    A --> C["Filing change runs\nversioned rules + review history"]
-    A --> S["Shared volume or encrypted S3\nsource documents"]
-    E --> S
-    Q --> K["Document ingestion worker"]
-    S --> K
-    K --> V["Pages, chunks, vectors\nPostgreSQL / pgvector"]
-    V --> H
-    A --> O["Logs, run telemetry,\nevaluation results"]
-    X --> A
+    U["Authenticated user"] --> W["Next.js Research workspace"]
+    W --> A["FastAPI Research API"]
+    A --> P["Schema-constrained planner"]
+    P --> T["Server tool allow-list"]
+    T --> M["US market data"]
+    T --> F["SEC financial facts"]
+    T --> C["Deterministic calculations"]
+    T --> H["Hybrid document retrieval"]
+    H --> L["PostgreSQL full-text search"]
+    H --> V["pgvector similarity search"]
+    L --> R["Reciprocal-rank fusion"]
+    V --> R
+    R --> X["PyTorch cross-encoder reranker"]
+    M --> S["Bounded evidence synthesis"]
+    F --> S
+    C --> S
+    X --> S
+    S --> O["Evidence + inference + limitations + trace"]
+    O --> W
 ```
 
-The LLM never provides the citation metadata shown by the UI. The server attaches `document_id`, filename, locator and source URL from retrieval results. Uploaded PDFs retain native page numbers. SEC filing HTML has no reliable native pagination, so it is cited as `SEC filing HTML · passage N` and is never mislabeled as a PDF page. Model-generated interpretation is kept in a separate field and rendered in a separate card.
+The planner and synthesizer run through local Ollama. The current runtime therefore does not require a paid OpenAI API key.
 
-Numeric financial answers follow the same rule at a stricter boundary. The server selects canonical SEC Company Facts, calculates comparable-period changes and margins, and renders the factual answer from those typed values. Each fact retains taxonomy, concept, form, period, filing date and accession number. The local model may plan the `sec_financial_facts` tool and provide separately labelled qualitative interpretation, but it cannot overwrite the deterministic numeric answer.
+## Agent execution
+
+1. The frontend submits a company-scoped request through an authenticated server route.
+2. The local model creates a schema-constrained JSON plan.
+3. FastAPI removes unknown tools and enforces the server-side allow-list.
+4. The executor calls market, financial, calculation and retrieval tools as required.
+5. Lexical and vector candidates are fused with reciprocal-rank fusion.
+6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks candidate passages with PyTorch.
+7. Financial changes, returns and volatility are calculated by deterministic code.
+8. The model synthesizes a response from the bounded evidence supplied to it.
+9. Server-Sent Events report lifecycle progress and heartbeats during long requests.
+10. The API validates and returns the structured response.
+
+## Filing ingestion
+
+Research Copilot supports SEC discovery and customer-supplied PDF documents.
+
+### SEC filings
+
+- Domestic issuer forms: `10-K`, `10-Q`, `8-K`.
+- Foreign private issuer forms: `20-F`, `40-F`, `6-K`.
+- Issuers are normalized through SEC CIK and accession lineage.
+- SEC fair-access identification and request pacing are applied by the server.
+- Company Facts support both US-GAAP and IFRS taxonomies while retaining the original concept and currency.
+
+### Document processing
+
+```mermaid
+flowchart LR
+    S["SEC EDGAR or PDF upload"] --> D["Immutable source record"]
+    D --> Q["PostgreSQL work queue"]
+    Q --> E["Text and locator extraction"]
+    E --> C["Overlapping chunks"]
+    C --> B["BGE embeddings"]
+    B --> P["PostgreSQL + pgvector"]
+    P --> R["Hybrid retrieval and reranking"]
+```
+
+Uploads are validated and deduplicated by SHA-256. Workers claim jobs atomically with PostgreSQL `FOR UPDATE SKIP LOCKED`, allowing interrupted work to be retried safely.
+
+## Financial facts and calculations
+
+SEC Company Facts are normalized into canonical annual, quarterly and instant periods. Every stored fact retains its taxonomy, concept, unit, period, form, filing date and accession number.
+
+Deterministic tools calculate:
+
+- revenue and net-income changes;
+- EPS changes;
+- operating and net margins;
+- operating cash flow and free cash flow;
+- selected balance-sheet comparisons;
+- market returns and volatility.
+
+The model may choose the tool and explain the result, but it does not recalculate or overwrite the numeric answer.
 
 ## Filing Change Detection
 
-Filing Change Detection compares two indexed annual reports for the same company. It is an auditable analysis workflow rather than a free-form request to summarize two documents:
+![Filing change detection](assets/filing-change-detection.png)
 
-1. The API validates that both immutable source records are indexed annual reports for the same symbol and that the older period precedes the newer period.
-2. The worker performs reciprocal nearest-neighbour matching over the stored document vectors, so both deletions and additions can be surfaced.
-3. Versioned deterministic rules classify added, deleted, strengthened, weakened and materially rewritten language, then rank candidates by semantic divergence, disclosure topic, wording intensity and changed numeric expressions.
-4. Every candidate stores both source chunk IDs, both original excerpts, both filenames, both filing periods, and native PDF pages or honest SEC HTML passage locators.
-5. Every run stores its algorithm version, thresholds, source-document hashes and embedding-model lineage. A rerun creates a new linked run; it never overwrites the prior result.
-6. Failures remain visible with a stable error code and message. Interrupted work can be reclaimed safely by the PostgreSQL worker queue.
-7. Results begin as `pending`. Confirm, reject and needs-edit decisions are appended to a review-history table while the latest decision is shown on the result.
+Filing Change Detection is an auditable comparison workflow rather than a free-form document summary:
 
-The generated summary is deterministic and cannot alter the paired evidence. A human decision is therefore explicit rather than implied by fluent model output.
+1. Both sources must be immutable annual filings for the same issuer, ordered from older to newer.
+2. Reciprocal semantic matching searches in both directions so additions and deletions are both discoverable.
+3. Versioned rules classify changes and rank them by semantic divergence, topic, language intensity and changed numeric expressions.
+4. Every candidate stores both chunk IDs, excerpts, filing periods and original locators.
+5. Every run stores its algorithm version, thresholds, document hashes and embedding-model lineage.
+6. A rerun creates a new linked record; prior results remain unchanged.
+7. Confirm, reject and needs-edit decisions are appended to the review history.
 
-## Source-grounding contract
+The generated summary cannot modify the paired source evidence.
 
-Every completed research response separates:
+## Retrieval evaluation
 
-- `evidence`: retrieved document passages carrying server-owned document and locator metadata;
-- `inference`: model synthesis generated from evidence and deterministic tool output;
-- `limitations`: data scope, as-of dates and other interpretation constraints;
-- `trace`: the allow-listed tools executed by the agent.
+The administrator evaluation page runs persisted benchmark questions through the same retrieval path used by Research Copilot. It records:
 
-This prevents a fluent model answer from being presented as documentary evidence. Users can follow the original source link and inspect the cited PDF page or SEC HTML passage.
+- Top-1 accuracy;
+- mean reciprocal rank;
+- result counts and latency;
+- lexical-baseline performance;
+- embedding and reranker model identity.
 
-## Request path
+This makes retrieval changes measurable instead of relying on visual inspection of a few answers.
 
-1. The authenticated frontend sends a company-scoped question.
-2. The local LLM returns a JSON tool plan. The API drops any tool not in the server allow-list.
-3. The executor queries company/market data, runs deterministic return and volatility calculations, and conditionally runs document retrieval.
-4. For financial questions, the executor loads normalized SEC XBRL facts and calculates annual or quarterly comparisons before synthesis.
-5. Hybrid retrieval combines PostgreSQL English FTS and cosine search over BGE vectors using reciprocal-rank fusion when qualitative filing evidence is required.
-6. `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks the candidate passages with PyTorch.
-7. The local LLM synthesizes only from the supplied context; numeric-only financial questions use deterministic synthesis.
-8. The API emits SSE lifecycle events and 10-second heartbeats, then returns a structured response with evidence, inference, limitations and trace. Verified evidence remains independently accessible from model synthesis.
+## Reliability and security
 
-## Local development
+- Internal APIs accept only localhost and explicitly trusted service identities.
+- Customer authentication and administrator authorization are enforced by the Next.js server.
+- POST research requests use per-actor rate limiting.
+- Responses carry request IDs and structured latency logs.
+- SEC requests use bounded retries and exponential backoff.
+- SSE heartbeats keep long-running requests observable through reverse proxies.
+- Model context is bounded and response schemas are validated.
+- Source evidence remains accessible independently from generated interpretation.
+- Uploaded files, credentials, model caches, logs and runtime state are excluded from Git.
 
-The research API and worker are separately deployable services behind the integrated product frontend.
+## Runtime services
+
+| Service | Responsibility |
+| --- | --- |
+| `panel-web` | Authenticated product UI and server-side API gateway |
+| `research-api` | Research requests, filings, facts, retrieval and evaluation endpoints |
+| `research-worker` | Extraction, chunking, embeddings and filing-change work |
+| `research-coverage-worker` | Issuer-level SEC and financial-fact orchestration |
+| PostgreSQL / pgvector | Metadata, facts, queues, chunks, vectors, runs and review history |
+| Ollama | Local structured planning and evidence synthesis |
+
+## Local integration environment
+
+The repository connects to real platform services rather than seeded sample data. Prepare ignored runtime configuration first:
 
 ```bash
-docker build -t aistockcn-research-api:20260813-filing-change-v1 -f apps/api/Dockerfile.research .
-docker build -t aistockcn-panel-web:20260813-filing-change-v1 -f apps/web/Dockerfile .
-docker compose up -d research-api research-worker panel-web
-docker compose ps research-api research-worker panel-web
+cp run/panel.env.example run/panel.env
+cp run/panel_users.example.json run/panel_users.json
 ```
 
-Required runtime values already used by the current installation are read from `run/panel.env`. Do not commit that file. Optional cloud document storage is enabled with `RESEARCH_S3_BUCKET`; local Compose uses the shared `research-uploads` volume when the variable is empty.
+Provide PostgreSQL with `pgvector`, the AiStockCN schema and an Ollama service with the configured model. Then build and start the product services:
 
-The Compose configuration intentionally joins the existing `paper-db` and `ai-services` networks because the copilot is integrated with the live platform database and local Ollama service. A new machine must provide equivalent PostgreSQL/pgvector and Ollama services rather than expecting seeded sample data.
+```bash
+docker compose build research-api panel-web
+docker compose up -d \
+  research-api research-worker research-coverage-worker \
+  us-market-api panel-web
+docker compose ps \
+  research-api research-worker research-coverage-worker \
+  us-market-api panel-web
+```
 
-## User workflow
+Validate the configuration and focused research tests:
 
-1. Sign in to `aistockcn.com`, open Company Research and search by ticker or company name.
-2. Selecting a company opens its Summary first: one compact security strip, an immediately usable AI question box, annual financials, latest filings and the most recent saved filing comparison.
-3. Choose one task from the company navigation: Summary, Ask AI, Financials, Filings, Changes or Compare. Only the selected workspace is displayed; operational ingestion state is not mixed into the customer page.
-4. In Ask AI, enter a focused company question or use a suggested task. The answer separates Document evidence, Model inference and Limitations. The execution trace is available under the collapsed “How this answer was produced” disclosure.
-5. In Financials, inspect normalized SEC facts and their original taxonomy and filing lineage. In Filings, open or add source documents when required.
-6. In Changes, compare two indexed annual reports. Each proposed change carries the older and newer source passage, saved algorithm version and review status; rerunning creates a linked historical result.
-7. In Compare, analyse two or three companies using the same evidence and deterministic financial-data boundary.
+```bash
+docker compose config --quiet
+docker compose run --rm --no-deps -v "$PWD/tests:/tests:ro" research-api \
+  python -m unittest discover -s /tests -p 'test_research_service.py'
+npm --prefix apps/web run build
+```
 
-Coverage queues, ingestion failures and retrieval evaluation belong to the administrator workflow at `/admin/research`; customers do not need to manage them before beginning research.
-
-## Operational boundaries
-
-- Docker Compose is the current public runtime.
-- Real credentials, uploaded documents, logs, model caches and runtime state are excluded from Git.
-- The example secret files define configuration shape only and must never be applied unchanged.
+Local Compose uses the shared `research-uploads` volume. Optional object storage can be configured through `RESEARCH_S3_BUCKET`; secrets remain outside the repository.

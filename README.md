@@ -20,6 +20,26 @@ The integrated Research Copilot answers company questions, compares businesses a
 | Company comparison | Compare two or three businesses through the same evidence and calculation workflow |
 | Filing change detection | Identify added, removed, strengthened or weakened disclosures with both versions shown side by side |
 
+## Product interface
+
+### Company research
+
+![AiStockCN Research Copilot company summary](docs/assets/research-copilot.png)
+
+One security-level workspace connects financial highlights, original filings, cited AI research, disclosure changes and peer comparison.
+
+### Auditable filing changes
+
+![AiStockCN Filing Change Detection](docs/assets/filing-change-detection.png)
+
+Annual-report comparisons retain both source documents, versioned run history and explicit human review.
+
+### US market intelligence
+
+![AiStockCN US market overview](docs/assets/us-market-overview.png)
+
+The US workspace combines market coverage, selection status and research access without mixing administrative telemetry into the investor workflow.
+
 ## What users can do
 
 ### Research a company
@@ -247,5 +267,5 @@ Research Copilot is an evidence-navigation and analysis system, not investment a
 - [User guide](docs/USER_GUIDE.md)
 - [System design specification](docs/SYSTEM_DESIGN_SPEC.md)
 - [System manual](docs/SYSTEM_MANUAL.md)
-- [Production research results](docs/RESULTS.md)
+- [Quantitative model evaluation record](docs/RESULTS.md)
 - [A-share 10-day model profile](docs/A_SHARE_MEDIUM_10D_V2.md)

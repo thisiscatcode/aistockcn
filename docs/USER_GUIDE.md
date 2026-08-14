@@ -1,84 +1,107 @@
-# User Guide
+# AiStockCN User Guide
 
-## Switching between A-shares and US stocks
+AiStockCN provides one authenticated workspace for China A-share workflows, US market intelligence and source-grounded company research.
 
-Authenticated pages now show a market selector in the header:
+**Audience:** investors, analysts and product users
 
-- **US Stocks** opens the additive `/us/*` workspace in USD and New York market time.
-- **A-Shares** returns to the established pages and existing A-share workflow.
+**Product:** [aistockcn.com](https://aistockcn.com)
 
-The selected market is remembered in the browser. The two sides do not combine currencies, model artifacts, paper accounts or execution rules.
+## Sign in and choose a market
 
-The US workspace currently provides live company data, rules-based selection, Research Copilot access and ingestion monitoring. The Models and Paper pages deliberately show validation gates until sufficient history and walk-forward results exist; a visible gated state is not a system error.
+After sign-in, AiStockCN opens the A-share Overview. Use the market switcher to move between:
 
-## What The Dashboard Is For
+- **A-Shares** — portfolio, market data, ranked signals and paper workflow in RMB and Shanghai time.
+- **US Stocks** — US market data, company research, rules-based selections and the USD paper workspace in New York time.
 
-The web panel is built for operators and product users who need to inspect the current state of the quant workflow without opening files or shell logs manually.
+Market currencies, model artifacts and execution rules remain separate. Switching the interface never combines the two portfolios.
 
-## Main Pages
+## US Intelligence navigation
 
-### Overview
+The US workspace uses one persistent navigation rail:
 
-- quick health snapshot
-- latest dataset and model signals
-- recent batch pulse
+| Page | Use it for |
+| --- | --- |
+| **Overview** | Market coverage, product status and latest US selection |
+| **Research Copilot** | Company financials, filings, cited Q&A, changes and comparison |
+| **Explorer** | Search NASDAQ and NYSE companies and inspect daily observations |
+| **Picks** | Review the latest rules-based Cat and Lobster selections |
+| **Paper** | Review the USD simulation account and its activation status |
 
-### Pipeline
+Administrators additionally see System, Data Jobs, Models and Admin. These operational tools are intentionally absent from investor accounts.
 
-- daily pipeline status
-- per-step runtime details
-- workflow control actions for admins
+![US market overview](assets/us-market-overview.png)
 
-### Explorer
+## Research a company
 
-- inspect saved parquet datasets
-- search, sort, and export records
+Open **Research Copilot**, then search by ticker or company name. Selecting a company opens its Summary.
 
-### Models
+![Research Copilot company summary](assets/research-copilot.png)
 
-- latest training metrics
-- backtest summary
-- feature importance
-- active market/model version, validation state and activation history from Model Registry
+The security header shows the latest available price context, P/E, EPS and volume. Company research is organized into six tasks:
 
-### Picks
+| Task | Purpose |
+| --- | --- |
+| **Summary** | Financial highlights, recent filings and the latest saved filing comparison |
+| **Ask AI** | Ask a focused question and inspect its evidence and reasoning boundary |
+| **Financials** | Review normalized SEC financial facts, periods, units and filing lineage |
+| **Filings** | Open original filings and manage source documents |
+| **Changes** | Compare annual filings and review material disclosure changes |
+| **Compare** | Analyse two or three companies through the same evidence workflow |
 
-- latest ranked inference results
-- highest-scoring names in the current snapshot
+## Ask a source-grounded question
 
-### Paper
+Good questions are specific about the subject and period, for example:
 
-- paper-trading daemon status
-- gateway health
-- target holdings, live positions, and order history
-- exact model version and deployment revision used for the latest reconciliation
+- How did revenue, operating margin and free cash flow change in the latest fiscal year?
+- What risks did management strengthen or add between the last two annual reports?
+- What evidence supports the current margin trend?
+- Compare the latest revenue growth and risk disclosures of AAPL, MSFT and NVDA.
 
-### Admin
+While the request runs, the page shows the current research stage. A completed answer is separated into:
 
-- schema and artifact alignment checks
-- workflow map and runtime artifact overview
+- **Document evidence** — filing passages with original source links and locators;
+- **Financial and market evidence** — typed facts and deterministic calculations with as-of dates;
+- **Model inference** — interpretation based on the supplied evidence;
+- **Limitations** — scope and timing context needed to read the answer correctly;
+- **How this answer was produced** — the approved tools executed by the agent.
 
-## Typical Review Flow
+For PDFs, citations use the original page number. SEC HTML has no stable native pagination, so it uses an explicit passage locator.
 
-1. Open `Overview` for the current snapshot.
-2. Inspect `Pipeline` to verify the latest workflow state.
-3. Open `Picks` to review ranked signals.
-4. Use `Models` to inspect validation and backtest metrics.
-5. Use `Paper` when reviewing the downstream execution path.
+## Review filing changes
 
-## Login
+Open **Changes**, choose the older and newer annual filings, then run change detection.
 
-The public repository includes only example auth files. For local use:
+![Filing change detection](assets/filing-change-detection.png)
 
-```bash
-cp run/panel.env.example run/panel.env
-cp run/panel_users.example.json run/panel_users.json
-```
+The workflow identifies candidate additions, deletions, strengthened language, weakened language and material rewrites. Each result preserves both original excerpts and both source locators.
 
-Update those local copies with your own secrets before starting the panel.
-Panel users now use `password_hash` entries instead of plaintext `password`.
-Generate a new hash with:
+Review decisions are explicit:
 
-```bash
-node apps/web/scripts/hash-password.mjs 'replace-with-a-real-password'
-```
+- **Confirm** — the candidate represents a material disclosure change;
+- **Reject** — the candidate should not be treated as a material change;
+- **Needs edit** — the paired evidence is useful but the classification or wording needs revision.
+
+Rerunning a comparison creates a linked historical run instead of overwriting the earlier record.
+
+## Compare companies
+
+Open **Compare** from a selected company, add one or two peers, then enter a common research question. Use comparable periods and units when interpreting financial values. The result uses the same document, financial and calculation boundaries for every company.
+
+## A-share workspace
+
+The established A-share interface provides:
+
+- **Overview** — portfolio summary, current positions, AI picks and planned orders;
+- **Explorer** — inspect and export saved datasets;
+- **Picks** — ranked signals from the selected profile and active deployment;
+- **Paper** — account state, target holdings, positions, orders and reconciliation history.
+
+Administrator-only pages expose pipeline control, model validation, activation history and system monitoring.
+
+## Reading financial information responsibly
+
+- Check the as-of date before comparing prices or market metrics.
+- Open cited filings before relying on a qualitative claim.
+- Treat model inference as analysis, not documentary fact.
+- Do not interpret research rankings or paper results as a promise of future returns.
+- Use original filings and regulated professional advice when making financial decisions.

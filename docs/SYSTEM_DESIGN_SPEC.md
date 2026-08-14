@@ -1,127 +1,236 @@
-# System Design Spec
+# AiStockCN System Design
 
-## Goal
+AiStockCN is a multi-market financial research and operations platform. It combines market-data pipelines, quantitative model governance, portfolio workflows and source-grounded US company research behind one authenticated product.
 
-Build an operator-friendly multi-market quant workflow that can ingest data, train market-specific models, produce ranked signals, run backtests, and coordinate paper trading through external gateways.
+**Audience:** product engineering, AI engineering, quantitative research and operations
 
-The A-share workflow is stable and remains the system of record for its existing routes and artifacts. United States equity functionality is additive rather than a refactor of this workflow.
+**Documentation baseline:** 14 August 2026
 
-## Additive US Market Architecture
+## Design goals
 
-- `apps/web/app/us` provides dedicated `/us/*` product pages.
-- `app.us_market_main` runs as a separate, read-only `us-market-api` service.
-- The service reads `us_stock_master`, `us_stock_daily_metrics`, US selection snapshots and job history.
-- The existing panel API and A-share pages keep their current contracts.
-- The US model is an independent `us_5d_v1` pipeline; it must never consume A-share training samples or execution rules.
-- US paper trading remains disabled until historical coverage, corporate-action handling and walk-forward validation pass.
+- Keep China A-share and US market data, currencies, models and execution rules isolated.
+- Provide one coherent customer product without coupling long-running workloads to page requests.
+- Make every model deployment, financial calculation and AI citation traceable to persisted inputs.
+- Separate customer research from administrative and operational controls.
+- Prefer deterministic financial computation and immutable artifacts where consistency matters.
+- Make failures observable and work safely retryable.
 
-The initial US market-data gate requires at least 504 trading dates. Until that gate passes, the product may display company data and rules-based screening but must report the ML model as `insufficient_history` and paper trading as `gated`.
-
-## Web-Fei Protection Boundary
-
-Web-Fei is versioned in the separate private [aistockcn-web-fei](https://github.com/thisiscatcode/aistockcn-web-fei) repository and is outside the US product scope. The current production checkout remains at `apps/web-fei`; its container image, runtime configuration, API contracts and database semantics must remain unchanged. US deployments target only the dedicated US API/workers and the main `apps/web` frontend.
-
-## Research Copilot Architecture
-
-The Research Copilot is an isolated product service over the existing US equity data plane. Its ingestion API can discover and download official SEC 10-K, 10-Q and 8-K filings, while continuing to accept customer-supplied PDFs. A PostgreSQL queue is claimed atomically by the background worker. The worker extracts source-aware text, creates overlapping chunks, generates BGE embeddings and stores them in `pgvector`. A separate financial ingestion path normalizes SEC Company Facts into typed, source-linked periods used by deterministic calculation tools.
+## System context
 
 ```mermaid
 flowchart LR
-    U["Authenticated user"] --> W["Next.js research UI"]
-    W --> A["FastAPI research API"]
-    A --> E["SEC EDGAR"]
-    A --> X["SEC XBRL Company Facts"]
-    A --> Q["PostgreSQL document queue"]
-    Q --> K["Ingestion worker"]
-    K --> V["PostgreSQL FTS + pgvector"]
-    A --> H["Hybrid retrieval + RRF"]
-    V --> H
-    H --> R["PyTorch cross-encoder reranker"]
-    A --> M["US market data + calculations"]
-    X --> F["Canonical financial facts + calculations"]
-    A --> L["Local structured agent"]
-    R --> L
-    M --> L
-    F --> L
-    L --> O["Evidence + inference + limitations + trace"]
+    U["Investor or administrator"] --> W["Next.js product"]
+
+    W --> A["A-share Panel API"]
+    W --> M["US Market API"]
+    W --> R["Research API"]
+
+    A --> CN["A-share data, models, portfolios"]
+    M --> US["US universe, prices, selections"]
+    R --> SEC["SEC filings and Company Facts"]
+    R --> PG["PostgreSQL / pgvector"]
+    R --> L["Local Ollama"]
+
+    R --> Q["Durable research queues"]
+    Q --> DW["Document workers"]
+    Q --> CW["Issuer orchestration worker"]
+
+    A --> MR["Model Registry"]
+    MR --> PT["Paper execution workflow"]
 ```
 
-Citation metadata remains server-owned. PDFs retain native page numbers. SEC HTML records its CIK, accession number, primary document and original archive URL, and uses explicit HTML passage locators because the source does not have stable native pages.
+## Product surfaces
 
-Financial facts are keyed by symbol, taxonomy, concept, unit, period and accession. Concept priority resolves common US-GAAP alternatives without discarding the original concept. Annual and quarterly percentage changes, margins and free cash flow are calculated outside the model. Numeric-only questions bypass generative synthesis and return deterministic, accession-cited answers; qualitative model output remains a separate inference field.
+| Surface | Authorization | Backend |
+| --- | --- | --- |
+| A-share Overview, Explorer, Picks and Paper | Investor or administrator | `panel-api` |
+| US Overview, Explorer, Picks and Paper | Investor or administrator | `us-market-api` plus selected panel services |
+| Research Copilot | Investor or administrator | `research-api` |
+| Platform operations | Administrator | `panel-api` |
+| Research operations and evaluation | Administrator | `research-api` |
 
-## Main Components
+The web application is the public boundary. Internal FastAPI services bind to loopback on the host and accept requests only from configured networks or trusted service identities.
 
-- `download_data.py` and `batch_download_all_a.py`
-  - universe refresh and raw parquet ingestion
-- `feature_engineering.py`
-  - training feature generation
-- `build_inference_features.py`
-  - inference-only feature generation
-- `train_lightgbm.py`
-  - model training, metadata export, and scoring
-- `backtest_walk_forward.py`
-  - walk-forward historical evaluation
-- `paper_trade_futu.py` and `paper_trade_daemon.py`
-  - paper-trading orchestration
-- `apps/api/app/services/model_registry.py`
-  - model version registration, validation, atomic activation, rollback and audit
-- `apps/api`
-  - operational API layer
-- `apps/web`
-  - dashboard and control surface
+## Application architecture
 
-## Architecture
+### Next.js product
 
-The system is organized around immutable parquet/model artifacts, deterministic workflow steps and a PostgreSQL control plane for model deployment state.
+`apps/web` provides authentication, authorization, market-aware navigation and server-side request forwarding. It owns the customer presentation boundary and prevents browser clients from reaching internal APIs directly.
 
-1. Step 1 refreshes the stock universe and raw market data.
-2. Step 2 converts raw data into the training panel.
-3. Step 3 builds the latest inference snapshot.
-4. Step 4 trains each profile, writes scores and publishes an immutable candidate under `quant_data/model_registry/<market>/<model_version>`.
-5. Step 5 runs backtests on historical windows.
-6. An operator records validation results and atomically activates an eligible candidate in PostgreSQL.
-7. Models, Picks and Paper Trading resolve the same active deployment row; Paper verifies the artifact checksums before each cycle.
-8. Paper Trading consumes the resolved score snapshot and reconciles trading intent.
+The A-share interface retains its established route family. US pages use a dedicated workstation shell and left navigation. Research Copilot is shared from the US workspace and uses company-level task navigation inside the selected security.
 
-`run/model_profiles.json` is only a training-profile catalog. It does not contain active deployment state. `quant_data/models` is retained as a migration artifact but is no longer read or overwritten by activation.
+### Panel API
+
+`app.main:app` serves the established A-share data and control plane:
+
+- pipeline and reference-data status;
+- dataset exploration;
+- selections and inference snapshots;
+- Model Registry state and activation;
+- portfolio and paper-trading reconciliation;
+- administrator workflow controls.
+
+### US Market API
+
+`app.us_market_main:app` is a separate read-only service for:
+
+- the US stock master and exchange universe;
+- current daily observations and coverage metadata;
+- company search;
+- rules-based selection snapshots;
+- US model and paper activation gates.
+
+The independent `us_5d_v1` profile cannot consume A-share training samples or execution rules. Historical-data, corporate-action and walk-forward gates control model and paper activation.
+
+### Research API and workers
+
+`app.research_main:app` handles company research, source documents, financial facts, retrieval, agent execution, filing changes and evaluation. CPU- and I/O-intensive work runs in separate workers.
+
+PostgreSQL queues use atomic claims with `FOR UPDATE SKIP LOCKED`. Work state and retry metadata are durable, allowing an interrupted worker to resume without relying on in-memory process state.
+
+## Research data model
+
+```mermaid
+erDiagram
+    COMPANY ||--o{ DOCUMENT : has
+    DOCUMENT ||--o{ CHUNK : contains
+    COMPANY ||--o{ FINANCIAL_FACT : reports
+    COMPANY ||--o{ RESEARCH_RUN : scopes
+    RESEARCH_RUN ||--o{ RETRIEVED_EVIDENCE : records
+    DOCUMENT ||--o{ FILING_CHANGE_RUN : compares
+    FILING_CHANGE_RUN ||--o{ FILING_CHANGE : yields
+    FILING_CHANGE ||--o{ REVIEW_EVENT : receives
+
+    DOCUMENT {
+      uuid id
+      string symbol
+      string accession
+      string source_type
+      string locator_type
+      string sha256
+      string status
+    }
+    CHUNK {
+      uuid id
+      uuid document_id
+      int locator
+      text content
+      vector embedding
+    }
+    FINANCIAL_FACT {
+      string symbol
+      string taxonomy
+      string concept
+      string unit
+      date period_end
+      string accession
+      decimal value
+    }
+    FILING_CHANGE_RUN {
+      uuid id
+      string algorithm_version
+      json thresholds
+      string status
+    }
+```
+
+Actual schema initialization is implemented in the research document, financial and filing-change services. The diagram shows ownership and lineage rather than every physical column.
+
+## Retrieval and answer generation
+
+1. Document extraction preserves PDF page numbers or honest SEC HTML passage locators.
+2. Text is split into overlapping chunks and embedded with `BAAI/bge-small-en-v1.5`.
+3. PostgreSQL English full-text search produces lexical candidates.
+4. `pgvector` cosine similarity produces semantic candidates.
+5. Reciprocal-rank fusion combines both result sets.
+6. A PyTorch cross-encoder reranks the candidate passages.
+7. The agent receives a bounded evidence set plus approved tool output.
+8. The server attaches citation metadata and validates the structured response.
+
+The evidence record exists independently from the model's prose. This makes a cited claim inspectable even if the synthesis layer is changed.
+
+## Deterministic financial boundary
+
+SEC facts are stored with original taxonomy, concept, unit, period, filing form and accession. Canonical concept priorities select comparable values without deleting source lineage.
+
+Annual and quarterly changes, margins, free cash flow, returns and volatility are computed in Python. The LLM can plan these tools and interpret the result; it cannot replace the typed calculation output.
+
+## Quantitative pipeline
+
+```mermaid
+flowchart LR
+    I["Universe and market-data ingestion"] --> N["Normalized Parquet artifacts"]
+    N --> F["Training feature panel"]
+    N --> S["Inference feature snapshot"]
+    F --> T["Profile training"]
+    T --> C["Immutable candidate + checksums"]
+    C --> V["Walk-forward validation"]
+    V --> R["PostgreSQL Model Registry"]
+    R --> P["Ranked picks"]
+    R --> E["Paper execution resolver"]
+    S --> C
+```
+
+Training does not activate a model. Each candidate is written to an immutable artifact path with a SHA-256 manifest. Validation state and deployment state live in PostgreSQL.
 
 ## Model Registry
 
-```mermaid
-flowchart LR
-    T["Train profile"] --> I["Immutable artifact directory\nmanifest + checksums"]
-    I --> V["model_versions\nvalidation status"]
-    V --> A["Atomic activation transaction"]
-    A --> D["model_deployments\none active row per market"]
-    A --> E["model_activation_events\naudit and rollback history"]
-    D --> M["Models"]
-    D --> P["Picks"]
-    D --> R["Paper Trading"]
-```
+The Model Registry removes ambiguity between the model shown in Models, the snapshot used by Picks and the artifact used by Paper Trading.
 
-Each `model_versions` row records market, version, profile, artifact path, SHA-256 manifest, training dates, validation status and metrics. `model_deployments` contains exactly one active model per market plus the paper-enabled flag and monotonic revision. Activation updates the deployment and inserts its audit event in one database transaction; it never copies files.
+| Table | Responsibility |
+| --- | --- |
+| `model_versions` | Market, version, profile, artifact path, manifest, training dates, validation and metrics |
+| `model_deployments` | Exactly one active version per market, paper permission and monotonic revision |
+| `model_activation_events` | Previous/new version, actor, reason, paper state and audit history |
 
-The initial migration selected the artifact actually consumed by production—`medium_10d_v2`—instead of the stale `short_3d` catalog value. This preserved live behavior while removing the contradictory state.
+Activation updates the deployment and audit event in one transaction. Consumers resolve the same deployment row. The paper executor verifies artifact checksums and keeps one resolved revision for the entire reconciliation cycle.
 
-## Deployment Model
+`run/model_profiles.json` is a training-profile catalog, not deployment state.
 
-- Docker Compose is the primary local and server deployment entry point.
-- The panel API serves both inspection and workflow-control routes.
-- API client IP checks should stay narrow: localhost plus explicitly trusted local services only.
-- The web app reads the panel auth config from mounted runtime files.
+## Reliability controls
 
-## Security Model
+| Risk | Control |
+| --- | --- |
+| Long AI response | SSE lifecycle events and 10-second heartbeats |
+| Unknown agent action | Schema validation and a server-side tool allow-list |
+| Hallucinated citation | Server-owned source metadata attached after retrieval |
+| Numeric inconsistency | Deterministic typed calculation tools |
+| Duplicate document | SHA-256 deduplication and accession lineage |
+| Interrupted background work | Durable PostgreSQL state, atomic claim and bounded retry |
+| Conflicting model consumers | Transactional Model Registry deployment row |
+| Unauthorized operations | Signed session, role checks and private API network boundary |
+| Opaque retrieval change | Persisted Top-1, MRR and lexical-baseline evaluation |
 
-- Public repos should include only example config files.
-- Runtime secrets are expected to live in local `run/` files that are git-ignored.
-- The panel uses signed cookies and an admin key for workflow control endpoints.
-- Recent changes also redact the paper-trading agent key from generated control-panel log stubs.
+## Security model
 
-## Operational Priorities
+- Passwords are stored as scrypt hashes; plaintext password configuration is rejected.
+- Session cookies are signed, HTTP-only and secure in production.
+- Administrator authorization is checked on server routes and page entry points.
+- Internal APIs restrict source networks and service identities.
+- Runtime secrets, customer documents, model caches, datasets and logs are ignored by Git.
+- Example configuration defines shape only and must be replaced before use.
+- SEC access uses declared identification and controlled request pacing.
 
-- clear artifact lineage
-- restartable batch jobs
-- inspectable logs and state files
-- low-friction local deployment
-- explicit workflow visibility for operators
+## Deployment model
+
+Docker Compose is the local and current server deployment entry point. The main runtime separates:
+
+- `panel-web`;
+- `panel-api`;
+- `us-market-api`;
+- `research-api`;
+- scaled `research-worker` processes;
+- `research-coverage-worker`;
+- existing PostgreSQL/pgvector and Ollama services on private networks.
+
+Services are restarted independently, so research ingestion does not require rebuilding or restarting the A-share execution path.
+
+## Observability
+
+- request IDs and structured API latency logs;
+- pipeline state and per-step artifacts;
+- research run and filing-change history;
+- document and job status in the administrator workspace;
+- selection snapshot and market-data freshness;
+- Model Registry activation and rollback audit events;
+- persisted retrieval evaluation runs.
