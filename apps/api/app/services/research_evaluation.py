@@ -176,7 +176,7 @@ def list_evaluation_runs(limit: int = 10, market: str | None = None) -> dict[str
                 select id, market, benchmark_name, model_name, retrieval_profile, case_count, top1_accuracy,
                        mean_reciprocal_rank, baseline_top1_accuracy, duration_ms, created_at
                 from research_evaluation_runs
-                where (%s is null or market = %s)
+                where (%s::text is null or market = %s::text)
                 order by created_at desc
                 limit %s
                 """,

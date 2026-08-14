@@ -7,7 +7,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export async function CustomerHomePage() {
   const user = await getCurrentUser();
-  if (user) redirect("/cn/overview");
+  if (user) redirect("/us/overview");
 
   return (
     <div className="page-dark customer-home-page">

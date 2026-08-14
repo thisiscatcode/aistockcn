@@ -8,9 +8,9 @@ AiStockCN provides one authenticated workflow for AI company research, verificat
 
 ## Sign in and choose a market
 
-After sign-in, AiStockCN opens the A-share Overview. Use the market switcher to move between:
+After sign-in, AiStockCN opens the US Stocks Overview. Use the market switcher to move between:
 
-- **A-Shares** — official-disclosure research, signals, portfolio state and controlled execution in RMB and Shanghai time.
+- **CN Stocks** — official-disclosure research, signals, portfolio state and controlled execution in RMB and Shanghai time.
 - **US Stocks** — cited company research, US signals, research portfolios and execution-readiness gates in USD and New York time.
 
 Market currencies, model artifacts and execution rules remain separate. Switching the interface never combines the two portfolios.
