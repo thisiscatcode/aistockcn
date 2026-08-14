@@ -116,9 +116,9 @@ export default async function AdminPage() {
     >
       <AdminNavigation active="platform" />
       <section className="admin-workspace-links" aria-label="Operational workspaces">
-        <Link href="/system-monitor"><strong>A-share monitor</strong><span>Runtime and service health</span></Link>
-        <Link href="/batch"><strong>A-share data pipeline</strong><span>Batch progress and controls</span></Link>
-        <Link href="/models"><strong>A-share models</strong><span>Registry, validation and activation</span></Link>
+        <Link href="/system-monitor"><strong>CN stock monitor</strong><span>Runtime and service health</span></Link>
+        <Link href="/batch"><strong>CN stock data pipeline</strong><span>Batch progress and controls</span></Link>
+        <Link href="/models"><strong>CN stock models</strong><span>Registry, validation and activation</span></Link>
         <Link href="/us/system-monitor"><strong>US market monitor</strong><span>Runtime and service health</span></Link>
         <Link href="/us/batch"><strong>US data pipeline</strong><span>Coverage and batch status</span></Link>
         <Link href="/us/models"><strong>US model readiness</strong><span>Pipeline and model gates</span></Link>

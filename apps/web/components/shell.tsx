@@ -8,6 +8,7 @@ import { ShanghaiTime } from "@/components/shanghai-time";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MarketSwitcher } from "@/components/market-switcher";
 import { getMarketCapabilities, type MarketStage } from "@/lib/api";
+import { BrandMark } from "@/components/brand-mark";
 
 export async function Shell({
   title,
@@ -59,7 +60,7 @@ export async function Shell({
       <div className="us-terminal-shell">
         <aside className="us-terminal-sidebar">
           <div className="us-terminal-brand">
-            <span className="us-terminal-mark" aria-hidden="true">A</span>
+            <BrandMark className="aistock-brand-mark-sidebar" />
             <span><strong>AiStockCN</strong><small>Equity Intelligence</small></span>
           </div>
 

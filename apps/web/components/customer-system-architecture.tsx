@@ -9,7 +9,7 @@ const productSteps = [
 const principles = [
   { label: "Evidence first", title: "Conclusions you can inspect", body: "Material claims link to document pages, financial periods and deterministic calculations. Model inference is labelled separately." },
   { label: "Test before use", title: "Signals evaluated out of sample", body: "Market-specific features and models pass leakage controls, walk-forward validation and registry gates before activation." },
-  { label: "One product", title: "Research connected to decisions", body: "US stocks and A-shares share one workflow while preserving each market’s sources, calendar, costs and execution rules." }
+  { label: "One product", title: "Research connected to decisions", body: "US stocks and CN stocks share one workflow while preserving each market’s sources, calendar, costs and execution rules." }
 ];
 
 export function CustomerSystemArchitecture() {

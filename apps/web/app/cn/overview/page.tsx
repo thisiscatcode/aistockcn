@@ -14,7 +14,7 @@ export default async function CnOverviewPage() {
   const account = overview.account;
 
   return (
-    <Shell title="A-Share Overview" subtitle="Market and account context" locale={user.locale} username={user.displayName} role={user.role} market="CN">
+    <Shell title="CN Stocks Overview" subtitle="Market and account context" locale={user.locale} username={user.displayName} role={user.role} market="CN">
       <section className="product-stage-heading">
         <div><span className="stage-icon">▦</span><div><h1>Market Overview</h1><p>Today&apos;s account state and direct access to the full investment workflow.</p></div></div>
         <span className="capability-label status-live">Live</span>

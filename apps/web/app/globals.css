@@ -4789,14 +4789,25 @@ select {
 .unified-home-hero { min-height: auto; padding-top: 0; }
 .landing-nav { display: flex; align-items: center; justify-content: space-between; width: min(1260px, calc(100% - 36px)); margin: 0 auto; padding: 20px 0; }
 .landing-brand { display: flex; align-items: center; gap: 10px; color: #f8fafc; text-decoration: none; font-size: 1.1rem; }
-.landing-brand > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: #06111f; background: #67e8f9; font-weight: 900; }
+.landing-brand strong { font-size: 1.03rem; font-weight: 820; letter-spacing: .09em; text-transform: uppercase; }
+.aistock-brand-mark { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid rgb(125 211 252 / 42%); border-radius: 12px; color: #fff; background: linear-gradient(145deg, #0b2746 0%, #1654a8 54%, #087b79 100%); box-shadow: 0 10px 28px rgb(14 165 233 / 22%), inset 0 1px 0 rgb(255 255 255 / 18%); }
+.aistock-brand-mark svg { width: 31px; height: 31px; overflow: visible; }
+.aistock-brand-mark .brand-candle { fill: rgb(103 232 249 / 15%); stroke: #77e6f5; stroke-width: 1.25; }
+.aistock-brand-mark .brand-candle-mid { stroke: #a5b4fc; }
+.aistock-brand-mark .brand-candle-right { stroke: #6ee7b7; }
+.aistock-brand-mark .brand-trend { fill: none; stroke: #fff; stroke-width: 2.35; stroke-linecap: round; stroke-linejoin: round; }
+.aistock-brand-mark .brand-market-us { fill: #67e8f9; }
+.aistock-brand-mark .brand-market-cn { fill: #6ee7b7; stroke: rgb(255 255 255 / 80%); stroke-width: .8; }
 .landing-nav > div { display: flex; align-items: center; gap: 24px; }
 .landing-nav > div a { color: #bac6d7; text-decoration: none; font-size: .94rem; font-weight: 650; }
 .landing-nav > div a:hover { color: #fff; }
 .landing-nav .landing-login { padding: 9px 14px; border: 1px solid #334765; border-radius: 9px; color: #fff; }
-.unified-hero-grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(360px, .82fr); align-items: center; gap: clamp(36px, 6vw, 84px); width: min(1260px, 100%); margin: 0 auto; }
-.unified-hero-grid h1 { max-width: 880px; margin: 10px 0 18px; color: #f8fafc; font-size: clamp(2.65rem, 5vw, 5rem); line-height: 1.01; letter-spacing: -.055em; }
-.unified-hero-grid .hero-panel-copy-lead { max-width: 790px; color: #b9c6d8; font-size: clamp(1.08rem, 1.5vw, 1.28rem); line-height: 1.58; }
+.unified-hero-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(360px, .88fr); align-items: center; gap: clamp(36px, 5vw, 70px); width: min(1260px, 100%); margin: 0 auto; }
+.unified-hero-title-stack { display: grid; gap: 4px; margin: 12px 0 22px; }
+.unified-hero-grid .unified-hero-title-stack h1 { max-width: 760px; margin: 0; padding: 0; color: #f8fafc; font-size: clamp(3.25rem, 5.2vw, 4.65rem); line-height: .98; letter-spacing: -.052em; }
+.unified-hero-thesis { margin: 0; color: #c7d2fe; font-size: clamp(2.05rem, 3.6vw, 3.15rem); font-weight: 760; line-height: 1.05; letter-spacing: -.04em; }
+.unified-hero-outcome { width: fit-content; margin: 10px 0 0; padding: 7px 11px; border: 1px solid rgb(103 232 249 / 24%); border-radius: 999px; color: #73e7f4; background: rgb(14 116 144 / 13%); font-size: .82rem; font-weight: 820; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
+.unified-hero-grid .hero-panel-copy-lead { max-width: 690px; color: #b9c6d8; font-size: clamp(1.04rem, 1.35vw, 1.18rem); line-height: 1.55; }
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 28px; }
 .landing-primary-cta, .landing-secondary-cta { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 18px; padding: 0 18px; border-radius: 10px; text-decoration: none; font-size: .98rem; font-weight: 800; }
 .landing-primary-cta { color: #06111f; background: #67e8f9; box-shadow: 0 10px 30px rgb(103 232 249 / 18%); }
@@ -4815,7 +4826,7 @@ select {
 .product-flow .case-flow-step strong { display: flex; align-items: center; gap: 7px; }
 .product-flow .case-flow-step strong b { color: #75e8f5; font-size: .9em; }
 
-@media (max-width: 900px) {
+@media (max-width: 1080px) {
   .unified-hero-grid { grid-template-columns: 1fr; }
   .landing-evidence-card { max-width: 650px; }
   .landing-nav > div > a:not(.landing-login) { display: none; }
@@ -4823,7 +4834,9 @@ select {
 
 @media (max-width: 560px) {
   .landing-nav { width: calc(100% - 24px); }
-  .unified-hero-grid h1 { font-size: 2.45rem; }
+  .unified-hero-grid .unified-hero-title-stack h1 { font-size: 2.8rem; }
+  .unified-hero-thesis { font-size: 2rem; }
+  .unified-hero-outcome { border-radius: 9px; font-size: .72rem; line-height: 1.35; }
   .landing-actions { align-items: stretch; }
   .landing-actions a { width: 100%; }
   .landing-evidence-card { padding: 16px; }
@@ -8444,10 +8457,9 @@ select {
   font-size: 0.95rem;
 }
 
-.customer-home-hero .hero-landing h1,
-.customer-home-hero h1 {
+.customer-home-hero .unified-hero-title-stack h1 {
   margin-top: -2px;
-  font-size: clamp(3.8rem, 6vw, 5.25rem);
+  font-size: clamp(3.25rem, 5.2vw, 4.65rem);
 }
 
 .customer-home-hero .hero-platform-title {
@@ -8576,9 +8588,8 @@ select {
     font-size: 0.84rem;
   }
 
-  .customer-home-hero .hero-landing h1,
-  .customer-home-hero h1 {
-    font-size: 3.25rem;
+  .customer-home-hero .unified-hero-title-stack h1 {
+    font-size: 2.8rem;
   }
 
   .customer-home-hero .hero-platform-title {

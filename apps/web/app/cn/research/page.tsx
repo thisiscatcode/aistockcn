@@ -27,13 +27,13 @@ export default async function CnResearchPage({
   const matches = result.companies;
 
   return (
-    <Shell title="A-Share Research" subtitle="Official disclosures and financial evidence" locale={user.locale} username={user.displayName} role={user.role} market="CN">
+    <Shell title="CN Stock Research" subtitle="Official disclosures and financial evidence" locale={user.locale} username={user.displayName} role={user.role} market="CN">
       <section className="product-stage-heading">
-        <div><span className="stage-icon">✦</span><div><h1>Company Research</h1><p>Find an A-share company and review traceable market and disclosure evidence.</p></div></div>
+        <div><span className="stage-icon">✦</span><div><h1>Company Research</h1><p>Find a CN stock and review traceable market and disclosure evidence.</p></div></div>
         <span className="capability-label status-in_validation">In validation</span>
       </section>
       <form className="us-stock-search product-search" action="/cn/research" method="get">
-        <input name="q" defaultValue={query} placeholder="Search ticker or company name" aria-label="Search A-share companies" autoFocus />
+        <input name="q" defaultValue={query} placeholder="Search ticker or company name" aria-label="Search CN stocks" autoFocus />
         <button type="submit">Search</button>
         {query ? <Link href="/cn/research">Clear</Link> : null}
       </form>
@@ -52,7 +52,7 @@ export default async function CnResearchPage({
         <MetricCard label="Evidence Policy" value="Official first" hint="Exchange disclosures before third-party data" />
         <MetricCard label="Language" value="中文 / English" />
       </section>
-      <Panel title={query ? `Results for “${query}”` : "A-Share companies"}>
+      <Panel title={query ? `Results for “${query}”` : "CN stock companies"}>
         <DataTable
           rows={matches.map((stock) => ({ code: stock.symbol, code_href: `/cn/research?symbol=${encodeURIComponent(stock.symbol)}`, company: stock.stock_name_zh || stock.stock_name, exchange: stock.market }))}
           columns={[{ key: "code", label: "Ticker" }, { key: "company", label: "Company" }, { key: "exchange", label: "Exchange" }]}

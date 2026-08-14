@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { CustomerSystemArchitecture } from "@/components/customer-system-architecture";
+import { BrandMark } from "@/components/brand-mark";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function CustomerHomePage() {
@@ -13,17 +14,21 @@ export async function CustomerHomePage() {
       <div className="shell shell-dark customer-home-shell">
         <header className="hero-landing customer-home-hero unified-home-hero">
           <nav className="landing-nav" aria-label="Public navigation">
-            <Link href="/" className="landing-brand"><span>A</span><strong>AiStockCN</strong></Link>
+            <Link href="/" className="landing-brand" aria-label="AiStockCN home"><BrandMark /><strong>AiStockCN</strong></Link>
             <div><a href="#product-flow">Product</a><a href="#quantitative-methodology">Methodology</a><Link href="/login" className="landing-login">Sign in</Link></div>
           </nav>
           <section className="hero-landing-stage">
             <div className="unified-hero-grid">
               <div className="hero-panel-copy-wrap">
-                <p className="eyebrow hero-dark-eyebrow">US STOCKS + A-SHARES</p>
-                <h1>Research companies with AI. Validate every conclusion. Turn insights into tested strategies.</h1>
+                <p className="eyebrow hero-dark-eyebrow">US STOCKS + CN STOCKS</p>
+                <div className="unified-hero-title-stack">
+                  <h1>Research with AI.</h1>
+                  <p className="unified-hero-thesis">Verify every conclusion.</p>
+                  <p className="unified-hero-outcome">From evidence to tested strategies.</p>
+                </div>
                 <p className="hero-panel-copy hero-panel-copy-lead">
-                  Search 10,000+ US and China equities, analyse filings and financials with verifiable sources,
-                  and connect research to backtested signals and controlled execution.
+                  Analyse 10,000+ US and China stocks through filings, financials, source-linked answers,
+                  reproducible signals and controlled execution.
                 </p>
                 <div className="landing-actions">
                   <Link href="/login?return_to=%2Fus%2Fresearch%3Fsymbol%3DAAPL" className="landing-primary-cta">Research AAPL <span>→</span></Link>

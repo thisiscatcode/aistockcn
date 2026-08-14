@@ -27,7 +27,7 @@ export function MarketSwitcher({ market }: { market: "CN" | "US" }) {
         aria-current={market === "CN" ? "page" : undefined}
         onClick={() => remember("CN")}
       >
-        A-Shares
+        CN Stocks
       </Link>
     </div>
   );

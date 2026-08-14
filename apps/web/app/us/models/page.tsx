@@ -15,7 +15,7 @@ export default async function UsModelsPage() {
   return (
     <UsShell user={user} title="US Models" subtitle="Training and validation gates">
       <section className="metrics-grid">
-        <MetricCard label="Profile" value={model.profile.name} hint="Independent from all A-share models" />
+        <MetricCard label="Profile" value={model.profile.name} hint="Independent from all CN stock models" />
         <MetricCard label="Horizon" value={`${model.profile.horizon_trading_days} trading days`} hint="Next open to fifth close" />
         <MetricCard label="Benchmark" value={model.profile.benchmark.symbol} hint={model.profile.benchmark.name} />
         <MetricCard label="Available History" value={`${formatNumber(gate.available_trading_dates, user.locale)} days`} hint={`${formatNumber(gate.required_trading_dates, user.locale)} required`} />
@@ -28,7 +28,7 @@ export default async function UsModelsPage() {
         </div>
         <GateChecklist items={[
           { label: "Historical depth", ready: gate.history_ready, detail: `${gate.available_trading_dates} / ${gate.required_trading_dates} trading days.` },
-          { label: "US-only training", ready: gate.training_ready, detail: "The model will train only on United States equities; A-share samples are never mixed in." },
+          { label: "US-only training", ready: gate.training_ready, detail: "The model will train only on United States equities; CN stock samples are never mixed in." },
           { label: "Walk-forward evaluation", ready: gate.walk_forward_ready, detail: "Out-of-sample rank IC, net return, Sharpe and drawdown must be published before activation." },
           { label: "Paper activation", ready: gate.ready, detail: "No US orders can be generated while any gate remains incomplete." }
         ]} />

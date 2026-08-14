@@ -26,7 +26,7 @@ export default async function UsPaperPage() {
       <Panel title="Validation Gates" aside={<span className="pill">No order actions</span>}>
         <GateChecklist items={[
           { label: "Adjusted historical data", ready: gate.history_ready, detail: `${gate.available_trading_dates} / ${gate.required_trading_dates} dates; ${gate.available_symbols_with_history} / ${gate.required_symbols_with_history} symbols ready.` },
-          { label: "US 5D model candidate", ready: gate.training_ready, detail: "The model, calendar and artifacts remain isolated from A-share production." },
+          { label: "US 5D model candidate", ready: gate.training_ready, detail: "The model, calendar and artifacts remain isolated from CN stock production." },
           { label: "Walk-forward passed", ready: gate.walk_forward_ready, detail: "Out-of-sample performance and costs must pass the published thresholds." },
           { label: "Registry activation", ready: gate.ready, detail: "Activation is atomic and validation-gated; it still cannot submit a broker order." },
           { label: "Broker order submission", ready: false, detail: "Intentionally disabled for the US market in this release." }
