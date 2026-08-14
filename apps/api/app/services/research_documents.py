@@ -391,6 +391,9 @@ def _write_connection(settings: Settings | None = None) -> Iterator[Any]:
 def init_research_document_schema() -> None:
     with _write_connection() as conn:
         with conn.cursor() as cur:
+            # API and worker containers start together during deploys. Serialize DDL so
+            # concurrent idempotent migrations cannot deadlock on PostgreSQL catalog locks.
+            cur.execute("select pg_advisory_xact_lock(%s)", (87_072_401,))
             cur.execute(RESEARCH_SCHEMA_SQL)
             cur.execute(MARKET_NEUTRAL_RESEARCH_SCHEMA_SQL)
         conn.commit()

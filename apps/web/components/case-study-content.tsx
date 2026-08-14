@@ -17,7 +17,7 @@ const capabilityCards = [
   {
     label: "Agent execution",
     title: "Structured plans with allow-listed tools",
-    body: "A local LLM creates a JSON plan. FastAPI validates it before executing company lookup, market history, deterministic calculations and document retrieval, with progress streamed over SSE.",
+    body: "A schema-constrained model creates a JSON plan. FastAPI validates it before executing company lookup, market history, deterministic calculations and document retrieval, with progress streamed over SSE.",
     tags: ["Tool calling", "Structured output", "SSE"]
   },
   {
@@ -64,8 +64,8 @@ const decisions = [
   },
   {
     id: "ADR-03",
-    title: "Run the LLM locally",
-    reason: "Ollama qwen2.5:3b keeps the research service independent of a paid API key while preserving the same structured planning and synthesis contracts."
+    title: "Use a replaceable model-provider boundary",
+    reason: "The research service calls Groq through an OpenAI-compatible adapter with strict schemas, a bounded latency budget and deterministic evidence fallback when the provider is unavailable."
   },
   {
     id: "ADR-04",
@@ -209,7 +209,7 @@ model_inference:
         </div>
         <div className="case-stack-list">
           <span>FastAPI</span><span>Next.js</span><span>PostgreSQL</span><span>pgvector</span>
-          <span>PyTorch</span><span>Ollama</span><span>Docker Compose</span><span>LightGBM</span>
+          <span>PyTorch</span><span>Groq GPT-OSS</span><span>Docker Compose</span><span>LightGBM</span>
           <span>Pandas</span><span>PyArrow</span><span>Structured logging</span><span>SSE</span>
         </div>
       </section>

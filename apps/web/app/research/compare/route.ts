@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json", "X-Research-Actor": user.username },
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(180_000)
+      signal: AbortSignal.timeout(35_000)
     });
     const payload = await response.json().catch(() => ({ detail: "Invalid comparison response" }));
     return NextResponse.json(payload, { status: response.status });

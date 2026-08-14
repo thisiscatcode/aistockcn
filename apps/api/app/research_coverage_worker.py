@@ -11,8 +11,6 @@ from app.services.research_coverage import (
     reconcile_coverage_jobs,
     seed_core_company_coverage,
 )
-from app.services.research_documents import init_research_document_schema
-from app.services.research_financials import init_research_financial_schema
 
 
 LOGGER = logging.getLogger("aistockcn.research.coverage")
@@ -36,8 +34,6 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    init_research_document_schema()
-    init_research_financial_schema()
     if args.seed:
         result = seed_core_company_coverage(limit=args.seed)
         LOGGER.info(

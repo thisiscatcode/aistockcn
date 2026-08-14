@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       },
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(180_000)
+      signal: AbortSignal.timeout(35_000)
     });
     if (!response.body) {
       return NextResponse.json({ detail: "Research stream unavailable" }, { status: 503 });

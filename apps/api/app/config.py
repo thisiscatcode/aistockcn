@@ -40,9 +40,12 @@ class Settings:
     futu_gateway_agent_key_header: str
     futu_gateway_account_id: int | None
     paper_db_url: str | None
+    research_llm_provider: str
     research_llm_base_url: str
     research_llm_model: str
+    research_llm_api_key: str | None
     research_llm_timeout_seconds: int
+    research_llm_max_retries: int
     research_upload_dir: Path
     research_max_upload_bytes: int
     research_embedding_model: str
@@ -186,12 +189,20 @@ def get_settings() -> Settings:
         futu_gateway_agent_key_header=os.getenv("FUTU_GATEWAY_AGENT_KEY_HEADER", "X-Agent-Key").strip() or "X-Agent-Key",
         futu_gateway_account_id=_optional_int_env("FUTU_GATEWAY_ACCOUNT_ID"),
         paper_db_url=(os.getenv("PAPER_DB_URL") or "").strip() or None,
+        research_llm_provider=(os.getenv("RESEARCH_LLM_PROVIDER", "groq").strip() or "groq").lower(),
         research_llm_base_url=(
-            os.getenv("RESEARCH_LLM_BASE_URL", "http://ollama:11434").strip()
-            or "http://ollama:11434"
+            os.getenv("RESEARCH_LLM_BASE_URL", "https://api.groq.com/openai/v1").strip()
+            or "https://api.groq.com/openai/v1"
         ).rstrip("/"),
-        research_llm_model=os.getenv("RESEARCH_LLM_MODEL", "qwen2.5:3b").strip() or "qwen2.5:3b",
-        research_llm_timeout_seconds=max(_int_env("RESEARCH_LLM_TIMEOUT_SECONDS", 120), 10),
+        research_llm_model=(
+            os.getenv("RESEARCH_LLM_MODEL", "openai/gpt-oss-20b").strip()
+            or "openai/gpt-oss-20b"
+        ),
+        research_llm_api_key=(
+            os.getenv("RESEARCH_LLM_API_KEY") or os.getenv("GROQ_API_KEY") or ""
+        ).strip() or None,
+        research_llm_timeout_seconds=max(_int_env("RESEARCH_LLM_TIMEOUT_SECONDS", 20), 1),
+        research_llm_max_retries=max(min(_int_env("RESEARCH_LLM_MAX_RETRIES", 1), 3), 0),
         research_upload_dir=Path(
             os.getenv("RESEARCH_UPLOAD_DIR", "/data/research_uploads").strip()
             or "/data/research_uploads"

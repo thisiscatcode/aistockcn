@@ -29,7 +29,7 @@ flowchart LR
     M --> US["US universe, prices, selections"]
     R --> SEC["SEC filings and Company Facts"]
     R --> PG["PostgreSQL / pgvector"]
-    R --> L["Local Ollama"]
+    R --> L["Groq GPT-OSS API"]
 
     R --> Q["Durable research queues"]
     Q --> DW["Document workers"]
@@ -228,7 +228,7 @@ Docker Compose is the local and current server deployment entry point. The main 
 - `research-api`;
 - scaled `research-worker` processes;
 - `research-coverage-worker`;
-- existing PostgreSQL/pgvector and Ollama services on private networks.
+- existing PostgreSQL/pgvector services and the configured Groq credential.
 
 Services are restarted independently, so research ingestion does not require rebuilding or restarting the A-share execution path.
 

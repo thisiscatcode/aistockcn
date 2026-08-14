@@ -7,11 +7,15 @@ import statistics
 import time
 from contextlib import contextmanager
 from typing import Any, Iterator
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json
+from app.services.research_llm import (
+    ResearchLLMError,
+    call_json_model,
+    model_metadata,
+    provider_name,
+)
 
 try:
     import psycopg
@@ -341,73 +345,8 @@ def _market_calculations(history: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
-    try:
-        value = json.loads(cleaned)
-        return value if isinstance(value, dict) else {}
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start < 0 or end <= start:
-            return {}
-        try:
-            value = json.loads(cleaned[start : end + 1])
-            return value if isinstance(value, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-
-
-def _call_local_json_model(
-    *,
-    prompt: str,
-    settings: Settings,
-    max_output_tokens: int = 240,
-    json_schema: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload = {
-        "model": settings.research_llm_model,
-        "stream": False,
-        "format": json_schema or "json",
-        "options": {
-            "temperature": 0.1,
-            "num_predict": max(64, min(int(max_output_tokens), 480)),
-        },
-        "prompt": prompt,
-    }
-    request = Request(
-        f"{settings.research_llm_base_url}/api/generate",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    raw: dict[str, Any] | None = None
-    last_error: Exception | None = None
-    for attempt in range(3):
-        try:
-            with urlopen(request, timeout=settings.research_llm_timeout_seconds) as response:
-                raw = json.loads(response.read().decode("utf-8"))
-            break
-        except HTTPError as exc:
-            last_error = exc
-            if exc.code < 500:
-                break
-        except TimeoutError as exc:
-            last_error = exc
-            break
-        except (URLError, json.JSONDecodeError) as exc:
-            last_error = exc
-        if attempt < 2:
-            time.sleep(0.25 * (2 ** attempt))
-    if raw is None:
-        raise ResearchError("research_model_unavailable") from last_error
-    return _extract_json_object(str(raw.get("response") or ""))
-
-
 def plan_research_tools(*, question: str, settings: Settings | None = None) -> dict[str, Any]:
-    """Ask the local LLM for a structured tool plan, then validate it server-side."""
+    """Ask the configured LLM for a structured tool plan, then validate it server-side."""
     resolved = settings or get_settings()
     normalized_question = " ".join(str(question or "").split())
     fallback = [
@@ -415,7 +354,7 @@ def plan_research_tools(*, question: str, settings: Settings | None = None) -> d
         "sec_financial_facts", "hybrid_document_search",
     ]
     try:
-        generated = _call_local_json_model(
+        generated = call_json_model(
             settings=resolved,
             max_output_tokens=96,
             json_schema={
@@ -472,12 +411,16 @@ def plan_research_tools(*, question: str, settings: Settings | None = None) -> d
         if not tools:
             tools = fallback
         tools = [tool for tool in RESEARCH_TOOLS if tool in tools]
-        reason = str(generated.get("reason") or "Validated structured plan from the local model.").strip()
-        return {"tools": tools, "reason": reason, "planner": "local_llm_structured_output"}
-    except ResearchError:
+        reason = str(generated.get("reason") or "Validated structured plan from the configured model.").strip()
+        return {
+            "tools": tools,
+            "reason": reason,
+            "planner": f"{provider_name(resolved)}_structured_output",
+        }
+    except ResearchLLMError:
         return {
             "tools": fallback,
-            "reason": "Deterministic fallback plan used because the local planner was unavailable.",
+            "reason": "Deterministic fallback plan used because the model planner was unavailable.",
             "planner": "deterministic_fallback",
         }
 
@@ -571,35 +514,38 @@ def _generate_research_synthesis(
         else
         "No standardized SEC XBRL facts were available, so qualify any numeric financial conclusion."
     )
-    generated = _call_local_json_model(
-        settings=settings,
-        max_output_tokens=400,
-        json_schema={
-            "type": "object",
-            "properties": {
-                "answer": {"type": "string"},
-                "model_inference": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "maxItems": 3,
+    try:
+        generated = call_json_model(
+            settings=settings,
+            max_output_tokens=400,
+            json_schema={
+                "type": "object",
+                "properties": {
+                    "answer": {"type": "string"},
+                    "model_inference": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                    },
                 },
+                "required": ["answer", "model_inference"],
             },
-            "required": ["answer", "model_inference"],
-        },
-        prompt=(
-            "You are an equity research copilot. Answer only from the supplied market and document context. "
-            f"{filing_instruction} {financial_instruction} "
-            "If the question needs evidence that is not supplied, state that limitation. "
-            "Return JSON only with keys answer (string) and "
-            "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct. "
-            "Keep the answer under 100 words and return at most 2 brief inferences.\n\n"
-            f"Question: {question}\n"
-            f"Company context: {json.dumps(model_company_context, default=str)}\n"
-            f"Deterministic calculations: {json.dumps(calculations, default=str)}\n"
-            f"SEC XBRL financial facts: {json.dumps(model_financial_context or {}, default=str)}\n"
-            f"Retrieved document passages: {json.dumps(prompt_documents, default=str)}"
-        ),
-    )
+            prompt=(
+                "You are an equity research copilot. Answer only from the supplied market and document context. "
+                f"{filing_instruction} {financial_instruction} "
+                "If the question needs evidence that is not supplied, state that limitation. "
+                "Return JSON only with keys answer (string) and "
+                "model_inference (array of at most 3 short strings). Keep facts and interpretation distinct. "
+                "Keep the answer under 100 words and return at most 2 brief inferences.\n\n"
+                f"Question: {question}\n"
+                f"Company context: {json.dumps(model_company_context, default=str)}\n"
+                f"Deterministic calculations: {json.dumps(calculations, default=str)}\n"
+                f"SEC XBRL financial facts: {json.dumps(model_financial_context or {}, default=str)}\n"
+                f"Retrieved document passages: {json.dumps(prompt_documents, default=str)}"
+            ),
+        )
+    except ResearchLLMError as exc:
+        raise ResearchError(str(exc)) from exc
     answer = str(generated.get("answer") or "").strip()
     inferences = generated.get("model_inference")
     if not answer:
@@ -878,7 +824,13 @@ def answer_research_question(
                 financial_context=financial_context,
             )
         except ResearchError as exc:
-            if str(exc) not in {"research_model_unavailable", "research_model_invalid_response"}:
+            if str(exc) not in {
+                "research_model_unavailable",
+                "research_model_invalid_response",
+                "research_model_credentials_missing",
+                "research_model_circuit_open",
+                "unsupported_research_llm_provider",
+            }:
                 raise
             synthesis_error = str(exc)
             if deterministic_financial_answer:
@@ -1009,7 +961,7 @@ def answer_research_question(
         "tool_plan": plan,
         "retrieval": retrieval.get("retrieval"),
         "financials": financial_context,
-        "model": {"provider": "ollama", "name": settings.research_llm_model},
+        "model": model_metadata(settings),
         "duration_ms": round((time.perf_counter() - started_at) * 1000, 1),
     }
     result["execution_trace"] = result["agent_steps"]
@@ -1063,49 +1015,64 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
 
     settings = get_settings()
     deterministic_comparison = _deterministic_financial_comparison(companies)
+    synthesis_error: str | None = None
     if deterministic_comparison and not needs_qualitative_synthesis:
         answer = deterministic_comparison
         inference: list[Any] = []
     else:
-        generated = _call_local_json_model(
-            settings=settings,
-            max_output_tokens=240,
-            json_schema={
-                "type": "object",
-                "properties": {
-                    "answer": {"type": "string"},
-                    "model_inference": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "maxItems": 3,
+        try:
+            generated = call_json_model(
+                settings=settings,
+                max_output_tokens=240,
+                json_schema={
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "string"},
+                        "model_inference": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3,
+                        },
                     },
+                    "required": ["answer", "model_inference"],
                 },
-                "required": ["answer", "model_inference"],
-            },
-            prompt=(
-                "You are an equity comparison agent. Compare only the supplied companies and evidence. "
-                "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "
-                "only with answer (string) and model_inference (array of at most 3 strings). Cite document claims "
-                "using the exact supplied locator as [SYMBOL, filename, locator]. Never call an HTML passage a page.\n"
-                f"Question: {normalized_question}\n"
-                f"Company data and calculations: {json.dumps(companies, default=str)}\n"
-                "Document evidence: "
-                + json.dumps(
-                    [
-                        {**item, "claim": str(item.get("claim") or "")[:700]}
-                        for item in document_evidence
-                    ],
-                    default=str,
-                )
-            ),
-        )
+                prompt=(
+                    "You are an equity comparison agent. Compare only the supplied companies and evidence. "
+                    "Never invent filing facts. Separate directly observed evidence from interpretation. Return JSON "
+                    "only with answer (string) and model_inference (array of at most 3 strings). Cite document claims "
+                    "using the exact supplied locator as [SYMBOL, filename, locator]. Never call an HTML passage a page.\n"
+                    f"Question: {normalized_question}\n"
+                    f"Company data and calculations: {json.dumps(companies, default=str)}\n"
+                    "Document evidence: "
+                    + json.dumps(
+                        [
+                            {**item, "claim": str(item.get("claim") or "")[:700]}
+                            for item in document_evidence
+                        ],
+                        default=str,
+                    )
+                ),
+            )
+        except ResearchLLMError as exc:
+            synthesis_error = str(exc)
+            generated = {}
         answer = str(generated.get("answer") or "").strip()
-        if not answer:
-            raise ResearchError("research_model_invalid_response")
         inference = generated.get("model_inference")
         if not isinstance(inference, list):
             inference = []
-        if deterministic_comparison:
+        if synthesis_error:
+            if deterministic_comparison:
+                answer = deterministic_comparison
+            elif document_evidence:
+                answer = (
+                    "AI synthesis is temporarily unavailable. The verified filing evidence for each company "
+                    "is shown below for direct comparison."
+                )
+            else:
+                raise ResearchError(synthesis_error)
+        elif not answer:
+            raise ResearchError("research_model_invalid_response")
+        elif deterministic_comparison:
             inference = [answer, *inference][:3]
             answer = deterministic_comparison
     result = {
@@ -1131,12 +1098,19 @@ def compare_research_companies(*, symbols: list[str], question: str) -> dict[str
             ),
             {
                 "tool": "comparison_synthesis",
-                "status": "completed",
-                "detail": settings.research_llm_model if needs_qualitative_synthesis else "deterministic financial synthesis",
+                "status": "degraded" if synthesis_error else "completed",
+                "detail": synthesis_error or (
+                    settings.research_llm_model if needs_qualitative_synthesis
+                    else "deterministic financial synthesis"
+                ),
             },
         ],
-        "model": {"provider": "ollama", "name": settings.research_llm_model},
+        "model": model_metadata(settings),
     }
     result["execution_trace"] = result["agent_steps"]
     result["limitations"] = ["Market data can be delayed and this output is research assistance, not investment advice."]
+    if synthesis_error:
+        result["limitations"].append(
+            "Model synthesis was unavailable; the response was reduced to verified evidence."
+        )
     return result

@@ -16,11 +16,63 @@ from app.services import research as research_service
 from app.services import research_chunking as research_chunking_service
 from app.services import research_financials as research_financials_service
 from app.services import research_filing_changes as research_filing_changes_service
+from app.services import research_llm as research_llm_service
 from app.services import research_sec as research_sec_service
 from app.services import research_cn_disclosures as research_cn_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_groq_provider_uses_strict_schema_and_bearer_auth(self) -> None:
+        settings = SimpleNamespace(
+            research_llm_provider="groq",
+            research_llm_base_url="https://api.groq.com/openai/v1",
+            research_llm_model="openai/gpt-oss-20b",
+            research_llm_api_key="test-secret",
+            research_llm_timeout_seconds=20,
+            research_llm_max_retries=0,
+        )
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "choices": [{"message": {"content": '{"tools":["company_lookup"],"reason":"Identity"}'}}]
+        }).encode()
+        schema = {
+            "type": "object",
+            "properties": {
+                "tools": {"type": "array", "items": {"type": "string"}},
+                "reason": {"type": "string"},
+            },
+            "required": ["tools", "reason"],
+        }
+
+        with mock.patch.object(research_llm_service, "urlopen", return_value=response) as request_mock:
+            result = research_llm_service.call_json_model(
+                prompt="Plan this question", settings=settings, json_schema=schema
+            )
+
+        request = request_mock.call_args.args[0]
+        payload = json.loads(request.data.decode())
+        strict_schema = payload["response_format"]["json_schema"]["schema"]
+        self.assertEqual(result["tools"], ["company_lookup"])
+        self.assertEqual(request.full_url, "https://api.groq.com/openai/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-secret")
+        self.assertTrue(payload["response_format"]["json_schema"]["strict"])
+        self.assertFalse(strict_schema["additionalProperties"])
+        self.assertNotIn("additionalProperties", schema)
+
+    def test_remote_provider_requires_credentials(self) -> None:
+        settings = SimpleNamespace(
+            research_llm_provider="groq",
+            research_llm_base_url="https://api.groq.com/openai/v1",
+            research_llm_model="openai/gpt-oss-20b",
+            research_llm_api_key=None,
+            research_llm_timeout_seconds=20,
+            research_llm_max_retries=0,
+        )
+        with self.assertRaisesRegex(
+            research_llm_service.ResearchLLMError, "research_model_credentials_missing"
+        ):
+            research_llm_service.call_json_model(prompt="test", settings=settings)
+
     def test_market_scoped_symbol_normalization(self) -> None:
         self.assertEqual(research_service.normalize_research_symbol("sh.600519", "CN"), "600519")
         self.assertEqual(research_service.normalize_research_symbol("000001.sz", "CN"), "000001")
@@ -245,7 +297,7 @@ class ResearchServiceTests(unittest.TestCase):
     def test_financial_only_plan_uses_xbrl_without_document_search(self) -> None:
         with mock.patch.object(
             research_service,
-            "_call_local_json_model",
+            "call_json_model",
             return_value={
                 "tools": ["company_lookup", "hybrid_document_search"],
                 "reason": "Retrieve financial evidence.",
@@ -413,7 +465,7 @@ class ResearchServiceTests(unittest.TestCase):
     def test_structured_planner_drops_unknown_tools(self) -> None:
         with mock.patch.object(
             research_service,
-            "_call_local_json_model",
+            "call_json_model",
             return_value={
                 "tools": ["company_lookup", "shell_exec", "hybrid_document_search", "shell_exec"],
                 "reason": "Use company and filing evidence.",
@@ -508,7 +560,7 @@ class ResearchServiceTests(unittest.TestCase):
         ]
         with mock.patch.object(
             research_service,
-            "_call_local_json_model",
+            "call_json_model",
             return_value={"answer": "Grounded answer.", "model_inference": []},
         ) as model_mock:
             result = research_service._generate_research_synthesis(

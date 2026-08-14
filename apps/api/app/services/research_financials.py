@@ -172,6 +172,7 @@ end $$;
 def init_research_financial_schema() -> None:
     with _write_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("select pg_advisory_xact_lock(%s)", (87_072_402,))
             cur.execute(RESEARCH_FINANCIAL_SCHEMA_SQL)
         conn.commit()
 

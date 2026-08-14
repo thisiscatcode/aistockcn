@@ -100,17 +100,17 @@ All administrative routes enforce the administrator role on the server.
 A research request is executed as a validated multi-step workflow:
 
 1. The authenticated frontend submits a company-scoped question.
-2. A local LLM produces a schema-constrained JSON tool plan.
+2. The configured Groq model produces a schema-constrained JSON tool plan.
 3. FastAPI removes unknown tools and enforces the server-side allow-list.
 4. The executor queries company data, standardized SEC facts, market history and document retrieval as required.
 5. PostgreSQL full-text and `pgvector` candidates are fused with reciprocal-rank fusion.
 6. A PyTorch cross-encoder reranks the retrieved passages.
 7. Deterministic tools calculate financial changes, returns and volatility.
-8. The local model synthesizes only the supplied evidence and tool output.
+8. The configured model synthesizes only the supplied evidence and tool output.
 9. SSE lifecycle events and heartbeats keep the customer informed during long-running analysis.
 10. The API returns evidence, inference, limitations and an execution trace as structured data.
 
-The current planner and synthesizer run through local Ollama, so the product does not require a paid OpenAI API key.
+The production planner and synthesizer use Groq's OpenAI-compatible API with strict JSON schemas and a bounded timeout. If the provider is unavailable or rate-limited, the service falls back to a deterministic plan and verified evidence instead of inventing an answer.
 
 ## Architecture
 
@@ -131,7 +131,7 @@ flowchart LR
     P --> D["Deterministic financial<br/>and market calculations"]
     P --> H["Hybrid retrieval<br/>FTS plus pgvector plus RRF"]
     H --> RR["PyTorch cross-encoder<br/>market-specific reranker"]
-    P --> L["Local Ollama<br/>evidence synthesis"]
+    P --> L["Groq GPT-OSS<br/>structured evidence synthesis"]
 
     R --> Q["PostgreSQL work queue"]
     Q --> K["Background ingestion workers"]
@@ -210,7 +210,7 @@ Research Copilot operates on the same live platform that supports:
 
 - **Frontend:** Next.js 15, React 19, TypeScript
 - **Backend:** FastAPI, Uvicorn, Python 3.12
-- **AI and RAG:** Ollama, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
+- **AI and RAG:** Groq GPT-OSS, structured tool planning, sentence-transformers, PyTorch, PostgreSQL FTS, pgvector
 - **Financial and ML:** Pandas, PyArrow, LightGBM, scikit-learn
 - **Operations:** Docker Compose, structured logging, retries, rate limiting and background workers
 
@@ -232,7 +232,7 @@ AiStockCN uses real platform services rather than seeded sample data. A local in
 
 - Docker and Docker Compose;
 - PostgreSQL with the AiStockCN schema and `pgvector`;
-- an Ollama service with `qwen2.5:3b` on the configured AI-services network;
+- a Groq API key supplied through ignored runtime configuration;
 - authentication values in `run/panel.env` and `run/panel_users.json`.
 
 ```bash

@@ -445,7 +445,7 @@ def research_question_stream(request: ResearchQuestionRequest) -> StreamingRespo
             )
             while True:
                 try:
-                    result = future.result(timeout=10)
+                    result = future.result(timeout=2)
                     break
                 except FutureTimeoutError:
                     yield f"event: status\ndata: {json.dumps({'stage': 'synthesizing', 'message': 'Analyzing cited evidence'})}\n\n"

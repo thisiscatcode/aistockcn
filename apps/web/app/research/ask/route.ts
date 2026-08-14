@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json", "X-Research-Actor": user.username },
       body: JSON.stringify(payload),
       cache: "no-store",
-      signal: AbortSignal.timeout(130_000)
+      signal: AbortSignal.timeout(35_000)
     });
     const body = await response.json().catch(() => ({ detail: "Research service returned an invalid response" }));
     return NextResponse.json(body, { status: response.status });

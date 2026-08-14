@@ -68,12 +68,12 @@ flowchart LR
     O --> W
 ```
 
-The planner and synthesizer run through local Ollama. The current runtime therefore does not require a paid OpenAI API key.
+The planner and synthesizer use Groq's OpenAI-compatible API with strict JSON schemas. The provider call has one end-to-end latency budget; rate limits and provider failures degrade to verified evidence rather than unsupported prose.
 
 ## Agent execution
 
 1. The frontend submits a company-scoped request through an authenticated server route.
-2. The local model creates a schema-constrained JSON plan.
+2. The configured model creates a schema-constrained JSON plan.
 3. FastAPI removes unknown tools and enforces the server-side allow-list.
 4. The executor calls market, financial, calculation and retrieval tools as required.
 5. Lexical and vector candidates are fused with reciprocal-rank fusion.
@@ -180,7 +180,7 @@ This makes retrieval changes measurable instead of relying on visual inspection 
 | `research-worker` | Extraction, chunking, embeddings and filing-change work |
 | `research-coverage-worker` | Issuer-level filing and financial-fact orchestration |
 | PostgreSQL / pgvector | Metadata, facts, queues, chunks, vectors, runs and review history |
-| Ollama | Local structured planning and evidence synthesis |
+| Groq GPT-OSS | Remote structured planning and bounded evidence synthesis |
 
 ## Local integration environment
 
@@ -191,7 +191,7 @@ cp run/panel.env.example run/panel.env
 cp run/panel_users.example.json run/panel_users.json
 ```
 
-Provide PostgreSQL with `pgvector`, the AiStockCN schema and an Ollama service with the configured model. Then build and start the product services:
+Provide PostgreSQL with `pgvector`, the AiStockCN schema and a Groq API key in the ignored runtime configuration. Then build and start the product services:
 
 ```bash
 docker compose build research-api panel-web

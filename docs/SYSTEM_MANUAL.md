@@ -45,7 +45,7 @@ Do not commit the generated files. The Compose runtime also expects:
 
 - the configured PostgreSQL network and AiStockCN schema;
 - `pgvector` for research embeddings;
-- the configured Ollama model on the AI-services network;
+- a Groq API key in the ignored runtime environment;
 - persistent volumes for research documents and model caches.
 
 ## Validate and start
@@ -219,7 +219,7 @@ Repository-wide Python tests can be run in the established data-prep environment
 ### A research request stops progressing
 
 1. Inspect `research-api` and `research-worker` logs using the request or run ID.
-2. Confirm Ollama and PostgreSQL connectivity from the relevant service network.
+2. Confirm Groq API and PostgreSQL connectivity from the research service.
 3. Check the durable job state in the Research Operations page.
 4. Use the supported retry or rerun action so history is retained.
 

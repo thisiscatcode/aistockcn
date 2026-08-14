@@ -7,7 +7,6 @@ import time
 from app.services.research_documents import (
     claim_next_uploaded_document,
     index_research_document_safely,
-    init_research_document_schema,
 )
 from app.services.research_filing_changes import (
     claim_next_filing_change_run,
@@ -28,7 +27,6 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-    init_research_document_schema()
     LOGGER.info("research document worker started")
     while RUNNING:
         document_id = claim_next_uploaded_document()
