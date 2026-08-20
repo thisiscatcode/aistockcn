@@ -238,6 +238,9 @@ def list_us_stocks(*, search: str = "", limit: int = 50, offset: int = 0) -> dic
               m.stock_name_zh as name_zh,
               m.stock_industry_en as industry,
               m.market_cap,
+              m.market_cap_source,
+              m.market_cap_as_of,
+              m.market_cap_is_estimated,
               coalesce(nullif(m.currency, ''), 'USD') as currency,
               d.trade_date,
               d.close,
@@ -285,7 +288,8 @@ def get_us_stock(*, symbol: str, history_limit: int = 260) -> dict[str, Any]:
             select
               symbol, market as exchange, stock_name as name, stock_name_zh as name_zh,
               stock_type, stock_industry_en as industry, stock_industry as industry_zh,
-              market_cap, circulating_shares_yi, earnings_per_share, pe_ratio, ipo_date,
+              market_cap, market_cap_source, market_cap_as_of, market_cap_is_estimated,
+              circulating_shares_yi, earnings_per_share, pe_ratio, ipo_date,
               coalesce(nullif(currency, ''), 'USD') as currency,
               daily_updated_at, details_updated_at
             from us_stock_master

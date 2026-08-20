@@ -164,6 +164,7 @@ The research API and document workers are separate from the customer frontend, s
 ## Reliability and safety
 
 - Financial values and percentage changes are calculated by deterministic tools rather than recomputed by the LLM.
+- US market capitalisation retains provider, as-of date and estimation metadata; Finnhub values are checked against latest price and independently ingested circulating shares before customer display.
 - Model plans and final output use validated structured schemas.
 - Citation metadata is attached from database records after retrieval.
 - Long-running responses emit SSE progress events and regular heartbeats.

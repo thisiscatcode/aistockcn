@@ -4909,6 +4909,18 @@ select {
   font-size: 0.66rem;
 }
 
+.theme-shell-root .research-product-page .research-security-stats span em {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #8a5a00;
+  font-size: 0.58rem;
+  font-style: normal;
+  letter-spacing: 0;
+}
+
 .theme-shell-root .research-product-page .research-security-stats strong {
   font-size: 1rem;
 }

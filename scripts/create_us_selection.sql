@@ -8,6 +8,11 @@ create table if not exists us_stock_master (
   stock_industry_en text,
   stock_industry_short text,
   market_cap numeric,
+  market_cap_source text,
+  market_cap_as_of date,
+  market_cap_is_estimated boolean,
+  market_cap_validation_status text,
+  market_cap_attempted_at timestamptz,
   circulating_shares_yi numeric,
   earnings_per_share numeric,
   pe_ratio numeric,
@@ -30,6 +35,11 @@ alter table us_stock_master
   add column if not exists stock_industry_en text,
   add column if not exists stock_industry_short text,
   add column if not exists market_cap numeric,
+  add column if not exists market_cap_source text,
+  add column if not exists market_cap_as_of date,
+  add column if not exists market_cap_is_estimated boolean,
+  add column if not exists market_cap_validation_status text,
+  add column if not exists market_cap_attempted_at timestamptz,
   add column if not exists circulating_shares_yi numeric,
   add column if not exists earnings_per_share numeric,
   add column if not exists pe_ratio numeric,
@@ -50,6 +60,14 @@ create index if not exists us_stock_master_active_market_idx
 
 create index if not exists us_stock_master_details_updated_idx
   on us_stock_master (details_updated_at asc nulls first, symbol asc);
+
+create index if not exists us_stock_master_market_cap_backfill_idx
+  on us_stock_master (fav_flg desc, details_updated_at asc nulls first, symbol)
+  where is_active = true and del_flg = false and (market_cap is null or market_cap <= 0);
+
+create index if not exists us_stock_master_market_cap_attempt_idx
+  on us_stock_master (market_cap_attempted_at asc nulls first, fav_flg desc, symbol)
+  where is_active = true and del_flg = false and (market_cap is null or market_cap <= 0);
 
 create table if not exists us_stock_daily_metrics (
   trade_date date not null,

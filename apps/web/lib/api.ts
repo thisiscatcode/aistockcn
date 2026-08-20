@@ -819,6 +819,9 @@ export type ResearchCompany = {
   stock_industry_en?: string | null;
   stock_industry_short?: string | null;
   market_cap?: number | string | null;
+  market_cap_source?: string | null;
+  market_cap_as_of?: string | null;
+  market_cap_is_estimated?: boolean | null;
   earnings_per_share?: number | string | null;
   pe_ratio?: number | string | null;
   currency?: string | null;
@@ -1306,6 +1309,9 @@ export type UsStockRow = {
   name_zh?: string | null;
   industry?: string | null;
   market_cap?: number | null;
+  market_cap_source?: string | null;
+  market_cap_as_of?: string | null;
+  market_cap_is_estimated?: boolean | null;
   currency?: string | null;
   trade_date?: string | null;
   close?: number | null;

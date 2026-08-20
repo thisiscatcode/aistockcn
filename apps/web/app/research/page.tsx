@@ -148,6 +148,11 @@ export default async function ResearchPage({
     ? recentVolumes.reduce((total, value) => total + value, 0) / recentVolumes.length
     : null;
   const marketCap = numberValue(company?.market_cap);
+  const marketCapSource = company?.market_cap_source === "finnhub_profile2" ? "Finnhub" : "Calculated";
+  const marketCapAsOf = company?.market_cap_as_of ? formatDate(company.market_cap_as_of) : "—";
+  const marketCapTitle = marketCap !== null && marketCap > 0
+    ? `${company?.market_cap_is_estimated ? "Estimated" : "Source"}: ${marketCapSource} · ${marketCapAsOf}`
+    : "Market cap is not available from a validated source.";
   const latestAnnual = financialResult?.latest_annual;
   const revenue = latestAnnual?.metrics.revenue as ResearchFinancialMetric | undefined;
   const netIncome = latestAnnual?.metrics.net_income as ResearchFinancialMetric | undefined;
@@ -235,7 +240,10 @@ export default async function ResearchPage({
                 <small><i aria-hidden="true">◷</i> Market data · {formatDate(company.trade_date)}</small>
               </div>
               <div className="research-security-stats">
-                <article><span>Market cap</span><strong>{marketCap !== null && marketCap > 0 ? `$${formatMetric(marketCap, { notation: "compact" })}` : "—"}</strong></article>
+                <article title={marketCapTitle}>
+                  <span>Market cap {company.market_cap_is_estimated ? <em>Est.</em> : null}</span>
+                  <strong>{marketCap !== null && marketCap > 0 ? `$${formatMetric(marketCap, { notation: "compact" })}` : "—"}</strong>
+                </article>
                 <article><span>P/E</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
                 <article><span>EPS</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
                 <article><span>Avg volume · 30D</span><strong>{formatMetric(averageVolume30d, { notation: "compact" })}</strong></article>

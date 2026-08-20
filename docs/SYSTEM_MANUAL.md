@@ -4,7 +4,7 @@ This manual covers the current Docker Compose runtime, quantitative pipeline, re
 
 **Audience:** AiStockCN administrators and engineers
 
-**Documentation baseline:** 14 August 2026
+**Documentation baseline:** 20 August 2026
 
 ## Operating principles
 
@@ -76,6 +76,16 @@ docker compose run --rm --entrypoint python data-prep scripts/train_us_5d_model.
 ```
 
 The training command writes an immutable candidate and validation record. It never activates the model or enables US order submission.
+
+## US fundamentals and market capitalisation
+
+The rate-limited details lane updates company metadata and market capitalisation from the existing Finnhub profile feed:
+
+```bash
+python scripts/update_us_selection_data.py --update-details --limit 100
+```
+
+`market_cap` is stored as full USD, with source, as-of date, estimated status and validation-attempt metadata. Provider values are compared with latest close multiplied by independently ingested circulating shares. A difference above 20%, invalid currency or non-positive value leaves the previous validated value unchanged. Missing companies are processed once per daily 03:00 New York batch, with unattempted favorites and larger companies first.
 
 ## Health verification
 

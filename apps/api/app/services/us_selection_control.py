@@ -254,6 +254,7 @@ def _us_details_missing_count(settings: Settings | None = None) -> int:
                         details_updated_at is null
                         or circulating_shares_yi is null
                         or circulating_shares_yi <= 0
+                        or market_cap_attempted_at is null
                       )
                     """
                 )
@@ -646,9 +647,10 @@ def _maybe_start_us_selection_jobs() -> None:
 
     details_missing_count = _us_details_missing_count(settings)
     state["details_missing_count"] = details_missing_count
-    if details_missing_count > 0:
-        state = _maybe_start_scheduled_lane("details", None, "details_local_date", state)
-    elif _due(local_now, settings.us_selection_details_time, "03:00") and state.get("last_details_local_date") != local_date.isoformat():
+    if (
+        _due(local_now, settings.us_selection_details_time, "03:00")
+        and state.get("last_attempted_details_local_date") != local_date.isoformat()
+    ):
         state = _maybe_start_scheduled_lane("details", None, "details_local_date", state)
 
     if local_now.weekday() == 5 and _due(local_now, settings.us_selection_universe_time, "06:00") and state.get("last_universe_local_date") != local_date.isoformat():

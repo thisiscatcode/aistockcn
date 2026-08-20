@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -53,6 +54,15 @@ SCHEMA_DEFAULT = "scripts/create_us_selection.sql"
 class StockQuote:
     close: float
     price_diff: float | None
+
+
+@dataclass(frozen=True)
+class MarketCapDecision:
+    value_usd: float | None
+    source: str | None
+    is_estimated: bool | None
+    status: str
+    deviation_pct: float | None = None
 
 
 FINNHUB_INDUSTRY_TRANSLATIONS: dict[str, tuple[str, str]] = {
@@ -133,6 +143,54 @@ def as_float(value: Any) -> float | None:
         return float(text)
     except (TypeError, ValueError):
         return None
+
+
+def positive_finite_float(value: Any) -> float | None:
+    number = as_float(value)
+    if number is None or not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def finnhub_market_cap_usd(value_millions: Any, currency: Any) -> float | None:
+    if str(currency or "").strip().upper() != "USD":
+        return None
+    value = positive_finite_float(value_millions)
+    return None if value is None else value * 1_000_000
+
+
+def calculated_market_cap_usd(close: Any, shares_yi: Any) -> float | None:
+    price = positive_finite_float(close)
+    shares = positive_finite_float(shares_yi)
+    if price is None or shares is None:
+        return None
+    return price * shares * 100_000_000
+
+
+def resolve_market_cap(
+    *,
+    provider_value_millions: Any,
+    currency: Any,
+    close: Any,
+    shares_yi: Any,
+    max_deviation_pct: float = 20.0,
+) -> MarketCapDecision:
+    normalized_currency = str(currency or "").strip().upper()
+    if normalized_currency != "USD":
+        return MarketCapDecision(None, None, None, "rejected_currency")
+
+    provider_value = finnhub_market_cap_usd(provider_value_millions, normalized_currency)
+    calculated_value = calculated_market_cap_usd(close, shares_yi)
+    if provider_value is not None and calculated_value is not None:
+        deviation_pct = abs(provider_value - calculated_value) / calculated_value * 100
+        if deviation_pct > max_deviation_pct:
+            return MarketCapDecision(None, None, None, "rejected_deviation", round(deviation_pct, 2))
+        return MarketCapDecision(provider_value, "finnhub_profile2", False, "validated", round(deviation_pct, 2))
+    if provider_value is not None:
+        return MarketCapDecision(provider_value, "finnhub_profile2", False, "provider_only")
+    if calculated_value is not None:
+        return MarketCapDecision(calculated_value, "close_x_outstanding_shares", True, "calculated_fallback")
+    return MarketCapDecision(None, None, None, "insufficient_data")
 
 
 def normalize_finnhub_industry(value: Any) -> str | None:
@@ -285,11 +343,26 @@ def details_symbols(conn: Any, *, symbols: list[str], limit: int) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            select symbol
-            from us_stock_master
-            where is_active = true
-              and del_flg = false
-            order by details_updated_at asc nulls first, symbol asc
+            select m.symbol
+            from us_stock_master m
+            left join lateral (
+              select d.close
+              from us_stock_daily_metrics d
+              where d.symbol = m.symbol
+              order by d.trade_date desc
+              limit 1
+            ) latest on true
+            where m.is_active = true
+              and m.del_flg = false
+            order by
+              case when m.market_cap is null or m.market_cap <= 0 then 0 else 1 end,
+              case when m.market_cap_attempted_at is null then 0 else 1 end,
+              case when exists (select 1 from us_stock_favorite_stocks f where f.symbol = m.symbol) then 0 else 1 end,
+              case when coalesce(nullif(m.currency, ''), 'USD') = 'USD' then 0 else 1 end,
+              coalesce(m.market_cap, latest.close * m.circulating_shares_yi * 100000000) desc nulls last,
+              m.market_cap_attempted_at asc nulls first,
+              m.details_updated_at asc nulls first,
+              m.symbol asc
             limit %s
             """,
             [limit],
@@ -540,22 +613,26 @@ def fetch_finnhub_quote(symbol: str, api_key: str) -> StockQuote | None:
     return StockQuote(close=close, price_diff=None if prev_close is None else close - prev_close)
 
 
-def fetch_finnhub_profile(symbol: str, api_key: str) -> dict[str, str | None] | None:
+def fetch_finnhub_profile(symbol: str, api_key: str) -> dict[str, Any] | None:
     url = f"https://finnhub.io/api/v1/stock/profile2?symbol={quote(symbol)}&token={quote(api_key)}"
     data = http_json(url, timeout=12)
     if not isinstance(data, dict) or not data:
         return None
 
     industry_en = normalize_finnhub_industry(data.get("finnhubIndustry"))
-    if industry_en is None:
-        return None
-
     translated = translate_finnhub_industry(industry_en)
     industry, industry_short = translated if translated else (None, None)
     return {
         "stock_industry_en": industry_en,
         "stock_industry": industry,
         "stock_industry_short": industry_short,
+        "currency": str(data.get("currency") or "").strip().upper() or None,
+        "market_cap_millions": data.get("marketCapitalization"),
+        "share_outstanding_yi": (
+            None
+            if positive_finite_float(data.get("shareOutstanding")) is None
+            else positive_finite_float(data.get("shareOutstanding")) / 100
+        ),
     }
 
 
@@ -729,6 +806,13 @@ def update_one_detail(conn: Any, symbol: str, *, api_key: str | None = None, log
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
         append_log(log_file, f"{symbol}: Futunn detail fetch failed: {exc}")
 
+    profile = None
+    if api_key:
+        try:
+            profile = fetch_finnhub_profile(symbol, api_key)
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            append_log(log_file, f"{symbol}: Finnhub profile fetch failed: {exc}")
+
     with conn.cursor() as cur:
         if details:
             stock = details["stock"]
@@ -782,12 +866,6 @@ def update_one_detail(conn: Any, symbol: str, *, api_key: str | None = None, log
                 )
             updated = True
 
-        profile = None
-        if api_key:
-            try:
-                profile = fetch_finnhub_profile(symbol, api_key)
-            except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-                append_log(log_file, f"{symbol}: Finnhub profile fetch failed: {exc}")
         if profile:
             if profile["stock_industry_en"] and not profile["stock_industry"]:
                 append_log(log_file, f"{symbol}: unmapped Finnhub industry {profile['stock_industry_en']}")
@@ -797,6 +875,8 @@ def update_one_detail(conn: Any, symbol: str, *, api_key: str | None = None, log
                 set stock_industry_en = coalesce(%s, stock_industry_en),
                     stock_industry = coalesce(%s, stock_industry),
                     stock_industry_short = coalesce(%s, stock_industry_short),
+                    circulating_shares_yi = coalesce(circulating_shares_yi, %s),
+                    currency = coalesce(%s, currency),
                     details_updated_at = now(),
                     updated_at = now()
                 where symbol = %s
@@ -805,10 +885,79 @@ def update_one_detail(conn: Any, symbol: str, *, api_key: str | None = None, log
                     profile["stock_industry_en"],
                     profile["stock_industry"],
                     profile["stock_industry_short"],
+                    profile["share_outstanding_yi"],
+                    profile["currency"],
                     symbol,
                 ],
             )
             updated = True
+
+        cur.execute(
+            """
+            select
+              m.market_cap,
+              m.circulating_shares_yi,
+              coalesce(nullif(m.currency, ''), 'USD') as currency,
+              latest.trade_date,
+              latest.close
+            from us_stock_master m
+            left join lateral (
+              select trade_date, close
+              from us_stock_daily_metrics
+              where symbol = m.symbol
+              order by trade_date desc
+              limit 1
+            ) latest on true
+            where m.symbol = %s
+            """,
+            [symbol],
+        )
+        market_context = dict(cur.fetchone() or {})
+        decision = resolve_market_cap(
+            provider_value_millions=profile.get("market_cap_millions") if profile else None,
+            currency=profile.get("currency") if profile and profile.get("currency") else market_context.get("currency"),
+            close=market_context.get("close"),
+            shares_yi=market_context.get("circulating_shares_yi") or (profile.get("share_outstanding_yi") if profile else None),
+        )
+        if decision.value_usd is not None:
+            market_cap_as_of = today_ny() if decision.source == "finnhub_profile2" else market_context.get("trade_date")
+            cur.execute(
+                """
+                update us_stock_master
+                set market_cap = %s,
+                    market_cap_source = %s,
+                    market_cap_as_of = %s,
+                    market_cap_is_estimated = %s,
+                    market_cap_validation_status = %s,
+                    market_cap_attempted_at = now(),
+                    updated_at = now()
+                where symbol = %s
+                """,
+                [
+                    decision.value_usd,
+                    decision.source,
+                    market_cap_as_of,
+                    decision.is_estimated,
+                    decision.status,
+                    symbol,
+                ],
+            )
+            updated = True
+        else:
+            cur.execute(
+                """
+                update us_stock_master
+                set market_cap_validation_status = %s,
+                    market_cap_attempted_at = now(),
+                    updated_at = now()
+                where symbol = %s
+                """,
+                [decision.status, symbol],
+            )
+            updated = True
+            if decision.status.startswith("rejected_"):
+                detail = f" deviation={decision.deviation_pct:.2f}%" if decision.deviation_pct is not None else ""
+                append_log(log_file, f"{symbol}: market cap {decision.status}; existing value preserved{detail}")
 
     if updated:
         conn.commit()
