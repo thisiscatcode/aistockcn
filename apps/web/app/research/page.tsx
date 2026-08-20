@@ -137,6 +137,17 @@ export default async function ResearchPage({
 
   const company = snapshot?.company;
   const priceDiff = numberValue(company?.price_diff);
+  const latestClose = numberValue(company?.close);
+  const previousClose = latestClose !== null && priceDiff !== null ? latestClose - priceDiff : null;
+  const priceChangePct = previousClose ? (Number(priceDiff) / previousClose) * 100 : null;
+  const recentVolumes = (snapshot?.history ?? [])
+    .slice(0, 30)
+    .map((row) => numberValue(row.volume))
+    .filter((value): value is number => value !== null);
+  const averageVolume30d = recentVolumes.length
+    ? recentVolumes.reduce((total, value) => total + value, 0) / recentVolumes.length
+    : null;
+  const marketCap = numberValue(company?.market_cap);
   const latestAnnual = financialResult?.latest_annual;
   const revenue = latestAnnual?.metrics.revenue as ResearchFinancialMetric | undefined;
   const netIncome = latestAnnual?.metrics.net_income as ResearchFinancialMetric | undefined;
@@ -195,7 +206,11 @@ export default async function ResearchPage({
         ) : (
           <>
             <section className="research-company-toolbar">
-              <Link href="/us/research" className="research-back-link">All companies</Link>
+              <nav className="research-breadcrumb" aria-label="Breadcrumb">
+                <Link href="/us/research">Companies</Link>
+                <span aria-hidden="true">/</span>
+                <strong>{displayName(company)}</strong>
+              </nav>
               <form className="research-inline-search" action="/us/research" method="get">
                 <label className="sr-only" htmlFor="research-change-company">Change company</label>
                 <input id="research-change-company" name="q" type="search" placeholder="Change company or ticker" autoComplete="off" />
@@ -204,21 +219,26 @@ export default async function ResearchPage({
             </section>
 
             <section className="research-company-hero research-product-hero">
-              <div>
-                <h2>{company.symbol} <span>{displayName(company)}</span></h2>
+              <div className="research-security-identity">
+                <div>
+                  <h2>{company.symbol} <span>{displayName(company)}</span></h2>
+                  {company.market ? <b>{company.market}</b> : null}
+                </div>
                 <p>{company.stock_industry_en || company.stock_industry || "Industry classification pending"}</p>
               </div>
               <div className="research-price-block">
-                <strong>{formatMetric(company.close, { minimumFractionDigits: 2 })}</strong>
+                <strong>${formatMetric(company.close, { minimumFractionDigits: 2 })}</strong>
                 <span className={priceDiff !== null && priceDiff < 0 ? "is-negative" : "is-positive"}>
                   {priceDiff === null ? "—" : `${priceDiff >= 0 ? "+" : ""}${formatMetric(priceDiff)}`}
+                  {priceChangePct === null ? "" : ` (${priceChangePct >= 0 ? "+" : ""}${formatMetric(priceChangePct)}%)`}
                 </span>
-                <small>As of {formatDate(company.trade_date)}</small>
+                <small><i aria-hidden="true">◷</i> Market data · {formatDate(company.trade_date)}</small>
               </div>
               <div className="research-security-stats">
+                <article><span>Market cap</span><strong>{marketCap !== null && marketCap > 0 ? `$${formatMetric(marketCap, { notation: "compact" })}` : "—"}</strong></article>
                 <article><span>P/E</span><strong>{formatMetric(company.pe_ratio)}</strong></article>
                 <article><span>EPS</span><strong>{formatMetric(company.earnings_per_share)}</strong></article>
-                <article><span>Volume</span><strong>{formatMetric(company.volume, { notation: "compact" })}</strong></article>
+                <article><span>Avg volume · 30D</span><strong>{formatMetric(averageVolume30d, { notation: "compact" })}</strong></article>
               </div>
             </section>
 

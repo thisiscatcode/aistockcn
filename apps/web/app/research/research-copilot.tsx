@@ -46,6 +46,13 @@ function auditValue(value: unknown) {
   return String(value);
 }
 
+function revealAnswerSection(id: string) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  if (element instanceof HTMLDetailsElement) element.open = true;
+  element.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
   const presentation = answer.presentation;
   const view = buildResearchAnswerView(answer);
@@ -57,14 +64,22 @@ export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
         <div className="research-result-label">
           <span aria-hidden="true">✦</span>
           <strong>Key takeaway</strong>
-          {presentation?.source_verified ? <small>Source verified</small> : null}
+          {presentation?.source_verified ? <small>✓ Grounded in SEC evidence</small> : null}
         </div>
         <p>{takeaway}</p>
-        {presentation?.period.end_date ? (
-          <span className="research-period-label">
-            FY{presentation.period.fiscal_year ?? ""} · period ended {presentation.period.end_date}
-          </span>
-        ) : null}
+        <div className="research-takeaway-footer">
+          {presentation?.period.end_date ? (
+            <span className="research-period-label">
+              FY{presentation.period.fiscal_year ?? ""} · period ended {presentation.period.end_date}
+            </span>
+          ) : <span />}
+          <div>
+            {view.showInterpretation ? (
+              <button type="button" onClick={() => revealAnswerSection("research-interpretation")}>Why this matters</button>
+            ) : null}
+            <button type="button" onClick={() => revealAnswerSection("research-evidence")}>View evidence</button>
+          </div>
+        </div>
       </article>
 
       {metrics.length ? (
@@ -93,7 +108,7 @@ export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
       ) : null}
 
       {view.showInterpretation ? (
-        <section className="research-interpretation" aria-labelledby="research-interpretation-title">
+        <section id="research-interpretation" className="research-interpretation" aria-labelledby="research-interpretation-title">
           <div className="research-result-section-title">
             <div><span aria-hidden="true">◎</span><h3 id="research-interpretation-title">What it means</h3></div>
           </div>
@@ -130,7 +145,7 @@ export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
           {presentation?.source_verified ? <span className="research-source-chip is-verified">✓ Source verified</span> : null}
         </div>
 
-        <details className="research-evidence-disclosure">
+        <details id="research-evidence" className="research-evidence-disclosure">
           <summary>View evidence</summary>
           {metrics.length ? (
             <div className="research-metric-evidence-list">
@@ -292,14 +307,7 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
 
   return (
     <section className="research-copilot-panel">
-      <div className="research-section-heading">
-        <div>
-          <h2>Ask {symbol}</h2>
-        </div>
-        <span className="research-beta-badge">Cited</span>
-      </div>
-
-      <div className="research-suggestions">
+      <div className="research-suggestions" aria-label="Suggested questions">
         {SUGGESTIONS.map((suggestion) => (
           <button key={suggestion.label} type="button" onClick={() => setQuestion(suggestion.question)}>
             {suggestion.label}
@@ -315,13 +323,11 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="Ask about revenue, margins, risks or guidance"
           maxLength={800}
-          rows={2}
+          rows={1}
         />
-        <div>
-          <button type="submit" disabled={loading || !question.trim()}>
-            {loading ? "Researching…" : "Ask"}
-          </button>
-        </div>
+        <button type="submit" disabled={loading || !question.trim()}>
+          <span aria-hidden="true">✦</span> {loading ? "Researching…" : "Ask"}
+        </button>
       </form>
 
       {loading && progress ? (
