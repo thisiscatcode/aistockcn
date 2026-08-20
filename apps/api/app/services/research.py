@@ -656,6 +656,266 @@ def _change_phrase(value: Any, *, percentage_points: bool = False) -> str:
     return f"{direction} {abs(number):.2f}{suffix} from the comparable period"
 
 
+PRESENTATION_METRICS = (
+    ("revenue", "Revenue"),
+    ("net_income", "Net income"),
+    ("eps_diluted", "Diluted EPS"),
+    ("operating_cash_flow", "Operating cash flow"),
+)
+PRESENTATION_MARGINS = (
+    ("gross_margin_pct", "Gross margin", ("gross_profit", "revenue"), "gross profit / revenue × 100"),
+    (
+        "operating_margin_pct",
+        "Operating margin",
+        ("operating_income", "revenue"),
+        "operating income / revenue × 100",
+    ),
+)
+EMPTY_INFERENCE_MESSAGES = {
+    "no additional inference was required",
+    "no additional inference was required.",
+}
+
+
+def _format_presentation_value(value: Any, unit: str | None) -> str:
+    number = _numeric(value)
+    if number is None:
+        return "—"
+    if unit == "USD":
+        absolute = abs(number)
+        for divisor, suffix in (
+            (1_000_000_000_000, "T"),
+            (1_000_000_000, "B"),
+            (1_000_000, "M"),
+            (1_000, "K"),
+        ):
+            if absolute >= divisor:
+                return f"${number / divisor:,.2f}{suffix}"
+        return f"${number:,.2f}"
+    if unit == "USD/shares":
+        return f"${number:,.2f}"
+    if unit == "percent":
+        return f"{number:,.2f}%"
+    return f"{number:,.2f} {unit or ''}".strip()
+
+
+def _format_presentation_change(value: Any, *, percentage_points: bool = False) -> tuple[str, str]:
+    number = _numeric(value)
+    if number is None:
+        return "—", "unavailable"
+    direction = "up" if number > 0 else "down" if number < 0 else "flat"
+    arrow = "↑" if number > 0 else "↓" if number < 0 else "→"
+    suffix = "pp" if percentage_points else "%"
+    return f"{arrow} {abs(number):.2f}{suffix}", direction
+
+
+def _financial_source_detail(
+    *, fact: dict[str, Any], evidence_id: str | None = None
+) -> dict[str, Any]:
+    return {
+        "evidence_id": evidence_id,
+        "provider": "SEC XBRL Company Facts",
+        "taxonomy": fact.get("taxonomy"),
+        "concept": fact.get("concept"),
+        "form": fact.get("form"),
+        "filed_date": fact.get("filed_date"),
+        "accession_number": fact.get("accession_number"),
+        "source_url": fact.get("source_url"),
+        "locator": fact.get("locator"),
+        "raw_value": fact.get("value"),
+        "raw_unit": fact.get("unit"),
+    }
+
+
+def _deterministic_interpretations(
+    *, changes: dict[str, Any], derived: dict[str, Any]
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    revenue_change = _numeric(changes.get("revenue"))
+    income_change = _numeric(changes.get("net_income"))
+    cash_change = _numeric(changes.get("operating_cash_flow"))
+    if revenue_change is not None and income_change is not None:
+        if income_change > revenue_change:
+            rows.append({
+                "kind": "deterministic",
+                "text": "Net income grew faster than revenue in the latest comparable annual period.",
+            })
+        elif income_change < revenue_change:
+            rows.append({
+                "kind": "deterministic",
+                "text": "Net income grew more slowly than revenue in the latest comparable annual period.",
+            })
+    if cash_change is not None and cash_change < 0:
+        rows.append({
+            "kind": "deterministic",
+            "text": "Operating cash flow declined despite the latest reported revenue trend.",
+        })
+    improved_margins = [
+        label
+        for key, label, _, _ in PRESENTATION_MARGINS
+        if _numeric(derived.get(key)) is not None and (_numeric(changes.get(key)) or 0) > 0
+    ]
+    if improved_margins:
+        rows.append({
+            "kind": "deterministic",
+            "text": f"{' and '.join(improved_margins)} improved versus the comparable period.",
+        })
+    return rows[:3]
+
+
+def _build_research_presentation(
+    *,
+    company: dict[str, Any],
+    answer: str,
+    financial_summary: dict[str, Any] | None,
+    model_inference: list[Any],
+    document_evidence: list[dict[str, Any]],
+    citation_validation: dict[str, Any] | None = None,
+    fallback_state: str | None = None,
+) -> dict[str, Any]:
+    """Build customer-facing fields entirely from server-side structured evidence."""
+    latest = (financial_summary or {}).get("latest_annual") or {}
+    facts = latest.get("metrics") or {}
+    derived = latest.get("derived") or {}
+    changes = (financial_summary or {}).get("annual_changes") or {}
+    end_date = latest.get("end_date")
+    fiscal_year = latest.get("fiscal_year")
+    metrics: list[dict[str, Any]] = []
+
+    for key, label in PRESENTATION_METRICS:
+        fact = facts.get(key)
+        if not fact:
+            continue
+        formatted_change, direction = _format_presentation_change(changes.get(key))
+        metrics.append({
+            "key": key,
+            "label": label,
+            "value": fact.get("value"),
+            "unit": fact.get("unit"),
+            "formatted_value": _format_presentation_value(fact.get("value"), fact.get("unit")),
+            "change": _numeric(changes.get(key)),
+            "change_unit": "percent",
+            "formatted_change": formatted_change,
+            "direction": direction,
+            "period_end": end_date,
+            "sources": [
+                _financial_source_detail(
+                    fact=fact,
+                    evidence_id=f"sec-xbrl-{key}-{end_date}" if end_date else None,
+                )
+            ],
+        })
+
+    for key, label, source_keys, calculation in PRESENTATION_MARGINS:
+        value = _numeric(derived.get(key))
+        if value is None:
+            continue
+        formatted_change, direction = _format_presentation_change(
+            changes.get(key), percentage_points=True
+        )
+        source_details = [
+            _financial_source_detail(
+                fact=facts[source_key],
+                evidence_id=f"sec-xbrl-{source_key}-{end_date}" if end_date else None,
+            )
+            for source_key in source_keys
+            if facts.get(source_key)
+        ]
+        metrics.append({
+            "key": key,
+            "label": label,
+            "value": value,
+            "unit": "percent",
+            "formatted_value": _format_presentation_value(value, "percent"),
+            "change": _numeric(changes.get(key)),
+            "change_unit": "percentage_points",
+            "formatted_change": formatted_change,
+            "direction": direction,
+            "period_end": end_date,
+            "calculation": calculation,
+            "sources": source_details,
+        })
+
+    company_name = str(company.get("stock_name") or company.get("symbol") or "The company").strip()
+    revenue_change = _numeric(changes.get("revenue"))
+    income_change = _numeric(changes.get("net_income"))
+    cash_change = _numeric(changes.get("operating_cash_flow"))
+    takeaway = str(answer or "").strip()
+    if revenue_change is not None and income_change is not None:
+        if income_change > revenue_change:
+            takeaway = f"{company_name}’s profitability improved faster than revenue"
+        elif income_change < revenue_change:
+            takeaway = f"{company_name}’s profitability trailed revenue growth"
+        else:
+            takeaway = f"{company_name}’s profitability moved in line with revenue"
+        if cash_change is not None and cash_change < 0:
+            takeaway += ", while operating cash flow declined"
+        elif cash_change is not None and cash_change > 0:
+            takeaway += ", while operating cash flow increased"
+        takeaway += "."
+
+    interpretations = _deterministic_interpretations(changes=changes, derived=derived)
+    for item in model_inference:
+        text = str(item or "").strip()
+        if not text or text.lower() in EMPTY_INFERENCE_MESSAGES:
+            continue
+        interpretations.append({"kind": "model_inference", "text": text})
+        if len(interpretations) >= 3:
+            break
+
+    source_references: list[dict[str, Any]] = []
+    if metrics:
+        first_source = next(
+            (source for metric in metrics for source in metric.get("sources") or []),
+            {},
+        )
+        source_references.append({
+            "id": f"sec-xbrl-{end_date}",
+            "label": f"SEC XBRL · FY{fiscal_year}" if fiscal_year else "SEC XBRL",
+            "provider": "SEC",
+            "period_end": end_date,
+            "source_url": first_source.get("source_url"),
+            "verified": True,
+        })
+    seen_documents: set[str] = set()
+    for item in document_evidence:
+        document_id = str(item.get("document_id") or item.get("id") or "")
+        if not document_id or document_id in seen_documents:
+            continue
+        seen_documents.add(document_id)
+        source_references.append({
+            "id": document_id,
+            "label": str(item.get("source") or "SEC filing"),
+            "provider": "SEC filing",
+            "period_end": None,
+            "source_url": item.get("source_url"),
+            "document_id": item.get("document_id"),
+            "page_number": item.get("page_number"),
+            "verified": bool(
+                (citation_validation or {}).get("status") in {"passed", "warning"}
+            ),
+        })
+
+    return {
+        "version": "research_presentation_v1",
+        "kind": "financial_trend" if metrics else "narrative",
+        "takeaway": takeaway,
+        "takeaway_kind": "deterministic_summary" if metrics else "source_grounded_answer",
+        "period": {
+            "basis": "annual" if metrics else None,
+            "fiscal_year": fiscal_year,
+            "end_date": end_date,
+        },
+        "metrics": metrics,
+        "interpretations": interpretations[:3],
+        "sources": source_references,
+        "source_verified": bool(metrics) or bool(
+            (citation_validation or {}).get("status") in {"passed", "warning"}
+        ),
+        "fallback_state": fallback_state,
+    }
+
+
 def _deterministic_financial_answer(*, summary: dict[str, Any], question: str) -> str:
     latest = summary.get("latest_annual")
     if not latest:
@@ -1024,6 +1284,15 @@ def answer_research_question(
     }
     result["citation_validation"] = validate_research_citations(
         result=result, synthesis_degraded=bool(synthesis_error)
+    )
+    result["presentation"] = _build_research_presentation(
+        company=company,
+        answer=str(result["answer"]),
+        financial_summary=financial_summary,
+        model_inference=list(result.get("model_inference") or []),
+        document_evidence=list(result.get("document_evidence") or []),
+        citation_validation=result.get("citation_validation"),
+        fallback_state=synthesis_error,
     )
     result["execution_trace"] = result["agent_steps"]
     return result

@@ -3,6 +3,11 @@
 import { FormEvent, useState } from "react";
 
 import type { ResearchAnswer } from "@/lib/api";
+import {
+  buildResearchAnswerView,
+  documentEvidenceHref,
+  presentationSourceHref,
+} from "./research-answer-view";
 
 
 const SUGGESTIONS = [
@@ -34,6 +39,194 @@ function researchErrorMessage(error: unknown) {
     return "The research connection was interrupted. Try again.";
   }
   return message || "Research could not be completed. Try again.";
+}
+
+function auditValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  return String(value);
+}
+
+export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
+  const presentation = answer.presentation;
+  const view = buildResearchAnswerView(answer);
+  const { takeaway, interpretations, sources, metrics } = view;
+
+  return (
+    <div className="research-answer" aria-live="polite">
+      <article className="research-takeaway-card">
+        <div className="research-result-label">
+          <span aria-hidden="true">✦</span>
+          <strong>Key takeaway</strong>
+          {presentation?.source_verified ? <small>Source verified</small> : null}
+        </div>
+        <p>{takeaway}</p>
+        {presentation?.period.end_date ? (
+          <span className="research-period-label">
+            FY{presentation.period.fiscal_year ?? ""} · period ended {presentation.period.end_date}
+          </span>
+        ) : null}
+      </article>
+
+      {metrics.length ? (
+        <section className="research-metric-comparison" aria-labelledby="research-metric-title">
+          <div className="research-result-section-title">
+            <div><span aria-hidden="true">↗</span><h3 id="research-metric-title">Financial trend</h3></div>
+            <small>Latest comparable annual period</small>
+          </div>
+          <div className="research-metric-table" role="table" aria-label="Financial metric comparison">
+            <div className="research-metric-row is-heading" role="row">
+              <span role="columnheader">Metric</span>
+              <span role="columnheader">Latest period</span>
+              <span role="columnheader">Change</span>
+            </div>
+            {metrics.map((metric) => (
+              <div className="research-metric-row" role="row" key={metric.key}>
+                <strong role="cell">{metric.label}</strong>
+                <span role="cell" className="research-metric-value">{metric.formatted_value}</span>
+                <span role="cell" className={`research-metric-change is-${metric.direction}`}>
+                  {metric.formatted_change}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {view.showInterpretation ? (
+        <section className="research-interpretation" aria-labelledby="research-interpretation-title">
+          <div className="research-result-section-title">
+            <div><span aria-hidden="true">◎</span><h3 id="research-interpretation-title">What it means</h3></div>
+          </div>
+          <ul>
+            {interpretations.slice(0, 3).map((item, index) => (
+              <li key={`${item.kind}-${index}`}>
+                <span className={`research-interpretation-kind is-${item.kind}`}>
+                  {item.kind === "model_inference" ? "Interpretation" : "Calculated fact"}
+                </span>
+                <p>{item.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="research-sources" aria-labelledby="research-sources-title">
+        <div className="research-result-section-title">
+          <div><span aria-hidden="true">⌁</span><h3 id="research-sources-title">Sources</h3></div>
+          {answer.citation_validation ? (
+            <small className={`research-source-validation is-${answer.citation_validation.status}`}>
+              {answer.citation_validation.status === "passed" ? "Citations verified" : `Citations ${answer.citation_validation.status}`}
+            </small>
+          ) : null}
+        </div>
+        <div className="research-source-chips">
+          {sources.map((source) => {
+            const href = presentationSourceHref(source);
+            const content = <><span>{source.label}</span>{source.period_end ? <small>Ended {source.period_end}</small> : null}</>;
+            return href ? (
+              <a href={href} target="_blank" rel="noreferrer" key={source.id}>{content}<b aria-hidden="true">↗</b></a>
+            ) : <span className="research-source-chip" key={source.id}>{content}</span>;
+          })}
+          {presentation?.source_verified ? <span className="research-source-chip is-verified">✓ Source verified</span> : null}
+        </div>
+
+        <details className="research-evidence-disclosure">
+          <summary>View evidence</summary>
+          {metrics.length ? (
+            <div className="research-metric-evidence-list">
+              {metrics.map((metric) => (
+                <article key={metric.key}>
+                  <header><strong>{metric.label}</strong><span>{metric.formatted_value} · {metric.formatted_change}</span></header>
+                  {metric.calculation ? <p>Calculation: {metric.calculation}</p> : null}
+                  {metric.sources.map((source, index) => (
+                    <dl key={`${metric.key}-${source.evidence_id ?? index}`}>
+                      <div><dt>SEC concept</dt><dd>{auditValue(source.taxonomy)}:{auditValue(source.concept)}</dd></div>
+                      <div><dt>Form / filed</dt><dd>{auditValue(source.form)} · {auditValue(source.filed_date)}</dd></div>
+                      <div><dt>Accession</dt><dd>{auditValue(source.accession_number)}</dd></div>
+                      <div><dt>Raw value</dt><dd>{auditValue(source.raw_value)} {auditValue(source.raw_unit)}</dd></div>
+                      <div><dt>Evidence ID</dt><dd>{auditValue(source.evidence_id)}</dd></div>
+                      <div className="is-wide"><dt>Locator</dt><dd>{auditValue(source.locator)}</dd></div>
+                    </dl>
+                  ))}
+                </article>
+              ))}
+            </div>
+          ) : null}
+          {answer.document_evidence.length ? (
+            <div className="research-document-evidence-list">
+              {answer.document_evidence.map((item) => {
+                const href = documentEvidenceHref(item);
+                return (
+                  <article key={item.id}>
+                    <span className="research-citation-id">{item.citation_id ?? "SEC"}</span>
+                    <p>{item.claim}</p>
+                    {href ? <a href={href} target="_blank" rel="noreferrer">{sourceLabel(item)} ↗</a> : <cite>{sourceLabel(item)}</cite>}
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+        </details>
+      </section>
+
+      <details className="research-audit-details">
+        <summary>
+          <span>Advanced details</span>
+          <small>Model, tools, latency and raw evidence</small>
+        </summary>
+        <div className="research-audit-grid">
+          <div><span>Model</span><strong>{answer.model.provider} · {answer.model.name}</strong></div>
+          <div><span>Workflow</span><strong>{answer.graph?.framework ?? "Research workflow"} · {answer.graph?.version ?? "legacy"}</strong></div>
+          <div><span>Latency</span><strong>{answer.duration_ms ? `${(answer.duration_ms / 1000).toFixed(1)}s` : "—"}</strong></div>
+          <div><span>Run ID</span><strong>{answer.run_id ?? "—"}</strong></div>
+          <div><span>Fallback</span><strong>{presentation?.fallback_state ?? "None"}</strong></div>
+          <div><span>Citation validation</span><strong>{answer.citation_validation?.status ?? "Not checked"}</strong></div>
+        </div>
+        {answer.tool_plan ? (
+          <section className="research-audit-plan">
+            <h4>Tool plan</h4>
+            <p>{answer.tool_plan.reason}</p>
+            <div>{answer.tool_plan.tools.map((tool) => <span key={tool}>{tool.replaceAll("_", " ")}</span>)}</div>
+          </section>
+        ) : null}
+        {answer.graph_trace?.length ? (
+          <section className="research-graph-trace" aria-label="LangGraph nodes">
+            {answer.graph_trace.map((step, index) => (
+              <article key={`${step.node}-${index}`} className={`is-${step.status}`}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div><strong>{step.node.replaceAll("_", " ")}</strong><small>{step.detail}</small></div>
+                <b>{step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}</b>
+              </article>
+            ))}
+          </section>
+        ) : null}
+        <ol className="research-tool-trace">
+          {answer.agent_steps.map((step, index) => (
+            <li key={`${step.tool}-${index}`}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{step.tool.replaceAll("_", " ")}</strong>
+              <small>{step.detail}{step.duration_ms !== undefined ? ` · ${step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}` : ""}</small>
+            </li>
+          ))}
+        </ol>
+        <details className="research-raw-evidence">
+          <summary>Raw evidence payload</summary>
+          {[...answer.data_evidence, ...answer.document_evidence].map((item) => (
+            <article key={`raw-${item.id}`}>
+              <strong>{item.id}</strong><p>{item.claim}</p><code>{item.source} · {item.locator}</code>
+            </article>
+          ))}
+        </details>
+      </details>
+
+      {answer.limitations.length ? (
+        <details className="research-limitations">
+          <summary>Coverage and limitations</summary>
+          <ul>{answer.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
+        </details>
+      ) : null}
+    </div>
+  );
 }
 
 
@@ -146,109 +339,7 @@ export function ResearchCopilot({ symbol, initialQuestion = "" }: { symbol: stri
         </div>
       ) : null}
 
-      {answer ? (
-        <div className="research-answer" aria-live="polite">
-          <article className="research-answer-summary">
-            <p>{answer.answer}</p>
-          </article>
-
-          <div className="research-answer-columns">
-            <article className="research-proof-card is-evidence">
-              <div><span>Evidence</span><small>Server-verified</small></div>
-              {answer.document_evidence.map((item) => (
-                <section key={item.id} className="is-document-evidence">
-                  {item.citation_id ? <span className="research-citation-id">{item.citation_id}</span> : null}
-                  <p>{item.claim}</p>
-                  {item.document_id && item.page_number ? (
-                    <a
-                      className="research-source-link"
-                      href={`/research/documents/${encodeURIComponent(item.document_id)}/file#page=${item.page_number}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <cite>{sourceLabel(item)} ↗</cite>
-                    </a>
-                  ) : item.source_url ? (
-                    <a className="research-source-link" href={item.source_url} target="_blank" rel="noreferrer">
-                      <cite>{sourceLabel(item)} ↗</cite>
-                    </a>
-                  ) : <cite>{sourceLabel(item)}</cite>}
-                </section>
-              ))}
-              {answer.data_evidence.map((item) => (
-                <section key={item.id}>
-                  <p>{item.claim}</p>
-                  {item.source_url ? (
-                    <a className="research-source-link" href={item.source_url} target="_blank" rel="noreferrer">
-                      <cite>{sourceLabel(item)} ↗</cite>
-                    </a>
-                  ) : <cite>{sourceLabel(item)}</cite>}
-                </section>
-              ))}
-              {answer.document_evidence.length === 0 ? (
-                <p className="research-no-docs">No indexed document passage was relevant to this answer.</p>
-              ) : null}
-            </article>
-
-            <article className="research-proof-card is-inference">
-              <div><span>Model inference</span><small>{answer.model.name}</small></div>
-              {answer.model_inference.length ? (
-                <ul>{answer.model_inference.map((item) => <li key={item}>{item}</li>)}</ul>
-              ) : (
-                <p>No additional inference was required.</p>
-              )}
-            </article>
-          </div>
-
-          <details className="research-agent-trace">
-            <summary>
-              <span>Agent trace</span>
-              <small>
-                {answer.graph?.framework ?? "Workflow"} · {answer.agent_steps.length} tools
-                {answer.duration_ms ? ` · ${(answer.duration_ms / 1000).toFixed(1)}s` : ""}
-              </small>
-            </summary>
-            {answer.tool_plan ? <p className="research-plan-reason">{answer.tool_plan.reason}</p> : null}
-            <div className="research-trace-meta">
-              <span className={`research-citation-status is-${answer.citation_validation?.status ?? "warning"}`}>
-                Citations {answer.citation_validation?.status ?? "not checked"}
-              </span>
-              <small>
-                {answer.graph?.version ?? "legacy workflow"}
-                {answer.run_id ? ` · ${answer.run_id.slice(0, 8)}` : ""}
-              </small>
-            </div>
-            {answer.graph_trace?.length ? (
-              <section className="research-graph-trace" aria-label="LangGraph nodes">
-                {answer.graph_trace.map((step, index) => (
-                  <article key={`${step.node}-${index}`} className={`is-${step.status}`}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <div><strong>{step.node.replaceAll("_", " ")}</strong><small>{step.detail}</small></div>
-                    <b>{step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}</b>
-                  </article>
-                ))}
-              </section>
-            ) : null}
-            <ol className="research-tool-trace">
-              {answer.agent_steps.map((step, index) => (
-                <li key={`${step.tool}-${index}`}>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{step.tool.replaceAll("_", " ")}</strong>
-                  <small>
-                    {step.detail}
-                    {step.duration_ms !== undefined ? ` · ${step.duration_ms < 1000 ? `${step.duration_ms.toFixed(0)}ms` : `${(step.duration_ms / 1000).toFixed(1)}s`}` : ""}
-                  </small>
-                </li>
-              ))}
-            </ol>
-          </details>
-
-          <details className="research-limitations">
-            <summary>Coverage and limitations</summary>
-            <ul>{answer.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
-          </details>
-        </div>
-      ) : null}
+      {answer ? <ResearchAnswerResult answer={answer} /> : null}
     </section>
   );
 }

@@ -920,6 +920,61 @@ export type ResearchEvidence = {
   reranker_score?: number;
 };
 
+export type ResearchPresentationSourceDetail = {
+  evidence_id?: string | null;
+  provider: string;
+  taxonomy?: string | null;
+  concept?: string | null;
+  form?: string | null;
+  filed_date?: string | null;
+  accession_number?: string | null;
+  source_url?: string | null;
+  locator?: string | null;
+  raw_value?: number | null;
+  raw_unit?: string | null;
+};
+
+export type ResearchPresentationMetric = {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string;
+  formatted_value: string;
+  change?: number | null;
+  change_unit: "percent" | "percentage_points";
+  formatted_change: string;
+  direction: "up" | "down" | "flat" | "unavailable";
+  period_end?: string | null;
+  calculation?: string;
+  sources: ResearchPresentationSourceDetail[];
+};
+
+export type ResearchPresentation = {
+  version: string;
+  kind: "financial_trend" | "narrative";
+  takeaway: string;
+  takeaway_kind: "deterministic_summary" | "source_grounded_answer";
+  period: {
+    basis?: "annual" | "quarterly" | null;
+    fiscal_year?: number | null;
+    end_date?: string | null;
+  };
+  metrics: ResearchPresentationMetric[];
+  interpretations: Array<{ kind: "deterministic" | "model_inference"; text: string }>;
+  sources: Array<{
+    id: string;
+    label: string;
+    provider: string;
+    period_end?: string | null;
+    source_url?: string | null;
+    document_id?: string | null;
+    page_number?: number | null;
+    verified: boolean;
+  }>;
+  source_verified: boolean;
+  fallback_state?: string | null;
+};
+
 export type ResearchAnswer = {
   market?: "CN" | "US";
   currency?: string;
@@ -962,6 +1017,7 @@ export type ResearchAnswer = {
     merged_candidates?: number;
     diversified_by_document?: boolean;
   };
+  presentation?: ResearchPresentation;
 };
 
 export type ResearchComparison = {

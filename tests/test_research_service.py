@@ -24,6 +24,80 @@ from app.services import research_cn_disclosures as research_cn_service
 
 
 class ResearchServiceTests(unittest.TestCase):
+    def test_financial_presentation_formats_metrics_and_preserves_audit_details(self) -> None:
+        def fact(label: str, value: float, concept: str, unit: str = "USD") -> dict[str, object]:
+            return {
+                "label": label,
+                "value": value,
+                "unit": unit,
+                "taxonomy": "us-gaap",
+                "concept": concept,
+                "form": "10-K",
+                "filed_date": "2025-10-31",
+                "accession_number": "0000320193-25-000079",
+                "source_url": "https://www.sec.gov/Archives/edgar/data/320193/filing-index.html",
+                "locator": f"us-gaap:{concept} · 10-K FY2025",
+            }
+
+        summary = {
+            "latest_annual": {
+                "end_date": "2025-09-27",
+                "fiscal_year": 2025,
+                "metrics": {
+                    "revenue": fact("Revenue", 416_161_000_000, "RevenueFromContractWithCustomerExcludingAssessedTax"),
+                    "gross_profit": fact("Gross profit", 195_201_000_000, "GrossProfit"),
+                    "operating_income": fact("Operating income", 133_050_000_000, "OperatingIncomeLoss"),
+                    "net_income": fact("Net income", 112_010_000_000, "NetIncomeLoss"),
+                    "eps_diluted": fact("Diluted EPS", 7.46, "EarningsPerShareDiluted", "USD/shares"),
+                    "operating_cash_flow": fact("Operating cash flow", 111_482_000_000, "NetCashProvidedByUsedInOperatingActivities"),
+                },
+                "derived": {"gross_margin_pct": 46.91, "operating_margin_pct": 31.97},
+            },
+            "annual_changes": {
+                "revenue": 6.43,
+                "net_income": 19.50,
+                "eps_diluted": 22.70,
+                "operating_cash_flow": -5.73,
+                "gross_margin_pct": 0.70,
+                "operating_margin_pct": 0.50,
+            },
+        }
+        presentation = research_service._build_research_presentation(
+            company={"symbol": "AAPL", "stock_name": "Apple"},
+            answer="A long deterministic answer.",
+            financial_summary=summary,
+            model_inference=[],
+            document_evidence=[],
+            citation_validation={"status": "passed"},
+        )
+
+        metrics = {item["key"]: item for item in presentation["metrics"]}
+        self.assertEqual(metrics["revenue"]["formatted_value"], "$416.16B")
+        self.assertEqual(metrics["revenue"]["formatted_change"], "↑ 6.43%")
+        self.assertEqual(metrics["net_income"]["formatted_value"], "$112.01B")
+        self.assertEqual(metrics["eps_diluted"]["formatted_value"], "$7.46")
+        self.assertEqual(metrics["operating_cash_flow"]["formatted_change"], "↓ 5.73%")
+        self.assertEqual(metrics["gross_margin_pct"]["formatted_change"], "↑ 0.70pp")
+        self.assertNotIn("6.80000000000001", json.dumps(presentation))
+        self.assertNotIn("us_stock_daily_metrics", presentation["takeaway"])
+        self.assertEqual(
+            metrics["revenue"]["sources"][0]["accession_number"],
+            "0000320193-25-000079",
+        )
+        self.assertEqual(metrics["revenue"]["sources"][0]["taxonomy"], "us-gaap")
+        self.assertIn("profitability improved faster than revenue", presentation["takeaway"])
+        self.assertIn("operating cash flow declined", presentation["takeaway"])
+
+    def test_presentation_omits_empty_model_inference(self) -> None:
+        presentation = research_service._build_research_presentation(
+            company={"symbol": "AAPL", "stock_name": "Apple"},
+            answer="Evidence-only answer.",
+            financial_summary=None,
+            model_inference=["No additional inference was required."],
+            document_evidence=[],
+        )
+        self.assertEqual(presentation["interpretations"], [])
+
     def test_citation_validator_rejects_model_invented_ids(self) -> None:
         result = {
             "answer": "The filing identifies supply risk [D1] and another claim [D99].",

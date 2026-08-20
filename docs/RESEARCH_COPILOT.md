@@ -4,9 +4,19 @@ Research is AiStockCN's source-grounded company workspace for US stocks and Chin
 
 **Audience:** product, financial research and AI engineering
 
-**Documentation baseline:** 14 August 2026
+**Documentation baseline:** 20 August 2026
 
 ![AiStockCN unified product homepage](assets/product-home.png)
+
+### Source-grounded answer UI
+
+![AiStockCN source-grounded financial answer](assets/research-answer-desktop.png)
+
+The customer answer uses progressive disclosure: a server-generated takeaway, formatted metric comparison, clearly labelled deterministic interpretation and concise source references appear first. Taxonomy, accession, raw values, model/provider identity, tool calls and execution trace remain available under **View evidence** and **Advanced details** without dominating the primary reading path.
+
+<p align="center">
+  <img src="assets/research-answer-mobile.png" alt="AiStockCN source-grounded financial answer on mobile" width="360" />
+</p>
 
 ## Product capabilities
 
@@ -29,6 +39,7 @@ Citation metadata is server-owned. The language model cannot create or alter the
 | `inference` | Model interpretation generated only from approved tool output and bounded evidence |
 | `limitations` | Data scope, as-of dates and interpretation constraints |
 | `trace` | Approved tools executed by the research agent |
+| `presentation` | Backward-compatible customer fields derived server-side from structured evidence; includes formatted metrics, takeaway, interpretation labels and concise source references |
 
 PDFs retain native page numbers. SEC HTML filings use `SEC filing HTML · passage N` because the source has no reliable native pagination.
 
