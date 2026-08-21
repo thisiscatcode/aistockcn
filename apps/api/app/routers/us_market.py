@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.services.us_market import (
     UsMarketError,
+    get_us_market_session,
     get_us_market_summary,
     get_us_model_status,
     get_us_overview,
@@ -25,6 +26,11 @@ def _not_found_or_bad_request(exc: UsMarketError) -> HTTPException:
 @router.get("/overview")
 def overview() -> dict[str, object]:
     return get_us_overview()
+
+
+@router.get("/session")
+def session() -> dict[str, object]:
+    return get_us_market_session()
 
 
 @router.get("/data/summary")

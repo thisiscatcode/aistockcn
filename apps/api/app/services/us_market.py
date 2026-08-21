@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json
@@ -24,6 +25,9 @@ US_BENCHMARK = {"symbol": "SPY", "name": "SPDR S&P 500 ETF Trust"}
 US_MODEL_PROFILE = "us_5d_v1"
 US_MODEL_REQUIRED_DATES = 504
 US_MODEL_REQUIRED_SYMBOLS = 100
+US_TIME_ZONE = ZoneInfo(US_TIMEZONE)
+US_REGULAR_OPEN = time(9, 30)
+US_REGULAR_CLOSE = time(16, 0)
 
 US_MODEL_DATA_SCHEMA_SQL = """
 create table if not exists us_stock_daily_bars (
@@ -67,6 +71,76 @@ create table if not exists us_market_ingestion_runs (
 
 class UsMarketError(RuntimeError):
     pass
+
+
+def _parse_trading_hours(value: str | None) -> tuple[time, time] | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        start_raw, end_raw = raw.split("-", 1)
+        return time.fromisoformat(start_raw.strip()), time.fromisoformat(end_raw.strip())
+    except ValueError:
+        return None
+
+
+def _us_market_session_state(
+    now: datetime,
+    holidays: dict[date, str | None],
+) -> dict[str, Any]:
+    local_now = now.astimezone(US_TIME_ZONE)
+
+    def session_hours(day: date) -> tuple[time, time] | None:
+        if day.weekday() >= 5:
+            return None
+        if day in holidays:
+            return _parse_trading_hours(holidays[day])
+        return US_REGULAR_OPEN, US_REGULAR_CLOSE
+
+    today_hours = session_hours(local_now.date())
+    if today_hours:
+        opens_at = datetime.combine(local_now.date(), today_hours[0], tzinfo=US_TIME_ZONE)
+        closes_at = datetime.combine(local_now.date(), today_hours[1], tzinfo=US_TIME_ZONE)
+        if opens_at <= local_now < closes_at:
+            return {
+                "market": US_MARKET,
+                "status": "open",
+                "label": "US Market Open",
+                "timezone": US_TIMEZONE,
+                "timezone_abbreviation": local_now.tzname(),
+                "observed_at": local_now.isoformat(),
+                "next_transition": "closes",
+                "next_transition_at": closes_at.isoformat(),
+            }
+
+    for offset in range(15):
+        candidate_day = local_now.date() + timedelta(days=offset)
+        hours = session_hours(candidate_day)
+        if not hours:
+            continue
+        opens_at = datetime.combine(candidate_day, hours[0], tzinfo=US_TIME_ZONE)
+        if opens_at > local_now:
+            return {
+                "market": US_MARKET,
+                "status": "closed",
+                "label": "US Market Closed",
+                "timezone": US_TIMEZONE,
+                "timezone_abbreviation": local_now.tzname(),
+                "observed_at": local_now.isoformat(),
+                "next_transition": "opens",
+                "next_transition_at": opens_at.isoformat(),
+            }
+
+    return {
+        "market": US_MARKET,
+        "status": "closed",
+        "label": "US Market Closed",
+        "timezone": US_TIMEZONE,
+        "timezone_abbreviation": local_now.tzname(),
+        "observed_at": local_now.isoformat(),
+        "next_transition": None,
+        "next_transition_at": None,
+    }
 
 
 def _connect(settings: Settings | None = None):
@@ -211,6 +285,26 @@ def get_us_market_summary() -> dict[str, Any]:
             "history_status": "ready" if int(coverage.get("trading_dates") or 0) >= US_MODEL_REQUIRED_DATES else "backfill_required",
         },
     }
+
+
+def get_us_market_session() -> dict[str, Any]:
+    local_now = datetime.now(US_TIME_ZONE)
+    date_to = local_now.date() + timedelta(days=15)
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            select at_date, trading_hour
+            from us_market_holidays
+            where exchange = 'US'
+              and at_date between %s and %s
+            """,
+            [local_now.date(), date_to],
+        )
+        holidays = {
+            row["at_date"]: row.get("trading_hour")
+            for row in cur.fetchall()
+        }
+    return _us_market_session_state(local_now, holidays)
 
 
 def list_us_stocks(*, search: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:

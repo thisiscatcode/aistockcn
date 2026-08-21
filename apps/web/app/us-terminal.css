@@ -1293,12 +1293,50 @@
 }
 
 .us-terminal-sidebar-clock {
-  padding: 8px 7px;
-  border: 1px solid #28364b;
-  border-radius: 7px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 0;
   color: #8fa1b8;
-  background: #111b2b;
-  font-size: 0.68rem;
+  background: transparent;
+  font-size: 0.75rem;
+}
+
+.market-session-clock {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.market-session-title {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: #f1f5f9;
+  font-size: 0.86rem;
+}
+
+.market-session-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #7f8da3;
+  box-shadow: 0 0 0 3px rgba(127, 141, 163, 0.12);
+}
+
+.market-session-clock.is-open .market-session-dot {
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14), 0 0 10px rgba(52, 211, 153, 0.35);
+}
+
+.market-session-detail {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  overflow: hidden;
+  color: #9aa9bd;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .us-terminal-sidebar-clock .shell-time {
@@ -1765,14 +1803,23 @@
 
   .us-terminal-mobile-clock {
     display: flex;
-    min-height: 30px;
+    min-height: 50px;
     align-items: center;
-    justify-content: flex-end;
-    padding: 5px 11px;
+    justify-content: flex-start;
+    padding: 6px 11px;
     border-bottom: 1px solid var(--line);
     color: var(--muted);
     background: var(--card);
     font-size: 0.72rem;
+  }
+
+  .us-terminal-mobile-clock .market-session-title {
+    color: var(--text);
+  }
+
+  .us-terminal-mobile-clock .market-session-detail {
+    color: var(--muted);
+    font-size: 0.76rem;
   }
 
   .us-terminal-mobile-clock .shell-time-label {

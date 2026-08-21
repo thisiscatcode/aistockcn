@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import date, datetime
 from pathlib import Path
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +46,33 @@ class _FakeConnection:
 
 
 class UsMarketServiceTests(unittest.TestCase):
+    def test_market_session_is_open_during_regular_hours(self) -> None:
+        result = us_market_service._us_market_session_state(
+            datetime(2026, 8, 21, 12, 13, tzinfo=ZoneInfo("America/New_York")),
+            {},
+        )
+        self.assertEqual(result["status"], "open")
+        self.assertEqual(result["label"], "US Market Open")
+        self.assertEqual(result["next_transition"], "closes")
+        self.assertTrue(str(result["next_transition_at"]).endswith("16:00:00-04:00"))
+
+    def test_market_session_uses_early_close_calendar(self) -> None:
+        result = us_market_service._us_market_session_state(
+            datetime(2026, 11, 27, 12, 0, tzinfo=ZoneInfo("America/New_York")),
+            {date(2026, 11, 27): "09:30-13:00"},
+        )
+        self.assertEqual(result["status"], "open")
+        self.assertTrue(str(result["next_transition_at"]).endswith("13:00:00-05:00"))
+
+    def test_market_session_skips_weekends_and_full_holidays(self) -> None:
+        result = us_market_service._us_market_session_state(
+            datetime(2026, 9, 4, 17, 0, tzinfo=ZoneInfo("America/New_York")),
+            {date(2026, 9, 7): ""},
+        )
+        self.assertEqual(result["status"], "closed")
+        self.assertEqual(result["next_transition"], "opens")
+        self.assertTrue(str(result["next_transition_at"]).startswith("2026-09-08T09:30:00"))
+
     def test_symbol_validation_accepts_us_tickers_and_rejects_unsafe_input(self) -> None:
         self.assertEqual(us_market_service._normalize_symbol(" brk.b "), "BRK.B")
         with self.assertRaises(us_market_service.UsMarketError):

@@ -1282,6 +1282,17 @@ export type UsMarketContext = {
   data_freshness?: Record<string, string | null>;
 };
 
+export type UsMarketSession = {
+  market: "US";
+  status: "open" | "closed";
+  label: string;
+  timezone: "America/New_York";
+  timezone_abbreviation: string;
+  observed_at: string;
+  next_transition: "opens" | "closes" | null;
+  next_transition_at: string | null;
+};
+
 export type UsCoverage = {
   active_symbols: number;
   latest_trade_date?: string | null;
@@ -1418,6 +1429,10 @@ const usFetch = <T>(path: string, timeoutMs = 15000) =>
 
 export function getUsOverview() {
   return usFetch<UsOverview>("/api/us/overview", 25000);
+}
+
+export function getUsMarketSession() {
+  return usFetch<UsMarketSession>("/api/us/session", 5000);
 }
 
 export function getUsMarketSummary() {
