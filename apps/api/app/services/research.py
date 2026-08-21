@@ -713,10 +713,11 @@ def _format_presentation_change(value: Any, *, percentage_points: bool = False) 
 
 
 def _financial_source_detail(
-    *, fact: dict[str, Any], evidence_id: str | None = None
+    *, fact: dict[str, Any], evidence_id: str | None = None, period_end: str | None = None
 ) -> dict[str, Any]:
     return {
         "evidence_id": evidence_id,
+        "period_end": period_end,
         "provider": "SEC XBRL Company Facts",
         "taxonomy": fact.get("taxonomy"),
         "concept": fact.get("concept"),
@@ -778,41 +779,74 @@ def _build_research_presentation(
 ) -> dict[str, Any]:
     """Build customer-facing fields entirely from server-side structured evidence."""
     latest = (financial_summary or {}).get("latest_annual") or {}
+    previous = (financial_summary or {}).get("previous_annual") or {}
     facts = latest.get("metrics") or {}
     derived = latest.get("derived") or {}
+    previous_facts = previous.get("metrics") or {}
+    previous_derived = previous.get("derived") or {}
     changes = (financial_summary or {}).get("annual_changes") or {}
     end_date = latest.get("end_date")
     fiscal_year = latest.get("fiscal_year")
+    previous_end_date = previous.get("end_date")
+    previous_fiscal_year = previous.get("fiscal_year")
+    if (
+        fiscal_year is not None
+        and previous_fiscal_year is not None
+        and previous_end_date
+        and end_date
+        and str(previous_end_date) < str(end_date)
+        and int(previous_fiscal_year) >= int(fiscal_year)
+    ):
+        # SEC comparative facts may retain the filing's FY context even though
+        # their period end belongs to the preceding fiscal year.
+        previous_fiscal_year = int(fiscal_year) - 1
     metrics: list[dict[str, Any]] = []
 
     for key, label in PRESENTATION_METRICS:
         fact = facts.get(key)
         if not fact:
             continue
+        previous_fact = previous_facts.get(key) or {}
         formatted_change, direction = _format_presentation_change(changes.get(key))
+        source_details = [
+            _financial_source_detail(
+                fact=fact,
+                evidence_id=f"sec-xbrl-{key}-{end_date}" if end_date else None,
+                period_end=end_date,
+            )
+        ]
+        if previous_fact:
+            source_details.append(
+                _financial_source_detail(
+                    fact=previous_fact,
+                    evidence_id=f"sec-xbrl-{key}-{previous_end_date}" if previous_end_date else None,
+                    period_end=previous_end_date,
+                )
+            )
         metrics.append({
             "key": key,
             "label": label,
             "value": fact.get("value"),
             "unit": fact.get("unit"),
             "formatted_value": _format_presentation_value(fact.get("value"), fact.get("unit")),
+            "previous_value": previous_fact.get("value"),
+            "formatted_previous_value": _format_presentation_value(
+                previous_fact.get("value"), previous_fact.get("unit") or fact.get("unit")
+            ),
             "change": _numeric(changes.get(key)),
             "change_unit": "percent",
             "formatted_change": formatted_change,
             "direction": direction,
             "period_end": end_date,
-            "sources": [
-                _financial_source_detail(
-                    fact=fact,
-                    evidence_id=f"sec-xbrl-{key}-{end_date}" if end_date else None,
-                )
-            ],
+            "previous_period_end": previous_end_date,
+            "sources": source_details,
         })
 
     for key, label, source_keys, calculation in PRESENTATION_MARGINS:
         value = _numeric(derived.get(key))
         if value is None:
             continue
+        previous_value = _numeric(previous_derived.get(key))
         formatted_change, direction = _format_presentation_change(
             changes.get(key), percentage_points=True
         )
@@ -820,21 +854,34 @@ def _build_research_presentation(
             _financial_source_detail(
                 fact=facts[source_key],
                 evidence_id=f"sec-xbrl-{source_key}-{end_date}" if end_date else None,
+                period_end=end_date,
             )
             for source_key in source_keys
             if facts.get(source_key)
         ]
+        source_details.extend(
+            _financial_source_detail(
+                fact=previous_facts[source_key],
+                evidence_id=f"sec-xbrl-{source_key}-{previous_end_date}" if previous_end_date else None,
+                period_end=previous_end_date,
+            )
+            for source_key in source_keys
+            if previous_facts.get(source_key)
+        )
         metrics.append({
             "key": key,
             "label": label,
             "value": value,
             "unit": "percent",
             "formatted_value": _format_presentation_value(value, "percent"),
+            "previous_value": previous_value,
+            "formatted_previous_value": _format_presentation_value(previous_value, "percent"),
             "change": _numeric(changes.get(key)),
             "change_unit": "percentage_points",
             "formatted_change": formatted_change,
             "direction": direction,
             "period_end": end_date,
+            "previous_period_end": previous_end_date,
             "calculation": calculation,
             "sources": source_details,
         })
@@ -880,6 +927,24 @@ def _build_research_presentation(
             "source_url": first_source.get("source_url"),
             "verified": True,
         })
+        if previous_end_date:
+            previous_source = next(
+                (
+                    source
+                    for metric in metrics
+                    for source in metric.get("sources") or []
+                    if source.get("period_end") == previous_end_date
+                ),
+                {},
+            )
+            source_references.append({
+                "id": f"sec-xbrl-{previous_end_date}",
+                "label": f"SEC XBRL · FY{previous_fiscal_year}" if previous_fiscal_year else "SEC XBRL · previous period",
+                "provider": "SEC",
+                "period_end": previous_end_date,
+                "source_url": previous_source.get("source_url"),
+                "verified": True,
+            })
     seen_documents: set[str] = set()
     for item in document_evidence:
         document_id = str(item.get("document_id") or item.get("id") or "")
@@ -900,7 +965,7 @@ def _build_research_presentation(
         })
 
     return {
-        "version": "research_presentation_v1",
+        "version": "research_presentation_v2",
         "kind": "financial_trend" if metrics else "narrative",
         "takeaway": takeaway,
         "takeaway_kind": "deterministic_summary" if metrics else "source_grounded_answer",
@@ -908,6 +973,8 @@ def _build_research_presentation(
             "basis": "annual" if metrics else None,
             "fiscal_year": fiscal_year,
             "end_date": end_date,
+            "previous_fiscal_year": previous_fiscal_year,
+            "previous_end_date": previous_end_date,
         },
         "metrics": metrics,
         "interpretations": interpretations[:3],

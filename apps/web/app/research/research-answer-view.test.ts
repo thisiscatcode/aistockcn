@@ -40,6 +40,8 @@ function answerFixture(): ResearchAnswer {
         value: 416_161_000_000,
         unit: "USD",
         formatted_value: "$416.16B",
+        previous_value: 391_035_000_000,
+        formatted_previous_value: "$391.04B",
         change: 6.43,
         change_unit: "percent",
         formatted_change: "↑ 6.43%",
@@ -74,6 +76,7 @@ test("uses server presentation fields instead of parsing the raw answer", () => 
   const view = buildResearchAnswerView(answerFixture());
   assert.equal(view.takeaway, "Apple’s profitability improved faster than revenue, while operating cash flow declined.");
   assert.equal(view.metrics[0].formatted_value, "$416.16B");
+  assert.equal(view.metrics[0].formatted_previous_value, "$391.04B");
   assert.equal(view.metrics[0].formatted_change, "↑ 6.43%");
   assert.equal(view.takeaway.includes("us_stock_daily_metrics"), false);
   assert.equal(view.takeaway.includes("6.80000000000001"), false);

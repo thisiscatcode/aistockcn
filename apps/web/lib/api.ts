@@ -925,6 +925,7 @@ export type ResearchEvidence = {
 
 export type ResearchPresentationSourceDetail = {
   evidence_id?: string | null;
+  period_end?: string | null;
   provider: string;
   taxonomy?: string | null;
   concept?: string | null;
@@ -943,11 +944,14 @@ export type ResearchPresentationMetric = {
   value: number | null;
   unit: string;
   formatted_value: string;
+  previous_value?: number | null;
+  formatted_previous_value?: string;
   change?: number | null;
   change_unit: "percent" | "percentage_points";
   formatted_change: string;
   direction: "up" | "down" | "flat" | "unavailable";
   period_end?: string | null;
+  previous_period_end?: string | null;
   calculation?: string;
   sources: ResearchPresentationSourceDetail[];
 };
@@ -961,6 +965,8 @@ export type ResearchPresentation = {
     basis?: "annual" | "quarterly" | null;
     fiscal_year?: number | null;
     end_date?: string | null;
+    previous_fiscal_year?: number | null;
+    previous_end_date?: string | null;
   };
   metrics: ResearchPresentationMetric[];
   interpretations: Array<{ kind: "deterministic" | "model_inference"; text: string }>;

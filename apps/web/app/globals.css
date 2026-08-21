@@ -5181,7 +5181,7 @@ select {
 
 .research-metric-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.35fr) minmax(130px, 0.7fr) minmax(110px, 0.55fr);
+  grid-template-columns: minmax(190px, 1.25fr) minmax(125px, 0.7fr) minmax(125px, 0.7fr) minmax(100px, 0.5fr);
   align-items: center;
   min-height: 52px;
   padding: 0 16px;
@@ -5210,6 +5210,16 @@ select {
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
   font-weight: 780;
+}
+
+.research-metric-value.is-previous {
+  color: #c6d2e1;
+  font-weight: 680;
+}
+
+.research-metric-value::before,
+.research-metric-change::before {
+  display: none;
 }
 
 .research-metric-change {
@@ -5671,8 +5681,8 @@ select {
   }
 
   .research-metric-row {
-    grid-template-columns: 1fr auto;
-    gap: 3px 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 8px 10px;
     padding: 10px 13px;
   }
 
@@ -5682,6 +5692,30 @@ select {
 
   .research-metric-row > strong {
     grid-column: 1 / -1;
+  }
+
+  .research-metric-value,
+  .research-metric-change {
+    min-width: 0;
+    font-size: 0.9rem;
+  }
+
+  .research-metric-value::before,
+  .research-metric-change::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: #718096;
+    font-size: 0.63rem;
+    font-weight: 750;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .research-metric-change {
+    display: block;
+    padding: 5px 7px;
+    text-align: center;
   }
 
   .research-interpretation li {

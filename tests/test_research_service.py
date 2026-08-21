@@ -53,6 +53,20 @@ class ResearchServiceTests(unittest.TestCase):
                 },
                 "derived": {"gross_margin_pct": 46.91, "operating_margin_pct": 31.97},
             },
+            "previous_annual": {
+                "end_date": "2024-09-28",
+                # SEC comparative facts can carry the current filing's FY context.
+                "fiscal_year": 2025,
+                "metrics": {
+                    "revenue": fact("Revenue", 391_035_000_000, "RevenueFromContractWithCustomerExcludingAssessedTax"),
+                    "gross_profit": fact("Gross profit", 180_683_000_000, "GrossProfit"),
+                    "operating_income": fact("Operating income", 123_216_000_000, "OperatingIncomeLoss"),
+                    "net_income": fact("Net income", 93_736_000_000, "NetIncomeLoss"),
+                    "eps_diluted": fact("Diluted EPS", 6.08, "EarningsPerShareDiluted", "USD/shares"),
+                    "operating_cash_flow": fact("Operating cash flow", 118_254_000_000, "NetCashProvidedByUsedInOperatingActivities"),
+                },
+                "derived": {"gross_margin_pct": 46.21, "operating_margin_pct": 31.47},
+            },
             "annual_changes": {
                 "revenue": 6.43,
                 "net_income": 19.50,
@@ -73,11 +87,16 @@ class ResearchServiceTests(unittest.TestCase):
 
         metrics = {item["key"]: item for item in presentation["metrics"]}
         self.assertEqual(metrics["revenue"]["formatted_value"], "$416.16B")
+        self.assertEqual(metrics["revenue"]["formatted_previous_value"], "$391.04B")
         self.assertEqual(metrics["revenue"]["formatted_change"], "↑ 6.43%")
         self.assertEqual(metrics["net_income"]["formatted_value"], "$112.01B")
         self.assertEqual(metrics["eps_diluted"]["formatted_value"], "$7.46")
         self.assertEqual(metrics["operating_cash_flow"]["formatted_change"], "↓ 5.73%")
         self.assertEqual(metrics["gross_margin_pct"]["formatted_change"], "↑ 0.70pp")
+        self.assertEqual(metrics["gross_margin_pct"]["formatted_previous_value"], "46.21%")
+        self.assertEqual(presentation["period"]["previous_fiscal_year"], 2024)
+        self.assertEqual(presentation["sources"][1]["label"], "SEC XBRL · FY2024")
+        self.assertEqual(len(metrics["revenue"]["sources"]), 2)
         self.assertNotIn("6.80000000000001", json.dumps(presentation))
         self.assertNotIn("us_stock_daily_metrics", presentation["takeaway"])
         self.assertEqual(

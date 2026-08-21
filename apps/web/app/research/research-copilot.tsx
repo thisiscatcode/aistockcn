@@ -57,6 +57,12 @@ export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
   const presentation = answer.presentation;
   const view = buildResearchAnswerView(answer);
   const { takeaway, interpretations, sources, metrics } = view;
+  const currentPeriodLabel = presentation?.period.fiscal_year
+    ? `FY${presentation.period.fiscal_year}`
+    : "Latest period";
+  const previousPeriodLabel = presentation?.period.previous_fiscal_year
+    ? `FY${presentation.period.previous_fiscal_year}`
+    : "Previous period";
 
   return (
     <div className="research-answer" aria-live="polite">
@@ -86,19 +92,21 @@ export function ResearchAnswerResult({ answer }: { answer: ResearchAnswer }) {
         <section className="research-metric-comparison" aria-labelledby="research-metric-title">
           <div className="research-result-section-title">
             <div><span aria-hidden="true">↗</span><h3 id="research-metric-title">Financial trend</h3></div>
-            <small>Latest comparable annual period</small>
+            <small>{currentPeriodLabel} versus {previousPeriodLabel}</small>
           </div>
           <div className="research-metric-table" role="table" aria-label="Financial metric comparison">
             <div className="research-metric-row is-heading" role="row">
               <span role="columnheader">Metric</span>
-              <span role="columnheader">Latest period</span>
-              <span role="columnheader">Change</span>
+              <span role="columnheader">{currentPeriodLabel}</span>
+              <span role="columnheader">{previousPeriodLabel}</span>
+              <span role="columnheader">YoY</span>
             </div>
             {metrics.map((metric) => (
               <div className="research-metric-row" role="row" key={metric.key}>
                 <strong role="cell">{metric.label}</strong>
-                <span role="cell" className="research-metric-value">{metric.formatted_value}</span>
-                <span role="cell" className={`research-metric-change is-${metric.direction}`}>
+                <span role="cell" className="research-metric-value" data-label={currentPeriodLabel}>{metric.formatted_value}</span>
+                <span role="cell" className="research-metric-value is-previous" data-label={previousPeriodLabel}>{metric.formatted_previous_value ?? "—"}</span>
+                <span role="cell" className={`research-metric-change is-${metric.direction}`} data-label="YoY">
                   {metric.formatted_change}
                 </span>
               </div>
