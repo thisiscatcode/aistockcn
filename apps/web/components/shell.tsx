@@ -7,7 +7,6 @@ import { NavTabs } from "@/components/nav-tabs";
 import { ShanghaiTime } from "@/components/shanghai-time";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MarketSwitcher } from "@/components/market-switcher";
-import { getMarketCapabilities, type MarketStage } from "@/lib/api";
 import { BrandMark } from "@/components/brand-mark";
 
 export async function Shell({
@@ -32,24 +31,22 @@ export async function Shell({
   compact?: boolean;
 }) {
   const copy = getMessages(locale);
-  const capabilities = await getMarketCapabilities(market).catch(() => null);
   void title;
   void subtitle;
   void tone;
   void compact;
-  const navItem = (href: Route, label: string, icon?: string, stage?: MarketStage) => ({
+  const navItem = (href: Route, label: string, icon?: string) => ({
     href,
     label,
-    icon,
-    status: stage ? capabilities?.by_stage?.[stage]?.status : undefined
+    icon
   });
   const root = market === "US" ? "/us" : "/cn";
   const businessNavItems: Array<{ href: Route; label: string; icon?: string }> = [
-    navItem(`${root}/overview` as Route, "Overview", "◫", "overview"),
-    navItem(`${root}/research` as Route, "Research", "✦", "research"),
-    navItem(`${root}/quant` as Route, "Quant", "⌁", "quant"),
-    navItem(`${root}/portfolio` as Route, "Portfolio", "◆", "portfolio"),
-    navItem(`${root}/execution` as Route, "Execution", "⇄", "execution")
+    navItem(`${root}/overview` as Route, "Overview", "◫"),
+    navItem(`${root}/research` as Route, "Research", "✦"),
+    navItem(`${root}/quant` as Route, "Quant", "⌁"),
+    navItem(`${root}/portfolio` as Route, "Portfolio", "◆"),
+    navItem(`${root}/execution` as Route, "Execution", "⇄")
   ];
   const navItems = role === "admin"
     ? [...businessNavItems, navItem("/admin", copy.shell.nav.admin, "⚙")]

@@ -33,7 +33,7 @@
 
 .us-terminal-shell {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 204px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -44,7 +44,7 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  width: 244px;
+  width: 204px;
   height: 100vh;
   padding: 18px 14px 14px;
   overflow: hidden;
@@ -178,7 +178,7 @@
   position: fixed;
   top: 0;
   right: 0;
-  left: 244px;
+  left: 204px;
   z-index: 1200;
   display: block;
   width: auto;
@@ -261,9 +261,16 @@
 .us-terminal-sidebar-footer {
   display: grid;
   gap: 12px;
+  min-width: 0;
   margin-top: auto;
   padding: 14px 6px 2px;
   border-top: 1px solid #1d293b;
+}
+
+.us-terminal-sidebar-footer > * {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 
 .us-terminal-sidebar .market-switcher {
@@ -1286,18 +1293,18 @@
 }
 
 .us-terminal-sidebar-clock {
-  padding: 9px 10px;
+  padding: 8px 7px;
   border: 1px solid #28364b;
   border-radius: 7px;
   color: #8fa1b8;
   background: #111b2b;
-  font-size: 0.76rem;
+  font-size: 0.68rem;
 }
 
 .us-terminal-sidebar-clock .shell-time {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 7px;
+  gap: 4px;
   align-items: center;
 }
 
@@ -1674,15 +1681,15 @@
 
 @media (max-width: 1050px) {
   .us-terminal-shell {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: 184px minmax(0, 1fr);
   }
 
   .us-terminal-sidebar {
-    width: 210px;
+    width: 184px;
   }
 
   .us-terminal-sidebar .navigation-feedback {
-    left: 210px;
+    left: 184px;
   }
 
   .us-terminal-heading p {
@@ -1812,20 +1819,6 @@
   }
 }
 
-.us-terminal-sidebar .nav-capability-dot {
-  width: 7px;
-  height: 7px;
-  margin-left: auto;
-  border-radius: 999px;
-  background: #8090a7;
-  box-shadow: 0 0 0 2px rgb(128 144 167 / 12%);
-}
-
-.us-terminal-sidebar .nav-capability-dot.status-live { background: #34d399; }
-.us-terminal-sidebar .nav-capability-dot.status-in_validation { background: #fbbf24; }
-.us-terminal-sidebar .nav-capability-dot.status-planned { background: #8290a7; }
-.us-terminal-sidebar .nav-capability-dot.status-degraded { background: #fb7185; }
-
 .product-stage-heading {
   display: flex;
   align-items: center;
@@ -1866,7 +1859,6 @@
 .cn-document-list a span { color: var(--muted); font-size: .82rem; }
 
 @media (max-width: 720px) {
-  .us-terminal-sidebar .nav-capability-dot { position: absolute; top: 5px; right: 9px; width: 6px; height: 6px; }
   .product-stage-heading { align-items: flex-start; }
   .product-stage-heading p { font-size: .88rem; }
   .stage-icon { display: none; }
