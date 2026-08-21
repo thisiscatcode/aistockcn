@@ -21,21 +21,25 @@ The integrated Research Copilot answers company questions, compares businesses a
 | Company comparison | Compare two or three businesses through the same evidence and calculation workflow |
 | Filing change detection | Identify added, removed, strengthened or weakened disclosures with both versions shown side by side |
 
-## Product interface
+## Product in action
+
+### Evidence-grounded company research
+
+![AiStockCN source-grounded company research workspace](docs/assets/research-answer-desktop.png)
+
+The company workspace combines live market context, comparable-period SEC XBRL facts, deterministic financial trends, model interpretation and original sources. Current period, previous period and change remain visible together; every displayed financial fact retains its audit locator.
+
+### Material filing change detection
+
+![AiStockCN filing change detection with bilateral evidence](docs/assets/filing-change-detection.png)
+
+Annual reports are compared as reproducible runs rather than free-form summaries. Proposed additions, removals and language changes keep both original passages, run history and human-review state.
 
 ### One product across two markets
 
-![AiStockCN unified product homepage](docs/assets/product-home.png)
+![AiStockCN unified US and China equity product](docs/assets/product-home.png)
 
 The product entry connects Research, Verify, Quantify, Portfolio and Execute without presenting separate products for each market or workflow stage.
-
-### Responsive customer experience
-
-<p align="center">
-  <img src="docs/assets/product-home-mobile.png" alt="AiStockCN mobile product homepage" width="360" />
-</p>
-
-Desktop and mobile use the same product language, evidence contract and direct calls to action.
 
 ## What users can do
 
@@ -97,6 +101,8 @@ All administrative routes enforce the administrator role on the server.
 
 ## Research agent
 
+![AiStockCN LangGraph research and evidence architecture](docs/assets/research-architecture.svg)
+
 A research request is executed as a validated LangGraph state workflow:
 
 1. The authenticated frontend submits a company-scoped question.
@@ -115,38 +121,15 @@ The production planner and synthesizer use Groq's OpenAI-compatible API with str
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U["Authenticated user"] --> W["Next.js product"]
-
-    W --> C["Platform API"]
-    W --> M["US market API"]
-    W --> R["Research API"]
-
-    C --> CN["5,000+ A-shares<br/>market, models and portfolios"]
-    M --> US["5,000+ US equities<br/>prices, fundamentals and selections"]
-
-    R --> P["LangGraph state workflow<br/>plan, execute and validate"]
-    P --> X["SEC XBRL<br/>validated financial facts"]
-    P --> S["SEC and China official disclosures<br/>plus uploaded PDFs"]
-    P --> D["Deterministic financial<br/>and market calculations"]
-    P --> H["Hybrid retrieval<br/>FTS plus pgvector plus RRF"]
-    H --> RR["PyTorch cross-encoder<br/>market-specific reranker"]
-    P --> L["Groq GPT-OSS<br/>structured evidence synthesis"]
-
-    R --> Q["PostgreSQL work queue"]
-    Q --> K["Background ingestion workers"]
-    K --> V["Documents, chunks, vectors<br/>and source lineage"]
-    V --> H
-
-    R --> O["Structured logs, run history<br/>and retrieval evaluation"]
-    X --> P
-    US --> P
-    P --> A["Cited answer<br/>evidence plus inference plus limitations"]
-    A --> W
-```
+![AiStockCN production system architecture](docs/assets/platform-architecture.svg)
 
 The research API and document workers are separate from the customer frontend, so ingestion and long-running analysis do not block ordinary navigation. US market services are isolated from the established A-share execution path while remaining part of the same customer product.
+
+### Retrieval quality and release control
+
+![AiStockCN hybrid retrieval, reranking and evaluation pipeline](docs/assets/retrieval-evaluation.svg)
+
+Retrieval is treated as a measurable subsystem. Lexical and vector candidates are fused, reranked and evaluated independently by market; citation validation and answer grounding remain separate release signals rather than one opaque model score.
 
 ## Filing ingestion and retrieval
 

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="680" viewBox="0 0 1600 680" role="img" aria-labelledby="title desc">
+  <title id="title">AiStockCN retrieval and evaluation pipeline</title>
+  <desc id="desc">Official filings are extracted, chunked and indexed. Queries use hybrid retrieval, reciprocal-rank fusion and a PyTorch cross-encoder, while benchmark metrics and citation checks control releases.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fafcff"/><stop offset="1" stop-color="#f3f7fb"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#0ea5e9"/></linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#a855f7"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#059669"/><stop offset="1" stop-color="#10b981"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#334155" flood-opacity=".10"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#4d73b9"/></marker>
+    <style>.t{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:#15233d}.title{font-size:38px;font-weight:800}.sub{font-size:17px;font-weight:560;fill:#66758d}.h{font-size:17px;font-weight:770}.p{font-size:13px;font-weight:520;fill:#61718a}.tiny{font-size:11px;font-weight:780;fill:#5875a2;letter-spacing:.8px}.light{fill:#dbeafe}.gate-label{fill:#91b7e6}.card{fill:#fff;stroke:#cfdbec;stroke-width:1.4;rx:14;filter:url(#shadow)}.line{fill:none;stroke:#4d73b9;stroke-width:2;marker-end:url(#arrow)}.dash{fill:none;stroke:#825bd6;stroke-width:2;stroke-dasharray:6 5;marker-end:url(#arrow)}</style>
+  </defs>
+  <rect width="1600" height="680" fill="url(#bg)"/>
+  <text x="70" y="58" class="t title">Retrieval quality is a release-controlled subsystem</text><text x="70" y="88" class="t sub">Market-specific ingestion, hybrid search, PyTorch reranking and measurable grounding</text>
+
+  <text x="70" y="144" class="t tiny">OFFLINE INGESTION</text>
+  <rect x="70" y="165" width="220" height="100" class="card"/><circle cx="105" cy="202" r="19" fill="url(#blue)"/><path d="M97 193h16v20H97zM101 198h8M101 203h8" fill="none" stroke="#fff" stroke-width="2"/><text x="135" y="197" class="t h">Official filings</text><text x="135" y="221" class="t p">SEC · exchanges · PDFs</text><text x="135" y="243" class="t p">Checksums + source identity</text>
+  <rect x="345" y="165" width="220" height="100" class="card"/><text x="375" y="198" class="t h">Extract + normalize</text><text x="375" y="222" class="t p">Page-aware PDF text</text><text x="375" y="244" class="t p">Honest SEC HTML passages</text>
+  <rect x="620" y="165" width="220" height="100" class="card"/><text x="650" y="198" class="t h">Semantic chunks</text><text x="650" y="222" class="t p">Market-specific profiles</text><text x="650" y="244" class="t p">Metadata + native locators</text>
+  <rect x="895" y="165" width="260" height="100" class="card"/><text x="925" y="198" class="t h">PostgreSQL indexes</text><text x="925" y="222" class="t p">FTS · pg_trgm · pgvector</text><text x="925" y="244" class="t p">Durable lineage and versions</text>
+  <path d="M290 215 H337" class="line"/><path d="M565 215 H612" class="line"/><path d="M840 215 H887" class="line"/>
+
+  <text x="70" y="340" class="t tiny">ONLINE RETRIEVAL</text>
+  <rect x="70" y="360" width="210" height="90" class="card"/><text x="175" y="397" text-anchor="middle" class="t h">Company question</text><text x="175" y="422" text-anchor="middle" class="t p">Market + symbol scoped</text>
+  <rect x="335" y="345" width="250" height="120" class="card"/><text x="365" y="380" class="t h">Hybrid candidates</text><rect x="365" y="398" width="85" height="38" rx="8" fill="#edf5ff"/><text x="407" y="422" text-anchor="middle" class="t p">Lexical</text><rect x="465" y="398" width="90" height="38" rx="8" fill="#f5efff"/><text x="510" y="422" text-anchor="middle" class="t p">Vector</text>
+  <rect x="640" y="345" width="220" height="120" class="card"/><circle cx="690" cy="405" r="25" fill="url(#purple)"/><path d="M678 405h24M690 393v24" stroke="#fff" stroke-width="3"/><text x="730" y="391" class="t h">RRF fusion</text><text x="730" y="416" class="t p">Stable rank merge</text><text x="730" y="439" class="t p">Deduplicate passages</text>
+  <rect x="915" y="345" width="250" height="120" class="card"/><text x="945" y="380" class="t h">Cross-encoder reranker</text><text x="945" y="405" class="t p">PyTorch relevance scoring</text><text x="945" y="428" class="t p">Versioned model identity</text><rect x="945" y="440" width="190" height="4" rx="2" fill="url(#purple)"/>
+  <rect x="1220" y="345" width="300" height="120" class="card"/><circle cx="1265" cy="405" r="24" fill="url(#green)"/><path d="M1253 405l8 8 16-19" fill="none" stroke="#fff" stroke-width="3"/><text x="1305" y="390" class="t h">Grounded evidence set</text><text x="1305" y="415" class="t p">Server-assigned evidence IDs</text><text x="1305" y="438" class="t p">Locators preserved end to end</text>
+  <path d="M280 405 H327" class="line"/><path d="M585 405 H632" class="line"/><path d="M860 405 H907" class="line"/><path d="M1165 405 H1212" class="line"/>
+  <path d="M1025 265 V325 H460 V337" class="dash"/>
+
+  <rect x="70" y="540" width="1450" height="95" rx="16" fill="#0f1e36" filter="url(#shadow)"/>
+  <text x="100" y="570" class="t tiny gate-label">EVALUATION + RELEASE GATE</text>
+  <rect x="100" y="586" width="190" height="30" rx="7" fill="#1d3556"/><text x="195" y="606" text-anchor="middle" class="t p light">Real SEC benchmark</text>
+  <rect x="320" y="586" width="150" height="30" rx="7" fill="#1d3556"/><text x="395" y="606" text-anchor="middle" class="t p light">Top-1</text>
+  <rect x="500" y="586" width="150" height="30" rx="7" fill="#1d3556"/><text x="575" y="606" text-anchor="middle" class="t p light">MRR</text>
+  <rect x="680" y="586" width="190" height="30" rx="7" fill="#1d3556"/><text x="775" y="606" text-anchor="middle" class="t p light">Citation validity</text>
+  <rect x="900" y="586" width="210" height="30" rx="7" fill="#1d3556"/><text x="1005" y="606" text-anchor="middle" class="t p light">Answer groundedness</text>
+  <path d="M1140 601 H1195" stroke="#72a6df" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="1210" y="574" width="280" height="48" rx="10" fill="url(#green)"/><text x="1350" y="604" text-anchor="middle" class="t h">Activate only if gates pass</text>
+</svg>
