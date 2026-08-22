@@ -39,13 +39,16 @@
 
 /* Global navigation: one left rail, never a second horizontal header. */
 .us-terminal-sidebar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  bottom: 0;
+  left: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
   width: 204px;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
   padding: 8px 14px 14px;
   overflow: hidden;
   color: #cbd5e1;
@@ -55,6 +58,7 @@
 
 .us-terminal-brand {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   min-height: 60px;
   padding: 0 1px;
@@ -222,6 +226,7 @@
 
 .us-terminal-sidebar-footer {
   display: grid;
+  flex: 0 0 auto;
   gap: 12px;
   min-width: 0;
   margin-top: auto;
@@ -339,6 +344,7 @@
 
 /* Page header and workspace. */
 .us-terminal-workspace {
+  grid-column: 2;
   min-width: 0;
   background: var(--bg);
 }
@@ -1248,6 +1254,8 @@
 
 /* Compact utility placement and richer functional colour cues. */
 .us-terminal-sidebar .nav {
+  flex: 1 1 auto;
+  align-content: start;
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1713,6 +1721,7 @@
     display: block;
     width: auto;
     height: 70px;
+    min-height: 0;
     padding: 5px 7px;
     border-top: 1px solid #26344a;
     border-right: 0;
