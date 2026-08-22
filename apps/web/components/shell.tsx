@@ -50,7 +50,7 @@ export async function Shell({
   const businessNavItems: Array<{ href: Route; label: string; icon?: string }> = [
     navItem(`${root}/overview` as Route, "Overview", "◫"),
     navItem(`${root}/research` as Route, "Research", "✦"),
-    navItem(`${root}/quant` as Route, "Quant", "⌁"),
+    navItem(`${root}/quant` as Route, "Quant", "↗"),
     navItem(`${root}/portfolio` as Route, "Portfolio", "◆"),
     navItem(`${root}/execution` as Route, "Execution", "⇄")
   ];
