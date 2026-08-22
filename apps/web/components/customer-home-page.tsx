@@ -15,7 +15,12 @@ export async function CustomerHomePage() {
         <header className="hero-landing customer-home-hero unified-home-hero">
           <nav className="landing-nav" aria-label="Public navigation">
             <Link href="/" className="landing-brand" aria-label="AiStockCN home"><BrandMark /><strong>AiStockCN</strong></Link>
-            <div><a href="#product-flow">Product</a><a href="#quantitative-methodology">Methodology</a><Link href="/login" className="landing-login">Sign in</Link></div>
+            <div className="landing-auth-actions">
+              <a href="#product-flow">Product</a>
+              <a href="#quantitative-methodology">Methodology</a>
+              <Link href="/login" className="landing-login">Sign in</Link>
+              <Link href="/login" className="landing-login landing-guest-login">Guest sign in</Link>
+            </div>
           </nav>
           <section className="hero-landing-stage">
             <div className="unified-hero-grid">

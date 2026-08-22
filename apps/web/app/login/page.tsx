@@ -38,6 +38,7 @@ export default async function LoginPage({
             type="text"
             autoComplete="username"
             placeholder={en.login.username}
+            defaultValue="guest"
             required
           />
 
@@ -51,6 +52,7 @@ export default async function LoginPage({
             type="password"
             autoComplete="current-password"
             placeholder={en.login.password}
+            defaultValue="guest"
             required
           />
 
