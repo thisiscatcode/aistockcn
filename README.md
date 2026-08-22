@@ -18,6 +18,10 @@ The integrated Research Copilot answers company questions, compares businesses a
   <a href="docs/README.md">Documentation</a>
 </p>
 
+## Try the product
+
+Open [aistockcn.com](https://aistockcn.com), select **Guest sign in**, then open **Research** and choose AAPL. Ask a question or open the prebuilt investment summary to inspect the answer, financial trend and SEC evidence.
+
 ## Product at a glance
 
 | Product capability | What it delivers |
@@ -178,27 +182,6 @@ Research Copilot operates on the same live platform that supports:
 - validation-gated paper-trading reconciliation;
 - long-running market-data and reference-data orchestration.
 
-## Implementation map
-
-| Area | Implementation |
-| --- | --- |
-| FastAPI and SSE streaming | `apps/api/app/research_main.py`, `apps/api/app/routers/research.py` |
-| Multi-step agent and tool execution | `apps/api/app/services/research.py` |
-| SEC filing discovery and sync | `apps/api/app/services/research_sec.py` |
-| China official disclosure sync | `apps/api/app/services/research_cn_disclosures.py` |
-| SEC XBRL normalization and calculations | `apps/api/app/services/research_financials.py` |
-| Filing change detection and review | `apps/api/app/services/research_filing_changes.py` |
-| PDF/HTML ingestion and workers | `apps/api/app/services/research_documents.py`, `apps/api/app/research_worker.py` |
-| Hybrid RAG and pgvector | `apps/api/app/services/research_retrieval.py` |
-| PyTorch reranking | `apps/api/app/services/research_models.py` |
-| Retrieval evaluation | `apps/api/app/services/research_evaluation.py` |
-| Unified customer UI | `apps/web/app/cn/`, `apps/web/app/us/`, `apps/web/components/shell.tsx` |
-| US market API | `apps/api/app/us_market_main.py`, `apps/api/app/services/us_market.py` |
-| Model Registry | `apps/api/app/services/model_registry.py`, `scripts/create_model_registry.sql` |
-| US adjusted OHLCV and 5-day pipeline | `scripts/backfill_us_daily_bars.py`, `scripts/train_us_5d_model.py` |
-| Container environment | `docker-compose.yml`, `apps/api/Dockerfile`, `apps/web/Dockerfile` |
-| Tests | `tests/test_research_service.py` and the wider `tests/` suite |
-
 ## Technology
 
 - **Frontend:** Next.js 15, React 19, TypeScript
@@ -207,59 +190,18 @@ Research Copilot operates on the same live platform that supports:
 - **Financial and ML:** Pandas, PyArrow, LightGBM, scikit-learn
 - **Operations:** Docker Compose, structured logging, retries, rate limiting and background workers
 
-## Repository layout
+## Engineering and operations
 
-```text
-apps/api/             FastAPI APIs, agent, retrieval and ingestion workers
-apps/web/             Authenticated customer and research interfaces
-docs/                 Product, architecture, results and operating documentation
-run/                  Safe example configuration and model profiles
-scripts/              SQL migrations and operational runners
-tests/                Unit and integration-style service tests
-*.py / *.sh           Data, model, backtest and trading workflows
-```
+Detailed implementation, service boundaries, local setup, deployment, validation and troubleshooting are maintained outside the product overview:
 
-## Local development
-
-AiStockCN uses real platform services rather than seeded sample data. A local integration environment requires:
-
-- Docker and Docker Compose;
-- PostgreSQL with the AiStockCN schema and `pgvector`;
-- a Groq API key supplied through ignored runtime configuration;
-- authentication values in `run/panel.env` and `run/panel_users.json`.
-
-```bash
-cp run/panel.env.example run/panel.env
-cp run/panel_users.example.json run/panel_users.json
-
-docker compose build research-api panel-web
-docker compose up -d research-api research-worker research-coverage-worker us-market-api panel-web
-docker compose ps research-api research-worker research-coverage-worker us-market-api panel-web
-```
-
-The Compose environment connects to the platform's existing external database and AI-service networks. See [the detailed operating guide](docs/RESEARCH_COPILOT.md#local-development) before provisioning a new machine.
-
-### Validation
-
-```bash
-docker compose config --quiet
-docker compose run --rm --no-deps -v "$PWD/tests:/tests:ro" research-api \
-  python -m unittest discover -s /tests -p 'test_research_service.py'
-npm --prefix apps/web run build
-```
+- [System design and service architecture](docs/SYSTEM_DESIGN_SPEC.md)
+- [Build, operation and validation manual](docs/SYSTEM_MANUAL.md)
+- [Research Copilot engineering guide](docs/RESEARCH_COPILOT.md)
+- [Quantitative model evaluation record](docs/RESULTS.md)
+- [Complete documentation index](docs/README.md)
 
 ## Security and responsible use
 
 Datasets, uploaded documents, logs, model caches, runtime state and real credentials are excluded from Git. Safe configuration examples are provided in `run/*.example`; example credentials must never be used unchanged.
 
 Research Copilot is an evidence-navigation and analysis system, not investment advice. Users should verify cited filings and financial data before making financial decisions.
-
-## Documentation
-
-- [Research Copilot](docs/RESEARCH_COPILOT.md)
-- [Documentation index](docs/README.md)
-- [User guide](docs/USER_GUIDE.md)
-- [System design specification](docs/SYSTEM_DESIGN_SPEC.md)
-- [System manual](docs/SYSTEM_MANUAL.md)
-- [Quantitative model evaluation record](docs/RESULTS.md)
-- [A-share 10-day model profile](docs/A_SHARE_MEDIUM_10D_V2.md)
