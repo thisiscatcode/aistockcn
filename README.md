@@ -4,15 +4,19 @@
 
 # AiStockCN — AI Equity Research and Quantitative Trading
 
+<p align="center"><strong>Research companies with AI. Verify every conclusion. Turn evidence into tested decisions.</strong></p>
+
 AiStockCN is one authenticated product for AI company research, evidence verification, quantitative signals, portfolios and controlled execution across more than 5,000 actively tracked US-listed equities and more than 5,000 China A-shares.
 
 The integrated Research Copilot answers company questions, compares businesses and detects material filing changes while keeping original documents, financial facts, model inference and limitations clearly separated.
 
-- Product: [aistockcn.com](https://aistockcn.com)
-- US company research: [aistockcn.com/us/research](https://aistockcn.com/us/research)
-- A-share company research: [aistockcn.com/cn/research](https://aistockcn.com/cn/research)
-- Product and operating guide: [Research Copilot documentation](docs/RESEARCH_COPILOT.md)
-- Documentation index: [docs/README.md](docs/README.md)
+<p align="center">
+  <a href="https://aistockcn.com">Live product</a> ·
+  <a href="https://aistockcn.com/us/research">US research</a> ·
+  <a href="https://aistockcn.com/cn/research">CN research</a> ·
+  <a href="docs/RESEARCH_COPILOT.md">Product guide</a> ·
+  <a href="docs/README.md">Documentation</a>
+</p>
 
 ## Product at a glance
 
@@ -27,23 +31,23 @@ The integrated Research Copilot answers company questions, compares businesses a
 
 ## Product in action
 
+### One product across US and China markets
+
+![AiStockCN unified US and China equity product](docs/assets/product-home.png)
+
+The product entry connects research, evidence verification, quantitative analysis, portfolios and controlled execution without splitting each market into a separate product.
+
+### Unified market intelligence workspace
+
+![AiStockCN US market intelligence workspace](docs/assets/us-market-overview.png)
+
+US and China stocks share the same navigation, market switching and product stages while retaining market-specific data, calendars, models and execution controls.
+
 ### Evidence-grounded company research
 
 ![AiStockCN source-grounded company research workspace](docs/assets/research-answer-desktop.png)
 
-The company workspace combines live market context, comparable-period SEC XBRL facts, deterministic financial trends, model interpretation and original sources. Current period, previous period and change remain visible together; every displayed financial fact retains its audit locator.
-
-### Material filing change detection
-
-![AiStockCN filing change detection with bilateral evidence](docs/assets/filing-change-detection.png)
-
-Annual reports are compared as reproducible runs rather than free-form summaries. Proposed additions, removals and language changes keep both original passages, run history and human-review state.
-
-### One product across two markets
-
-![AiStockCN unified US and China equity product](docs/assets/product-home.png)
-
-The product entry connects Research, Verify, Quantify, Portfolio and Execute without presenting separate products for each market or workflow stage.
+The company workspace combines market context, comparable-period SEC XBRL facts, deterministic financial trends, model interpretation and original sources. Current period, previous period and change remain visible together; every displayed financial fact retains its audit locator.
 
 ## What users can do
 
