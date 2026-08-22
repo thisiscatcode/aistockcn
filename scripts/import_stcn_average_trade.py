@@ -39,28 +39,28 @@ MARKETS = (
         "label": "沪市A股",
         "exchange": "sh",
         "paged": True,
-        "url": "http://info.stcn.com/data_center/jysj/json/mbjy_hsa_{page}.json",
+        "url": "https://info.stcn.com/data_center/jysj/json/mbjy_hsa_{page}.json",
     },
     {
         "key": "mbcj_szzb",
         "label": "深市主板",
         "exchange": "sz",
         "paged": True,
-        "url": "http://info.stcn.com/data_center/jysj/json/mbjy_sszb_{page}.json",
+        "url": "https://info.stcn.com/data_center/jysj/json/mbjy_sszb_{page}.json",
     },
     {
         "key": "mbcj_cyb",
         "label": "创业板",
         "exchange": "sz",
         "paged": True,
-        "url": "http://info.stcn.com/data_center/jysj/json/mbjy_sscyb_{page}.json",
+        "url": "https://info.stcn.com/data_center/jysj/json/mbjy_sscyb_{page}.json",
     },
     {
         "key": "mbcj_kcb",
         "label": "科创板",
         "exchange": "sh",
         "paged": False,
-        "url": "http://info.stcn.com/dc/sjb/indexWeb.jsp?p=xcxjyydKcb",
+        "url": "https://info.stcn.com/dc/sjb/indexWeb.jsp?p=xcxjyydKcb",
     },
 )
 

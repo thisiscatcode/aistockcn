@@ -20,6 +20,10 @@ def source_row(code: str) -> dict[str, str]:
     return {"secucode": code, "rq1": "2026-05-22", "bs1": "1234"}
 
 
+def test_stcn_sources_use_https() -> None:
+    assert all(str(market["url"]).startswith("https://") for market in stcn_import.MARKETS)
+
+
 def test_parse_market_rows_skips_excluded_stcn_codes() -> None:
     rows = stcn_import.parse_market_rows(
         {"exchange": "sz"},

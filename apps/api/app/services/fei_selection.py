@@ -6,6 +6,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.serializers import records_to_json
+from app.services.fei_db_sync import get_published_trade_date
 
 try:
     import psycopg
@@ -460,13 +461,18 @@ def get_fei_selection_rows(*, as_of_date: str | None = None, limit: int = 6000) 
 
 def get_fei_selection(*, limit: int = 6000) -> dict[str, Any]:
     try:
-        rows = get_fei_selection_rows(limit=limit)
+        # The latest kline lane can arrive before the STCN average-trade lane.
+        # Only expose the last date that passed the combined publication gate;
+        # otherwise the newest incomplete rows displace valid metrics and make
+        # the customer selection universe appear empty.
+        published_trade_date = get_published_trade_date()
+        rows = get_fei_selection_rows(as_of_date=published_trade_date, limit=limit)
         selections = records_to_json([_numeric_jsonable(row) for row in rows])
         latest_date = max((row.get("trade_date") for row in selections if row.get("trade_date")), default=None)
         return {
             "rows": len(selections),
             "latest_date": latest_date,
-            "published_trade_date": latest_date,
+            "published_trade_date": published_trade_date or latest_date,
             "selections": selections,
             "error": None,
         }
