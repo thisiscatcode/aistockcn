@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/public/brand/aistockcn-lockup.png" alt="AiStockCN Equity Intelligence" width="920">
+  <img src="docs/assets/aistockcn-brand-banner.png" alt="AiStockCN Equity Intelligence" width="920">
 </p>
 
 # AiStockCN — AI Equity Research and Quantitative Trading

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { CustomerSystemArchitecture } from "@/components/customer-system-architecture";
-import { BrandWordmark } from "@/components/brand-mark";
+import { BrandLockup } from "@/components/brand-mark";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function CustomerHomePage() {
@@ -24,10 +24,7 @@ export async function CustomerHomePage() {
           <section className="hero-landing-stage">
             <div className="unified-hero-grid">
               <div className="hero-panel-copy-wrap">
-                <div className="hero-brand-signature" aria-label="AiStockCN Equity Intelligence">
-                  <BrandWordmark className="hero-brand-wordmark" />
-                  <span>Equity Intelligence</span>
-                </div>
+                <BrandLockup className="hero-brand-lockup" />
                 <p className="eyebrow hero-dark-eyebrow">US STOCKS + CN STOCKS</p>
                 <div className="unified-hero-title-stack">
                   <h1>Research with AI.</h1>
