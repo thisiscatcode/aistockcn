@@ -7,7 +7,11 @@ import { PageRestoreCleanup } from "@/components/page-restore-cleanup";
 
 export const metadata: Metadata = {
   title: "AiStockCN",
-  description: "AI-powered equity research and quantitative trading for US and China markets."
+  description: "AI-powered equity research and quantitative trading for US and China markets.",
+  icons: {
+    icon: "/brand/aistockcn-mark.png",
+    apple: "/brand/aistockcn-mark.png"
+  }
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

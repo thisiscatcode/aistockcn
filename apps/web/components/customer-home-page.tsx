@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { CustomerSystemArchitecture } from "@/components/customer-system-architecture";
-import { BrandMark } from "@/components/brand-mark";
+import { BrandWordmark } from "@/components/brand-mark";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function CustomerHomePage() {
@@ -14,7 +14,7 @@ export async function CustomerHomePage() {
       <div className="shell shell-dark customer-home-shell">
         <header className="hero-landing customer-home-hero unified-home-hero">
           <nav className="landing-nav" aria-label="Public navigation">
-            <Link href="/" className="landing-brand" aria-label="AiStockCN home"><BrandMark /><strong>AiStockCN</strong></Link>
+            <Link href="/" className="landing-brand" aria-label="AiStockCN home"><BrandWordmark /></Link>
             <div className="landing-auth-actions">
               <a href="#product-flow">Product</a>
               <a href="#quantitative-methodology">Methodology</a>
