@@ -4,12 +4,12 @@ import { ReactNode } from "react";
 
 import { PanelLocale, getMessages } from "@/lib/i18n";
 import { NavTabs } from "@/components/nav-tabs";
-import { ShanghaiTime } from "@/components/shanghai-time";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MarketSwitcher } from "@/components/market-switcher";
 import { BrandSidebarLockup } from "@/components/brand-mark";
 import { MarketSessionClock } from "@/components/market-session-clock";
 import { getUsMarketSession } from "@/lib/api";
+import { getCnMarketSession } from "@/lib/cn-market-session";
 
 export async function Shell({
   title,
@@ -33,7 +33,10 @@ export async function Shell({
   compact?: boolean;
 }) {
   const copy = getMessages(locale);
-  const marketSession = market === "US" ? await getUsMarketSession().catch(() => null) : null;
+  const marketSession = market === "US"
+    ? await getUsMarketSession().catch(() => null)
+    : getCnMarketSession();
+  const marketSessionEndpoint = market === "US" ? "/api/us/session" : "/api/cn/session";
   void title;
   void subtitle;
   void tone;
@@ -67,11 +70,7 @@ export async function Shell({
 
           <div className="us-terminal-sidebar-footer">
             <div className="us-terminal-sidebar-clock">
-              {market === "US" ? (
-                <MarketSessionClock initialSession={marketSession} />
-              ) : (
-                <ShanghaiTime locale={locale} label="Shanghai" timeZone="Asia/Shanghai" />
-              )}
+              <MarketSessionClock initialSession={marketSession} refreshEndpoint={marketSessionEndpoint} />
             </div>
             <MarketSwitcher market={market} />
             <div className="us-terminal-user">
@@ -87,11 +86,7 @@ export async function Shell({
 
         <div className="us-terminal-workspace">
           <div className="us-terminal-mobile-clock">
-            {market === "US" ? (
-              <MarketSessionClock initialSession={marketSession} />
-            ) : (
-              <ShanghaiTime locale={locale} label="Shanghai" timeZone="Asia/Shanghai" />
-            )}
+            <MarketSessionClock initialSession={marketSession} refreshEndpoint={marketSessionEndpoint} />
           </div>
           <main className="page-content us-terminal-content">{children}</main>
         </div>

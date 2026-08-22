@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { UsMarketSession } from "@/lib/api";
+import type { MarketSession } from "@/lib/api";
 
 
-function formatClock(timestamp: number) {
+function formatClock(timestamp: number, timeZone: string) {
   if (!timestamp) return "—";
   return new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "America/New_York",
+    timeZone,
     timeZoneName: "short"
   }).format(new Date(timestamp));
 }
@@ -27,20 +27,26 @@ function formatCountdown(now: number, target: string | null) {
   return `${minutes}m`;
 }
 
-export function MarketSessionClock({ initialSession }: { initialSession: UsMarketSession | null }) {
+export function MarketSessionClock({
+  initialSession,
+  refreshEndpoint = "/api/us/session"
+}: {
+  initialSession: MarketSession | null;
+  refreshEndpoint?: string;
+}) {
   const [session, setSession] = useState(initialSession);
   const [now, setNow] = useState(() => Date.parse(initialSession?.observed_at ?? "") || 0);
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/us/session", { cache: "no-store" });
+      const response = await fetch(refreshEndpoint, { cache: "no-store" });
       if (!response.ok) return;
-      const next = await response.json() as UsMarketSession;
+      const next = await response.json() as MarketSession;
       setSession(next);
     } catch {
       // Keep the last confirmed session state during a transient refresh failure.
     }
-  }, []);
+  }, [refreshEndpoint]);
 
   useEffect(() => {
     setNow(Date.now());
@@ -68,7 +74,7 @@ export function MarketSessionClock({ initialSession }: { initialSession: UsMarke
         <strong>{session?.label ?? "US Market"}</strong>
       </span>
       <span className="market-session-detail">
-        <time>{formatClock(now)}</time>
+        <time>{formatClock(now, session?.timezone ?? "America/New_York")}</time>
         <span aria-hidden="true">·</span>
         <span>{transition}</span>
       </span>

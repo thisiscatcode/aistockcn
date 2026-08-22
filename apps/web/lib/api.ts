@@ -1288,15 +1288,20 @@ export type UsMarketContext = {
   data_freshness?: Record<string, string | null>;
 };
 
-export type UsMarketSession = {
-  market: "US";
+export type MarketSession = {
+  market: "US" | "CN";
   status: "open" | "closed";
   label: string;
-  timezone: "America/New_York";
+  timezone: string;
   timezone_abbreviation: string;
   observed_at: string;
   next_transition: "opens" | "closes" | null;
   next_transition_at: string | null;
+};
+
+export type UsMarketSession = MarketSession & {
+  market: "US";
+  timezone: "America/New_York";
 };
 
 export type UsCoverage = {
