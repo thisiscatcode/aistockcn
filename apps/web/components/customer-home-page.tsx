@@ -14,6 +14,9 @@ export async function CustomerHomePage() {
       <div className="shell shell-dark customer-home-shell">
         <header className="hero-landing customer-home-hero unified-home-hero">
           <nav className="landing-nav" aria-label="Public navigation">
+            <Link href="/" className="landing-brand landing-brand-lockup" aria-label="AiStockCN home">
+              <BrandLockup />
+            </Link>
             <div className="landing-auth-actions">
               <a href="#product-flow">Product</a>
               <a href="#quantitative-methodology">Methodology</a>
@@ -24,7 +27,6 @@ export async function CustomerHomePage() {
           <section className="hero-landing-stage">
             <div className="unified-hero-grid">
               <div className="hero-panel-copy-wrap">
-                <BrandLockup className="hero-brand-lockup" />
                 <p className="eyebrow hero-dark-eyebrow">US STOCKS + CN STOCKS</p>
                 <div className="unified-hero-title-stack">
                   <h1>Research with AI.</h1>

@@ -5799,7 +5799,8 @@ select {
 .aistock-brand-wordmark img { display: block; width: 100%; height: auto; }
 .aistock-brand-lockup { display: block; overflow: hidden; }
 .aistock-brand-lockup img { display: block; width: 100%; height: auto; }
-.hero-brand-lockup { width: min(430px, 82vw); margin: 0 0 18px; }
+.landing-brand-lockup { width: 300px; max-width: 42vw; }
+.landing-brand-lockup .aistock-brand-lockup { width: 100%; }
 .landing-nav > div { display: flex; align-items: center; gap: 24px; }
 .landing-nav > .landing-auth-actions { gap: 9px; margin-left: auto; }
 .landing-nav > div a { color: #bac6d7; text-decoration: none; font-size: .94rem; font-weight: 650; }
@@ -5860,7 +5861,7 @@ select {
   .landing-nav > .landing-auth-actions { gap: 6px; }
   .landing-nav .landing-login { padding: 7px 9px; font-size: .78rem; }
   .landing-brand .aistock-brand-wordmark { width: 138px; max-width: 38vw; }
-  .hero-brand-lockup { width: min(330px, 88vw); margin-bottom: 14px; }
+  .landing-brand-lockup { width: 112px; max-width: 32vw; }
   .unified-hero-grid .unified-hero-title-stack h1 { font-size: 2.8rem; }
   .unified-hero-thesis { font-size: 2rem; }
   .unified-hero-outcome { border-radius: 9px; font-size: .72rem; line-height: 1.35; }
