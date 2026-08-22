@@ -5801,9 +5801,11 @@ select {
 .aistock-brand-wordmark img { display: block; width: 100%; height: auto; }
 .aistock-brand-lockup { display: block; overflow: hidden; }
 .aistock-brand-lockup img { display: block; width: 100%; height: auto; }
-.hero-brand-lockup { width: min(430px, 82vw); margin: 0 0 18px; border-radius: 12px; box-shadow: 0 16px 40px rgb(2 10 26 / 24%); }
+.hero-brand-signature { display: grid; width: min(430px, 82vw); justify-items: end; gap: 3px; margin: 0 0 18px; }
+.hero-brand-signature .hero-brand-wordmark { width: 100%; max-width: none; }
+.hero-brand-signature > span { width: 72%; color: #f8fafc; font-size: .72rem; font-weight: 540; letter-spacing: .27em; line-height: 1.2; text-align: center; }
 .landing-nav > div { display: flex; align-items: center; gap: 24px; }
-.landing-nav > .landing-auth-actions { gap: 9px; }
+.landing-nav > .landing-auth-actions { gap: 9px; margin-left: auto; }
 .landing-nav > div a { color: #bac6d7; text-decoration: none; font-size: .94rem; font-weight: 650; }
 .landing-nav > div a:hover { color: #fff; }
 .landing-nav .landing-login { padding: 9px 14px; border: 1px solid #334765; border-radius: 9px; color: #fff; }
@@ -5862,7 +5864,8 @@ select {
   .landing-nav > .landing-auth-actions { gap: 6px; }
   .landing-nav .landing-login { padding: 7px 9px; font-size: .78rem; }
   .landing-brand .aistock-brand-wordmark { width: 138px; max-width: 38vw; }
-  .hero-brand-lockup { width: min(330px, 88vw); margin-bottom: 14px; border-radius: 9px; }
+  .hero-brand-signature { width: min(330px, 88vw); margin-bottom: 14px; }
+  .hero-brand-signature > span { font-size: .58rem; letter-spacing: .2em; }
   .unified-hero-grid .unified-hero-title-stack h1 { font-size: 2.8rem; }
   .unified-hero-thesis { font-size: 2rem; }
   .unified-hero-outcome { border-radius: 9px; font-size: .72rem; line-height: 1.35; }
