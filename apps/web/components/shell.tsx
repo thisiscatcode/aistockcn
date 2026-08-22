@@ -7,7 +7,7 @@ import { NavTabs } from "@/components/nav-tabs";
 import { ShanghaiTime } from "@/components/shanghai-time";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { MarketSwitcher } from "@/components/market-switcher";
-import { BrandMark } from "@/components/brand-mark";
+import { BrandSidebarLockup } from "@/components/brand-mark";
 import { MarketSessionClock } from "@/components/market-session-clock";
 import { getUsMarketSession } from "@/lib/api";
 
@@ -60,8 +60,7 @@ export async function Shell({
       <div className="us-terminal-shell">
         <aside className="us-terminal-sidebar">
           <div className="us-terminal-brand">
-            <BrandMark className="aistock-brand-mark-sidebar" />
-            <span><strong>AiStockCN</strong><small>Equity Intelligence</small></span>
+            <BrandSidebarLockup />
           </div>
 
           <NavTabs items={navItems} />

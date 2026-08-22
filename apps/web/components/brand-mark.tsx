@@ -23,3 +23,11 @@ export function BrandLockup({ className = "" }: { className?: string }) {
     </span>
   );
 }
+
+export function BrandSidebarLockup({ className = "" }: { className?: string }) {
+  return (
+    <span className={`aistock-sidebar-lockup${className ? ` ${className}` : ""}`} aria-hidden="true">
+      <Image src="/brand/aistockcn-sidebar-lockup.png" alt="" width={242} height={83} priority />
+    </span>
+  );
+}
