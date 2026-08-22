@@ -5791,7 +5791,7 @@ select {
 }
 
 .unified-home-hero { min-height: auto; padding-top: 0; }
-.landing-nav { display: flex; align-items: center; justify-content: space-between; width: min(1260px, calc(100% - 36px)); margin: 0 auto; padding: 20px 0; }
+.landing-nav { display: flex; align-items: center; justify-content: space-between; width: min(1260px, calc(100% - 36px)); margin: 0 auto; padding: 10px 0; }
 .landing-brand { display: flex; align-items: center; color: #f8fafc; text-decoration: none; }
 .aistock-brand-mark { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; }
 .aistock-brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -9606,7 +9606,7 @@ select {
 /* Customer homepage: larger reading type with a denser operating overview. */
 .customer-home-shell {
   max-width: 1440px;
-  padding: 24px 24px 32px;
+  padding: 12px 24px 32px;
 }
 
 .customer-home-hero .hero-landing-grid {
@@ -9744,7 +9744,7 @@ select {
 
 @media (max-width: 720px) {
   .customer-home-shell {
-    padding: 14px 14px 24px;
+    padding: 8px 14px 24px;
   }
 
   .customer-home-hero .hero-panel-copy-wrap {
