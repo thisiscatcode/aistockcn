@@ -78,19 +78,19 @@
 
 .us-terminal-sidebar .nav {
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .us-terminal-sidebar .nav-link {
   display: flex;
   align-items: center;
   gap: 11px;
-  min-height: 46px;
-  padding: 6px 10px;
+  min-height: 54px;
+  padding: 7px 10px;
   border: 0;
   border-radius: 8px;
   color: #98a6ba;
-  font-size: 0.98rem;
+  font-size: 1.08rem;
   font-weight: 680;
   transition: color 140ms ease, background 140ms ease;
 }
@@ -122,15 +122,15 @@
 
 .us-terminal-sidebar .nav-link-icon {
   display: grid;
-  width: 29px;
-  height: 29px;
+  width: 35px;
+  height: 35px;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid #29364b;
   border-radius: 7px;
   color: #8ea3c0;
   background: #111b2b;
-  font-size: 0.7rem;
+  font-size: 1.08rem;
   font-weight: 850;
 }
 
