@@ -15,3 +15,11 @@ export function BrandWordmark({ className = "" }: { className?: string }) {
     </span>
   );
 }
+
+export function BrandLockup({ className = "" }: { className?: string }) {
+  return (
+    <span className={`aistock-brand-lockup${className ? ` ${className}` : ""}`} aria-hidden="true">
+      <Image src="/brand/aistockcn-lockup.png" alt="" width={1600} height={430} priority />
+    </span>
+  );
+}

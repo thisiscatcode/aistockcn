@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { BrandLockup } from "@/components/brand-mark";
 import { getCurrentUser } from "@/lib/auth";
 import { getMessages } from "@/lib/i18n";
 
@@ -26,6 +28,9 @@ export default async function LoginPage({
   return (
     <div className="auth-shell">
       <section className="auth-card">
+        <Link href="/" className="auth-brand-lockup" aria-label="AiStockCN home">
+          <BrandLockup />
+        </Link>
         <form action="/auth/login" method="post" className="auth-form">
           <input type="hidden" name="return_to" value={returnTo} />
           <label className="auth-label" htmlFor="username">

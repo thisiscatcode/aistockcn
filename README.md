@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/public/brand/aistockcn-lockup.png" alt="AiStockCN Equity Intelligence" width="920">
+</p>
+
 # AiStockCN — AI Equity Research and Quantitative Trading
 
 AiStockCN is one authenticated product for AI company research, evidence verification, quantitative signals, portfolios and controlled execution across more than 5,000 actively tracked US-listed equities and more than 5,000 China A-shares.
