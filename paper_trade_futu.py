@@ -343,6 +343,9 @@ def score_file_signature(path: Path) -> str:
 
 def quant_dir_for_scores_path(path: Path) -> Path:
     resolved = Path(path)
+    for parent in resolved.parents:
+        if parent.name == "quant_data":
+            return parent
     if resolved.parent.name == "models" and resolved.parent.parent.name != "model_profiles":
         return resolved.parent.parent
     if len(resolved.parents) >= 4 and resolved.parent.name == "models" and resolved.parent.parent.parent.name == "model_profiles":
@@ -394,14 +397,27 @@ def active_rebalance_profile(scores_path: Path) -> dict[str, Any]:
 
 
 def score_trading_dates(scores_path: Path) -> list[str]:
+    collected: set[str] = set()
     try:
         scores = pd.read_parquet(scores_path, columns=["date"])
     except Exception:
-        return []
-    dates = pd.to_datetime(scores["date"], errors="coerce").dropna()
-    if dates.empty:
-        return []
-    return sorted({str(pd.Timestamp(value).date()) for value in dates})
+        scores = pd.DataFrame()
+    if not scores.empty:
+        dates = pd.to_datetime(scores["date"], errors="coerce").dropna()
+        collected.update(str(pd.Timestamp(value).date()) for value in dates)
+
+    # Immutable registry artifacts contain one scoring date. Use a liquid
+    # benchmark's local K-line history to recover elapsed exchange sessions
+    # after a pipeline or deployment interruption.
+    calendar_path = quant_dir_for_scores_path(scores_path) / "daily_kline" / "000001.parquet"
+    if calendar_path.is_file():
+        try:
+            calendar = pd.read_parquet(calendar_path, columns=["date"])
+            dates = pd.to_datetime(calendar["date"], errors="coerce").dropna()
+            collected.update(str(pd.Timestamp(value).date()) for value in dates)
+        except Exception:
+            pass
+    return sorted(collected)
 
 
 def rebalance_wait_count(trading_dates: list[str], *, last_applied_signal_date: str | None, signal_date: str) -> int:
@@ -2202,7 +2218,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         plan_summary = {**plan_summary, **rebalance, "active_model": model_context}
         planned_target_snapshot = target_snapshot_rows(plan)
 
-        if not config.force and previous_signature == signature:
+        last_applied = normalize_date_text(state.get("last_applied_signal_date"))
+        retry_recovered_due_snapshot = bool(
+            rebalance["rebalance_due"]
+            and last_applied
+            and last_applied != normalize_date_text(signal_date)
+        )
+        if not config.force and previous_signature == signature and not retry_recovered_due_snapshot:
             has_pending_actions = bool(plan_summary.get("buy_order_count")) or bool(plan_summary.get("sell_order_count"))
             noop_message: str | None
             if active_orders:

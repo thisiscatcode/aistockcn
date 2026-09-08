@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from app.config import get_settings
+from app.services.model_artifacts import latest_registry_scores_path
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
 
@@ -164,7 +165,7 @@ def get_pipeline_summary() -> dict[str, Any]:
     return {
         "training_features": _parquet_snapshot(settings.quant_dir / "ml_features_ready.parquet", root=settings.project_root),
         "inference_features": _parquet_snapshot(settings.quant_dir / "inference_features_latest.parquet", root=settings.project_root),
-        "inference_scores": _parquet_snapshot(settings.models_dir / "inference_scores_latest.parquet", root=settings.project_root),
+        "inference_scores": _parquet_snapshot(latest_registry_scores_path(settings), root=settings.project_root),
     }
 
 

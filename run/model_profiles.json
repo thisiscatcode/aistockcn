@@ -83,7 +83,15 @@
       "backtest_top_k": 20,
       "backtest_max_drop": 4,
       "backtest_budget_total": 1000000.0,
-      "deployment_status": "available"
+      "deployment_status": "available",
+      "auto_paper_promotion": {
+        "enabled": true,
+        "min_valid_rows": 100000,
+        "min_ic": 0.01,
+        "min_rank_ic": 0.03,
+        "max_rank_ic_drop_from_active": 0.03,
+        "require_current_score_date": true
+      }
     }
   ]
 }

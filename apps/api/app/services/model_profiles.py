@@ -109,6 +109,8 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any] | None:
     return_mode = str(raw.get("return_mode") or "close_to_close").strip().lower()
     if return_mode not in {"close_to_close", "next_open_to_close"}:
         return_mode = "close_to_close"
+    raw_promotion = raw.get("auto_paper_promotion")
+    promotion = dict(raw_promotion) if isinstance(raw_promotion, dict) else {}
     return {
         "name": name,
         "label": label,
@@ -127,6 +129,18 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any] | None:
         "backtest_max_drop": max(int(raw.get("backtest_max_drop") or 0), 0),
         "backtest_budget_total": max(float(raw.get("backtest_budget_total") or 50_000.0), 1.0),
         "deployment_status": str(raw.get("deployment_status") or "available").strip() or "available",
+        "auto_paper_promotion": {
+            "enabled": bool(promotion.get("enabled", False)),
+            "min_valid_rows": max(int(promotion.get("min_valid_rows") or 0), 0),
+            "min_auc": float(promotion.get("min_auc") or 0.0),
+            "min_ic": float(promotion.get("min_ic") or 0.0),
+            "min_rank_ic": float(promotion.get("min_rank_ic") or 0.0),
+            "max_auc_drop_from_active": max(float(promotion.get("max_auc_drop_from_active") or 0.0), 0.0),
+            "max_rank_ic_drop_from_active": max(
+                float(promotion.get("max_rank_ic_drop_from_active") or 0.0), 0.0
+            ),
+            "require_current_score_date": bool(promotion.get("require_current_score_date", True)),
+        },
     }
 
 

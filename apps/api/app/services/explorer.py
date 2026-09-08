@@ -11,6 +11,7 @@ import duckdb
 import pyarrow.parquet as pq
 
 from app.config import get_settings
+from app.services.model_artifacts import latest_registry_scores_path
 from app.serializers import records_to_json
 
 MAX_PAGE_SIZE = 200
@@ -54,7 +55,7 @@ def _dataset_specs() -> dict[str, ExplorerDatasetSpec]:
             key="inference_scores",
             label="Step 4 Inference Scores",
             description="Latest scored universe with ranking signals and price context.",
-            path=settings.models_dir / "inference_scores_latest.parquet",
+            path=latest_registry_scores_path(settings),
             default_columns=("date", "code", "name", "industry", "score", "close", "bias_20", "pe_ttm", "pb"),
             searchable_columns=("code", "name", "industry", "exchange"),
             default_sort_by="score",

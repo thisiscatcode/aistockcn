@@ -407,6 +407,7 @@ def main() -> int:
         "train_date_max": str(pd.Timestamp(train_dates.max()).date()),
         "valid_date_min": str(pd.Timestamp(valid_dates.min()).date()),
         "valid_date_max": str(pd.Timestamp(valid_dates.max()).date()),
+        "score_date": str(pd.Timestamp(inference_df["date"].max()).date()),
     }
     (model_dir / "training_metadata.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),

@@ -175,11 +175,13 @@ Every result should be referenced by run ID, date range and method version. Do n
 
 The administrator records validation in the Model Registry, then activates an eligible version. Activation is atomic and creates an audit event. Models, Picks and Paper resolve the same deployment row.
 
-The profile catalog in `run/model_profiles.json` defines training parameters only; editing its default does not activate a model.
+For a profile with an explicit `auto_paper_promotion` policy, the daily pipeline may validate and activate the newest candidate only when paper permission is already enabled for that same profile. The configured holdout quality, stability, artifact-integrity and score-freshness checks must all pass. This automation is limited to paper trading; it does not grant live-capital approval or enable a previously disabled deployment.
+
+The profile catalog in `run/model_profiles.json` defines training parameters and optional paper-only promotion gates; editing its default profile does not activate a model.
 
 ### 7. Paper reconciliation
 
-`paper_trade_futu.py` resolves the paper-enabled deployment, verifies its manifest and keeps that model revision fixed for the reconciliation cycle. `paper_trade_daemon.py` starts a new cycle only when a new eligible signal snapshot is available.
+`paper_trade_futu.py` resolves the paper-enabled deployment, verifies its manifest and keeps that model revision fixed for the reconciliation cycle. `paper_trade_daemon.py` starts a new cycle only when a new eligible signal snapshot is available. After Step 4, the daily pipeline records the configured paper-only validation decision and atomically promotes a passing candidate so the daemon can observe the new immutable snapshot.
 
 ## Research workflow
 

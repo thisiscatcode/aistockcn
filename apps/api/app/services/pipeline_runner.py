@@ -21,6 +21,7 @@ from app.services.pipeline_control import (
 )
 from app.services.files import read_json, write_json_atomic
 from app.services.fei_db_sync import run_kline_import_after_step1
+from app.services.model_promotion import auto_promote_latest_paper_model
 
 STOP_REQUESTED = False
 CURRENT_STEP_KEY: str | None = None
@@ -222,6 +223,40 @@ def _run_pre_explosion_scan() -> None:
     CURRENT_STEP_LABEL = None
 
 
+def _run_model_promotion() -> None:
+    global CURRENT_STEP_KEY, CURRENT_STEP_LABEL
+
+    label = "Paper Model Validation And Promotion"
+    CURRENT_STEP_KEY = "model_promotion"
+    CURRENT_STEP_LABEL = label
+    _write_state(
+        status="running",
+        current_step_key="model_promotion",
+        current_step_label=label,
+        failed_step_key=None,
+        error_message=None,
+    )
+    _log(f"Starting {label}.")
+    result = auto_promote_latest_paper_model()
+    _log(
+        f"{label} completed with status={result.get('status')} "
+        f"reason={result.get('reason') or 'gates_passed'} "
+        f"model={result.get('model_version') or 'unchanged'}."
+    )
+    state = read_json(_state_path())
+    completed_steps = list(state.get("completed_steps", []))
+    if "model_promotion" not in completed_steps:
+        completed_steps.append("model_promotion")
+    _write_state(
+        completed_steps=completed_steps,
+        model_promotion=result,
+        current_step_key=None,
+        current_step_label=None,
+    )
+    CURRENT_STEP_KEY = None
+    CURRENT_STEP_LABEL = None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timestamp", required=True)
@@ -253,6 +288,8 @@ def main() -> int:
                 _run_stock_master_upsert()
                 _run_fei_kline_import()
                 _run_pre_explosion_scan()
+
+        _run_model_promotion()
 
         _write_state(status="completed", finished_at=_now_iso(), current_step_key=None, current_step_label=None)
         _log("Daily pipeline completed successfully.")
