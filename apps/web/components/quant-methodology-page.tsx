@@ -1,18 +1,9 @@
 import { Panel } from "@/components/cards";
 import { ProductSubnav } from "@/components/product-subnav";
+import { quantNavigation } from "@/components/quant-navigation";
 import { Shell } from "@/components/shell";
 import { getMarketCapabilities, getUsModelStatus } from "@/lib/api";
 import type { PanelUser } from "@/lib/auth";
-
-const tabs = (market: "CN" | "US") => {
-  const root = market === "US" ? "/us/quant" : "/cn/quant";
-  return [
-    { key: "signals", label: "Signals", href: `${root}?view=signals` as never },
-    { key: "methodology", label: "Methodology", href: `${root}?view=methodology` as never },
-    { key: "walk-forward", label: "Walk-forward", href: `${root}?view=walk-forward` as never },
-    { key: "explorer", label: "Explorer", href: `${root}?view=explorer` as never }
-  ];
-};
 
 export async function QuantMethodologyPage({ market, view, user }: { market: "CN" | "US"; view: "methodology" | "walk-forward"; user: PanelUser }) {
   const [capabilities, usModel] = await Promise.all([
@@ -22,7 +13,7 @@ export async function QuantMethodologyPage({ market, view, user }: { market: "CN
   const capability = capabilities?.by_stage.quant;
   return (
     <Shell title="Quant" subtitle="Signals, validation and market data" locale={user.locale} username={user.displayName} role={user.role} market={market}>
-      <ProductSubnav items={tabs(market)} active={view} />
+      <ProductSubnav items={quantNavigation(market)} active={view} />
       <section className="product-stage-heading">
         <div><span className="stage-icon">⌁</span><div><h1>{view === "methodology" ? "Quantitative Methodology" : "Walk-forward Validation"}</h1><p>{market === "US" ? "US-specific 5-day research pipeline" : "CN stock production signal pipeline"}</p></div></div>
         {capability ? <span className={`capability-label status-${capability.status}`}>{capability.status.replaceAll("_", " ")}</span> : null}
