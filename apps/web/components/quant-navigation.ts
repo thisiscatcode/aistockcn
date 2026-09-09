@@ -1,5 +1,4 @@
 import type { Route } from "next";
-import type { PanelRole } from "@/lib/auth";
 
 export type QuantNavItem = {
   key: string;
@@ -7,7 +6,7 @@ export type QuantNavItem = {
   href: Route;
 };
 
-export function quantNavigation(market: "CN" | "US", role?: PanelRole): QuantNavItem[] {
+export function quantNavigation(market: "CN" | "US"): QuantNavItem[] {
   const root = market === "US" ? "/us/quant" : "/cn/quant";
   const shared: QuantNavItem[] = [
     { key: "signals", label: "Signals", href: `${root}?view=signals` as Route },
@@ -20,9 +19,7 @@ export function quantNavigation(market: "CN" | "US", role?: PanelRole): QuantNav
     return [
       { key: "performance", label: "Performance", href: "/cn/quant" as Route },
       shared[0],
-      ...(role === "admin"
-        ? [{ key: "models", label: "Models & Backtests", href: "/cn/quant?view=models" as Route }]
-        : []),
+      { key: "models", label: "Models & Backtests", href: "/cn/quant?view=models" as Route },
       ...shared.slice(1)
     ];
   }

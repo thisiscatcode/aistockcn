@@ -51,7 +51,7 @@ export default async function PicksPage({
       username={user.username}
       role={user.role}
     >
-      <ProductSubnav active="signals" items={quantNavigation("CN", user.role)} />
+      <ProductSubnav active="signals" items={quantNavigation("CN")} />
       <section className="model-view-header">
         <div>
           <p className="model-view-kicker">Viewing picks</p>

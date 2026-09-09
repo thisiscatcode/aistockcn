@@ -277,7 +277,7 @@ export async function CnQuantPerformancePage({ month }: { month?: string }) {
 
   return (
     <Shell title="CN Quant Performance" subtitle="Daily paper-trading results, positions and planned orders" locale={user.locale} username={user.username} role={user.role} market="CN" tone="light">
-      <ProductSubnav active="performance" items={quantNavigation("CN", user.role)} />
+      <ProductSubnav active="performance" items={quantNavigation("CN")} />
 
       {overview.warnings.length ? <section className="portfolio-warning-list" aria-label="Overview data warnings">
         {overview.warnings.map((warning) => <p key={warning}>{warning}</p>)}

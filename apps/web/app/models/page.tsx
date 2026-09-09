@@ -5,7 +5,7 @@ import { quantNavigation } from "@/components/quant-navigation";
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
 import { getModelOverview } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAuth } from "@/lib/auth";
 import { formatDateRange, formatMetric, formatNumber } from "@/lib/format";
 import { getMessages, type PanelLocale } from "@/lib/i18n";
 import { ProfileSelector } from "./profile-selector";
@@ -170,7 +170,7 @@ function artifactHint(value: unknown) {
 }
 
 export async function ModelsDashboard({ requestedProfile, quantView = false }: { requestedProfile?: string; quantView?: boolean }) {
-  const user = await requireAdmin();
+  const user = await requireAuth();
   const copy = getMessages(user.locale);
   const overview = await getModelOverview(requestedProfile);
   const training = (overview.training_metadata ?? {}) as TableRow;
@@ -222,7 +222,7 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
       username={user.username}
       role={user.role}
     >
-      {quantView ? <ProductSubnav active="models" items={quantNavigation("CN", user.role)} /> : null}
+      {quantView ? <ProductSubnav active="models" items={quantNavigation("CN")} /> : null}
       <section className="model-view-header">
         <div>
           <p className="model-view-kicker">Currently viewing model</p>
