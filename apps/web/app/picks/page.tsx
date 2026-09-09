@@ -61,7 +61,6 @@ export default async function PicksPage({
       </section>
 
       <section className="metrics-grid">
-        <MetricCard label={copy.picks.rows} value={formatNumber(picks.rows, user.locale)} hint={copy.picks.rowsHint} />
         <MetricCard label={copy.picks.signalDate} value={formatDate(picks.latest_date, user.locale)} hint={copy.picks.latestSnapshot} />
         <MetricCard
           label={copy.picks.sourceCloseDate}
