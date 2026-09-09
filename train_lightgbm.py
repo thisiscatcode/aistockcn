@@ -243,6 +243,24 @@ def compute_regression_metrics(y_true: np.ndarray, prediction: np.ndarray) -> di
     }
 
 
+def build_model(objective: str, common_params: dict[str, object], *, n_estimators: int | None = None):
+    params = dict(common_params)
+    if n_estimators is not None:
+        params["n_estimators"] = max(1, int(n_estimators))
+    if objective == "regression":
+        return lgb.LGBMRegressor(objective="regression_l1", **params)
+    return lgb.LGBMClassifier(objective="binary", class_weight="balanced", **params)
+
+
+def best_iteration_for_refit(model: object, fallback: int) -> int:
+    value = getattr(model, "best_iteration_", None)
+    try:
+        iteration = int(value)
+    except (TypeError, ValueError):
+        iteration = 0
+    return iteration if iteration > 0 else max(1, int(fallback))
+
+
 def log(message: str) -> None:
     print(message, flush=True)
 
@@ -328,11 +346,14 @@ def main() -> int:
 
     train_dates = date_values[train_mask]
     valid_dates = date_values[valid_mask]
+    production_target = target_values
+    production_rows = int(len(target_values))
+    production_date_min = str(pd.Timestamp(date_values.min()).date())
+    production_date_max = str(pd.Timestamp(date_values.max()).date())
 
     del train_mask
     del valid_mask
     del date_values
-    del target_values
     del train_df
     gc.collect()
 
@@ -347,15 +368,11 @@ def main() -> int:
         "force_col_wise": True,
         "random_state": 42,
     }
-    if args.objective == "regression":
-        model = lgb.LGBMRegressor(objective="regression_l1", **common_model_params)
-        eval_metric = "l1"
-    else:
-        model = lgb.LGBMClassifier(objective="binary", class_weight="balanced", **common_model_params)
-        eval_metric = "auc"
+    evaluation_model = build_model(args.objective, common_model_params)
+    eval_metric = "l1" if args.objective == "regression" else "auc"
 
     log("Starting LightGBM training...")
-    model.fit(
+    evaluation_model.fit(
         X_train,
         y_train,
         eval_set=[(X_valid, y_valid)],
@@ -365,19 +382,50 @@ def main() -> int:
     )
 
     if args.objective == "regression":
-        valid_raw_score = np.asarray(model.predict(X_valid), dtype=np.float32)
+        valid_raw_score = np.asarray(evaluation_model.predict(X_valid), dtype=np.float32)
         metrics = compute_regression_metrics(y_valid, valid_raw_score)
     else:
-        valid_prob = pd.Series(model.predict_proba(X_valid)[:, 1])
+        valid_prob = pd.Series(evaluation_model.predict_proba(X_valid)[:, 1])
         metrics = compute_metrics(y_valid, valid_prob, args.threshold)
-    log("Training completed, writing model and metrics...")
+    best_iteration = best_iteration_for_refit(evaluation_model, int(common_model_params["n_estimators"]))
+    log(f"Evaluation completed; production refit will use {best_iteration} boosting iterations.")
 
-    model.booster_.save_model(str(model_dir / "lightgbm_model.txt"))
+    del evaluation_model
+    del X_train
+    del X_valid
+    del y_train
+    del y_valid
+    gc.collect()
+
+    log("Reloading all labeled rows for the production refit...")
+    production_columns = list(dict.fromkeys([col for col in ["name", *feature_cols] if col in train_column_types]))
+    production_df = load_frame(train_path, columns=production_columns)
+    if exclude_st:
+        production_df = filter_model_candidate_rows(production_df, exclude_st=True)
+    if len(production_df) != production_rows:
+        raise SystemExit(
+            "Production refit rows no longer match the evaluation dataset: "
+            f"expected {production_rows:,}, found {len(production_df):,}."
+        )
+    X_production = build_feature_frame(production_df, feature_cols, categorical_cols, category_mappings)
+    del production_df
+    gc.collect()
+
+    production_model = build_model(args.objective, common_model_params, n_estimators=best_iteration)
+    log(f"Starting production refit on all {production_rows:,} labeled rows...")
+    production_model.fit(
+        X_production,
+        production_target,
+        categorical_feature=categorical_cols,
+    )
+    log("Production refit completed, writing model and metrics...")
+
+    production_model.booster_.save_model(str(model_dir / "lightgbm_model.txt"))
     pd.DataFrame(
         {
             "feature": feature_cols,
-            "importance_gain": model.booster_.feature_importance(importance_type="gain"),
-            "importance_split": model.booster_.feature_importance(importance_type="split"),
+            "importance_gain": production_model.booster_.feature_importance(importance_type="gain"),
+            "importance_split": production_model.booster_.feature_importance(importance_type="split"),
         }
     ).sort_values("importance_gain", ascending=False).to_csv(
         model_dir / "feature_importance.csv",
@@ -401,12 +449,17 @@ def main() -> int:
         "return_mode": feature_metadata.get("return_mode", "close_to_close"),
         "exclude_st_from_model_candidates": exclude_st,
         "metrics": metrics,
-        "train_rows": int(len(X_train)),
-        "valid_rows": int(len(X_valid)),
+        "train_rows": train_rows,
+        "valid_rows": valid_rows,
         "train_date_min": str(pd.Timestamp(train_dates.min()).date()),
         "train_date_max": str(pd.Timestamp(train_dates.max()).date()),
         "valid_date_min": str(pd.Timestamp(valid_dates.min()).date()),
         "valid_date_max": str(pd.Timestamp(valid_dates.max()).date()),
+        "production_refit": True,
+        "production_train_rows": production_rows,
+        "production_train_date_min": production_date_min,
+        "production_train_date_max": production_date_max,
+        "production_num_iterations": best_iteration,
         "score_date": str(pd.Timestamp(inference_df["date"].max()).date()),
     }
     (model_dir / "training_metadata.json").write_text(
@@ -414,10 +467,8 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    del X_train
-    del X_valid
-    del y_train
-    del y_valid
+    del X_production
+    del production_target
     gc.collect()
 
     log("Building inference feature matrix and generating scores...")
@@ -427,12 +478,12 @@ def main() -> int:
 
     inference_scored = inference_df.copy()
     if args.objective == "regression":
-        inference_scored["raw_score"] = np.asarray(model.predict(X_inference), dtype=np.float32)
+        inference_scored["raw_score"] = np.asarray(production_model.predict(X_inference), dtype=np.float32)
         inference_scored["score"] = (
             inference_scored.groupby("date", sort=False)["raw_score"].rank(method="average", pct=True).astype("float32")
         )
     else:
-        inference_scored["score"] = model.predict_proba(X_inference)[:, 1]
+        inference_scored["score"] = production_model.predict_proba(X_inference)[:, 1]
     inference_scored = inference_scored.sort_values("score", ascending=False).reset_index(drop=True)
     inference_scored.to_parquet(model_dir / "inference_scores_latest.parquet", index=False)
 

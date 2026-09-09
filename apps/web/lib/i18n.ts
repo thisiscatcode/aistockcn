@@ -137,6 +137,7 @@ type Messages = {
     accuracy: string;
     trainRows: string;
     validRows: string;
+    productionRows: string;
     validationMetric: string;
     thresholdValidation: string;
     currentView: string;
@@ -335,8 +336,9 @@ const messages: Messages = {
     subtitle: "",
     auc: "AUC",
     accuracy: "Accuracy",
-    trainRows: "Train Rows",
-    validRows: "Valid Rows",
+    trainRows: "Evaluation Train Rows",
+    validRows: "Evaluation Valid Rows",
+    productionRows: "Production Train Rows",
     validationMetric: "Validation metric",
     thresholdValidation: "Threshold-based validation",
     currentView: "Currently viewing model",

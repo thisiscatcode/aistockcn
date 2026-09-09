@@ -241,6 +241,7 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
         <MetricCard label={copy.models.accuracy} value={hasTrainingSnapshot ? formatMetric(metrics.accuracy, user.locale) : "—"} hint={`${currentProfile} threshold hit rate`} />
         <MetricCard label={copy.models.trainRows} value={formatNumber(training.train_rows as number | undefined, user.locale)} hint={formatDateRange({ date_min: training.train_date_min as string | null | undefined, date_max: training.train_date_max as string | null | undefined }, user.locale, copy.common.to)} />
         <MetricCard label={copy.models.validRows} value={formatNumber(training.valid_rows as number | undefined, user.locale)} hint={formatDateRange({ date_min: training.valid_date_min as string | null | undefined, date_max: training.valid_date_max as string | null | undefined }, user.locale, copy.common.to)} />
+        <MetricCard label={copy.models.productionRows} value={formatNumber(training.production_train_rows as number | undefined, user.locale)} hint={formatDateRange({ date_min: training.production_train_date_min as string | null | undefined, date_max: training.production_train_date_max as string | null | undefined }, user.locale, copy.common.to)} />
       </section>
 
       <section className="two-col-grid">
@@ -253,6 +254,8 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
               <span>{copy.models.categoricals}: {Array.isArray(training.categorical_cols) ? training.categorical_cols.join(", ") : "—"}</span>
               <span>{copy.models.threshold}: {formatMetric(training.threshold, user.locale)}</span>
               <span>{copy.models.validationDays}: {formatNumber(training.valid_days as number | undefined, user.locale)}</span>
+              <span>Production refit: {training.production_refit === true ? "Train + validation" : "Not recorded"}</span>
+              <span>Production iterations: {formatNumber(training.production_num_iterations as number | undefined, user.locale)}</span>
             </div>
           ) : (
             <p className="empty-state">No saved training snapshot is available for this selected model.</p>

@@ -308,8 +308,8 @@ def _model_record_from_artifacts(
         f"{trained.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}-{manifest_digest(manifest)[:8]}"
     )
     model_id = str(uuid5(NAMESPACE_URL, f"aistockcn:{normalized_market}:{version}"))
-    training_start = _parse_date(metadata.get("train_date_min"))
-    training_end = _parse_date(metadata.get("train_date_max"))
+    training_start = _parse_date(metadata.get("production_train_date_min") or metadata.get("train_date_min"))
+    training_end = _parse_date(metadata.get("production_train_date_max") or metadata.get("train_date_max"))
     prediction_as_of = _parse_date(metadata.get("score_date") or metadata.get("inference_date"))
     metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
     return {

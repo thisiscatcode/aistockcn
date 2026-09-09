@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.services.model_registry import (  # noqa: E402
+    _model_record_from_artifacts,
     ModelRegistryError,
     build_artifact_manifest,
     manifest_digest,
@@ -90,6 +91,38 @@ class ModelRegistryTests(unittest.TestCase):
         left = {"a": {"sha256": "1", "size": 1}, "b": {"sha256": "2", "size": 2}}
         right = {"b": {"size": 2, "sha256": "2"}, "a": {"size": 1, "sha256": "1"}}
         self.assertEqual(manifest_digest(left), manifest_digest(right))
+
+    def test_registry_uses_production_refit_date_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_dir = root / "quant_data" / "model_registry" / "CN" / "cn-test-v1"
+            self._write_artifacts(artifact_dir)
+            (artifact_dir / "training_metadata.json").write_text(
+                json.dumps(
+                    {
+                        "profile_name": "short_3d",
+                        "train_date_min": "2025-01-01",
+                        "train_date_max": "2026-03-03",
+                        "production_train_date_min": "2025-01-01",
+                        "production_train_date_max": "2026-08-25",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = SimpleNamespace(project_root=root, quant_dir=root / "quant_data")
+
+            record = _model_record_from_artifacts(
+                market="CN",
+                profile="short_3d",
+                artifact_dir=artifact_dir,
+                validation_status="pending",
+                model_version="cn-test-v1",
+                settings=settings,
+            )
+
+            self.assertEqual(record["training_data_start"].isoformat(), "2025-01-01")
+            self.assertEqual(record["training_data_end"].isoformat(), "2026-08-25")
 
 
 if __name__ == "__main__":
