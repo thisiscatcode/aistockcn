@@ -88,7 +88,7 @@ DEFAULT_PROFILES: list[dict[str, Any]] = [
         "backtest_rebalance_every": 5,
         "backtest_top_k": 20,
         "backtest_max_drop": 4,
-        "backtest_budget_total": 1_000_000.0,
+        "backtest_budget_total": 200_000.0,
         "deployment_status": "available",
     },
 ]
@@ -127,7 +127,7 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any] | None:
         "backtest_rebalance_every": max(int(raw.get("backtest_rebalance_every") or 5), 1),
         "backtest_top_k": max(int(raw.get("backtest_top_k") or 5), 1),
         "backtest_max_drop": max(int(raw.get("backtest_max_drop") or 0), 0),
-        "backtest_budget_total": max(float(raw.get("backtest_budget_total") or 50_000.0), 1.0),
+        "backtest_budget_total": max(float(raw.get("backtest_budget_total") or 200_000.0), 1.0),
         "deployment_status": str(raw.get("deployment_status") or "available").strip() or "available",
         "auto_paper_promotion": {
             "enabled": bool(promotion.get("enabled", False)),

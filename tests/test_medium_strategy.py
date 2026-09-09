@@ -106,6 +106,7 @@ class MediumStrategyTests(unittest.TestCase):
         self.assertEqual(profile["model_objective"], "regression")
         self.assertEqual(profile["label_threshold"], 0.0)
         self.assertEqual(profile["backtest_max_drop"], 4)
+        self.assertTrue(all(item["backtest_budget_total"] == 200_000.0 for item in catalog["profiles"]))
 
 
 if __name__ == "__main__":
