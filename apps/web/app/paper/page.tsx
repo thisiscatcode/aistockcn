@@ -117,27 +117,6 @@ function cleanBrokerMessage(value: unknown): string | null {
   return text;
 }
 
-function syncStatusLabel(status: unknown, message: unknown): string {
-  const normalizedStatus = String(status ?? "").trim().toLowerCase();
-  const normalizedMessage = String(message ?? "").trim().toLowerCase();
-  if (normalizedStatus === "success") {
-    return "Synced";
-  }
-  if (normalizedStatus === "error") {
-    return "Attention required";
-  }
-  if (normalizedStatus === "noop" && normalizedMessage.includes("outside active trading hours")) {
-    return "Market closed";
-  }
-  if (normalizedStatus === "noop") {
-    return "Up to date";
-  }
-  if (normalizedStatus === "dry_run") {
-    return "Dry run complete";
-  }
-  return normalizedStatus || "—";
-}
-
 function orderIdFrom(row: DashboardRow): string {
   return String(row.broker_order_id ?? row.order_id ?? "").trim();
 }
@@ -728,7 +707,6 @@ export default async function PaperPage({
   ];
 
   const latestStateUpdatedAt = formatDateTime(state.updated_at, user.locale);
-  const lastAttemptAt = formatDateTime(state.last_attempt_at, user.locale);
   const lastSuccessAt = formatDateTime(state.last_success_at, user.locale);
   const totalPnlHint = `Realized ${formatDisplayValue(liveSummary.realized_pnl, { locale: user.locale, key: "realized_pnl" })} / Unrealized ${formatDisplayValue(liveSummary.unrealized_pnl, { locale: user.locale, key: "unrealized_pnl" })}`;
   const latestMessage = String(state.last_message ?? "—");
@@ -773,11 +751,6 @@ export default async function PaperPage({
           label={copy.paper.latestSignal}
           value={formatDate(state.score_signal_date, user.locale)}
           hint={formatDate(overview.targets.latest_signal_date, user.locale)}
-        />
-        <MetricCard
-          label="Last Sync Attempt"
-          value={syncStatusLabel(state.last_status, state.last_message)}
-          hint={lastAttemptAt}
         />
       </section>
 

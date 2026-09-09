@@ -27,7 +27,6 @@ export default async function CnOverviewPage() {
         <MetricCard label="Cash" value={formatNumber(account.cash, user.locale, { maximumFractionDigits: 0 })} />
         <MetricCard label="Market Value" value={formatNumber(account.market_value, user.locale, { maximumFractionDigits: 0 })} />
         <MetricCard label="Today P&L" value={formatNumber(account.today_pnl, user.locale, { maximumFractionDigits: 0 })} />
-        <MetricCard label="Holdings" value={formatNumber(overview.positions.holding_count, user.locale)} />
         <MetricCard label="Latest Signal" value={formatDate(overview.signals.latest_signal_date, user.locale)} hint={`${formatNumber(overview.signals.pending_actions, user.locale)} pending actions`} />
       </section>
 
