@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-dir", default="quant_data", help="Quant data root directory.")
     parser.add_argument("--sync-latest", action="store_true", help="Also update quant_data/backtests/latest artifacts.")
     parser.add_argument("--budget-total", type=float, default=None, help="RMB budget cap. Defaults to the profile value or RMB 200,000.")
+    parser.add_argument(
+        "--reuse-features",
+        action="store_true",
+        help="Reuse the profile feature parquet already produced by Step 4 instead of rebuilding it.",
+    )
+    parser.add_argument("--num-threads", type=int, default=1, help="LightGBM worker threads used by the backtest.")
     return parser.parse_args()
 
 
@@ -86,26 +92,31 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     backtest_root.mkdir(parents=True, exist_ok=True)
 
-    run_command(
-        [
-            sys.executable,
-            "feature_engineering.py",
-            "--data-dir",
-            str(data_dir),
-            "--output",
-            str(feature_path),
-            "--limit",
-            "0",
-            "--label-threshold",
-            str(profile.get("label_threshold", 0.02)),
-            "--label-horizon",
-            str(profile.get("label_horizon", 5)),
-            "--return-mode",
-            str(profile.get("return_mode", "close_to_close")),
-            "--profile-name",
-            str(profile["name"]),
-        ]
-    )
+    if args.reuse_features:
+        if not feature_path.is_file():
+            raise SystemExit(f"profile feature parquet not found: {feature_path}")
+        print(f"Reusing existing profile features: {feature_path}", flush=True)
+    else:
+        run_command(
+            [
+                sys.executable,
+                "feature_engineering.py",
+                "--data-dir",
+                str(data_dir),
+                "--output",
+                str(feature_path),
+                "--limit",
+                "0",
+                "--label-threshold",
+                str(profile.get("label_threshold", 0.02)),
+                "--label-horizon",
+                str(profile.get("label_horizon", 5)),
+                "--return-mode",
+                str(profile.get("return_mode", "close_to_close")),
+                "--profile-name",
+                str(profile["name"]),
+            ]
+        )
     budget_total = args.budget_total
     if budget_total is None:
         budget_total = float(profile.get("backtest_budget_total", DEFAULT_REALISTIC_BUDGET_TOTAL))
@@ -140,6 +151,8 @@ def main() -> int:
             str(profile.get("backtest_max_drop", 0)),
             "--budget-total",
             str(budget_total),
+            "--num-threads",
+            str(max(int(args.num_threads), 1)),
         ]
     if bool(profile.get("cross_sectional_target", False)):
         backtest_command.append("--cross-sectional-target")

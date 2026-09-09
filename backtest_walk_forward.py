@@ -75,17 +75,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--platform-fee", type=float, default=DEFAULT_FEE_MODEL.platform_fee)
     parser.add_argument("--tiny-fee-rate", type=float, default=DEFAULT_FEE_MODEL.tiny_fee_rate)
     parser.add_argument("--sell-stamp-duty-rate", type=float, default=DEFAULT_FEE_MODEL.sell_stamp_duty_rate)
+    parser.add_argument("--num-threads", type=int, default=1, help="LightGBM worker threads. One preserves the legacy resource limit.")
     return parser.parse_args()
 
 
-def build_model_params(*, objective: str, scale_pos_weight: float = 1.0) -> dict[str, object]:
+def build_model_params(*, objective: str, scale_pos_weight: float = 1.0, num_threads: int = 1) -> dict[str, object]:
     params: dict[str, object] = {
         "objective": "regression_l1" if objective == "regression" else "binary",
         "learning_rate": 0.05,
         "num_leaves": 63,
         "colsample_bytree": 0.8,
         "force_col_wise": True,
-        "num_threads": 1,
+        "num_threads": max(int(num_threads), 1),
         "random_state": 42,
         "verbosity": -1,
     }
@@ -417,7 +418,11 @@ def main() -> int:
                 del y_train
                 gc.collect()
                 model = lgb.train(
-                    build_model_params(objective=args.objective, scale_pos_weight=scale_pos_weight),
+                    build_model_params(
+                        objective=args.objective,
+                        scale_pos_weight=scale_pos_weight,
+                        num_threads=args.num_threads,
+                    ),
                     train_data,
                     num_boost_round=500,
                     callbacks=[lgb.log_evaluation(0)],

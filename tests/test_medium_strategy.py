@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from app.services import model_profiles as model_profiles_service
-from backtest_walk_forward import select_topk_drop_picks
+from backtest_walk_forward import build_model_params, select_topk_drop_picks
 from feature_engineering import build_features
 from train_lightgbm import cross_sectional_demean, percentile_rank_scores
 
@@ -89,6 +89,9 @@ class MediumStrategyTests(unittest.TestCase):
         )
 
         self.assertEqual(set(picks["code"]), {"A", "C", "D", "E"})
+
+    def test_backtest_thread_count_is_configurable(self) -> None:
+        self.assertEqual(build_model_params(objective="regression", num_threads=3)["num_threads"], 3)
 
     def test_catalog_adds_medium_profile_without_a_second_active_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
