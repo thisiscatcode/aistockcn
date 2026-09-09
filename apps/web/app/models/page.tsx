@@ -244,25 +244,7 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
         <MetricCard label={copy.models.productionRows} value={formatNumber(training.production_train_rows as number | undefined, user.locale)} hint={formatDateRange({ date_min: training.production_train_date_min as string | null | undefined, date_max: training.production_train_date_max as string | null | undefined }, user.locale, copy.common.to)} />
       </section>
 
-      <section className="two-col-grid">
-        <Panel title={copy.models.trainingSnapshot} aside={<span className={`pill ${hasTrainingSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
-          {hasTrainingSnapshot ? (
-            <div className="status-meta">
-              <span>{copy.models.profile}: {currentProfile}</span>
-              <span><InfoLabel label="Label Horizon" description="How many trading days ahead the model is trying to predict." />: {formatNumber(training.label_horizon as number | undefined, user.locale)}</span>
-              <span>{copy.models.features}: {Array.isArray(training.feature_cols) ? formatNumber(training.feature_cols.length, user.locale) : "—"}</span>
-              <span>{copy.models.categoricals}: {Array.isArray(training.categorical_cols) ? training.categorical_cols.join(", ") : "—"}</span>
-              <span>{copy.models.threshold}: {formatMetric(training.threshold, user.locale)}</span>
-              <span>{copy.models.validationDays}: {formatNumber(training.valid_days as number | undefined, user.locale)}</span>
-              <span>Production refit: {training.production_refit === true ? "Train + validation" : "Not recorded"}</span>
-              <span>Production iterations: {formatNumber(training.production_num_iterations as number | undefined, user.locale)}</span>
-            </div>
-          ) : (
-            <p className="empty-state">No saved training snapshot is available for this selected model.</p>
-          )}
-        </Panel>
-
-        <Panel title={copy.models.backtestSnapshot} aside={<span className={`pill ${hasBacktestSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
+      <Panel title={copy.models.backtestSnapshot} aside={<span className={`pill ${hasBacktestSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
           {hasBacktestSnapshot ? (
             <div className="model-backtest-stack">
               {!isRealisticBacktest ? (
@@ -311,20 +293,10 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
               ) : null}
             </>
           )}
-        </Panel>
-      </section>
+      </Panel>
 
       <Panel title={copy.models.topFeatureImportance} aside={<span className="pill">{currentProfile}</span>}>
         <FeatureImportanceChart rows={overview.top_features} locale={user.locale} emptyLabel={featureImportanceEmptyLabel} />
-      </Panel>
-
-      <Panel title="Artifact Coverage" aside={<span className="pill">{currentProfile}</span>}>
-        <div className="status-meta">
-          <span>Training metadata: {artifactLabel(artifactStatus.training_metadata)} - {artifactHint(artifactStatus.training_metadata)}</span>
-          <span>Feature importance: {artifactLabel(artifactStatus.feature_importance)} - {artifactHint(artifactStatus.feature_importance)}</span>
-          <span>Backtest summary: {artifactLabel(artifactStatus.backtest_summary)} - {artifactHint(artifactStatus.backtest_summary)}</span>
-          <span>Equity curve: {artifactLabel(artifactStatus.backtest_equity_curve)} - {artifactHint(artifactStatus.backtest_equity_curve)}</span>
-        </div>
       </Panel>
 
       <Panel title="Backtest Comparison">
@@ -401,6 +373,34 @@ export async function ModelsDashboard({ requestedProfile, quantView = false }: {
           <p className="empty-state">{copy.common.noRows}</p>
         )}
       </Panel>
+
+      <section className="two-col-grid model-diagnostics-grid">
+        <Panel title={copy.models.trainingSnapshot} aside={<span className={`pill ${hasTrainingSnapshot ? "live" : "warn"}`}>{currentProfile}</span>}>
+          {hasTrainingSnapshot ? (
+            <div className="status-meta">
+              <span>{copy.models.profile}: {currentProfile}</span>
+              <span><InfoLabel label="Label Horizon" description="How many trading days ahead the model is trying to predict." />: {formatNumber(training.label_horizon as number | undefined, user.locale)}</span>
+              <span>{copy.models.features}: {Array.isArray(training.feature_cols) ? formatNumber(training.feature_cols.length, user.locale) : "—"}</span>
+              <span>{copy.models.categoricals}: {Array.isArray(training.categorical_cols) ? training.categorical_cols.join(", ") : "—"}</span>
+              <span>{copy.models.threshold}: {formatMetric(training.threshold, user.locale)}</span>
+              <span>{copy.models.validationDays}: {formatNumber(training.valid_days as number | undefined, user.locale)}</span>
+              <span>Production refit: {training.production_refit === true ? "Train + validation" : "Not recorded"}</span>
+              <span>Production iterations: {formatNumber(training.production_num_iterations as number | undefined, user.locale)}</span>
+            </div>
+          ) : (
+            <p className="empty-state">No saved training snapshot is available for this selected model.</p>
+          )}
+        </Panel>
+
+        <Panel title="Artifact Coverage" aside={<span className="pill">{currentProfile}</span>}>
+          <div className="status-meta">
+            <span>Training metadata: {artifactLabel(artifactStatus.training_metadata)} - {artifactHint(artifactStatus.training_metadata)}</span>
+            <span>Feature importance: {artifactLabel(artifactStatus.feature_importance)} - {artifactHint(artifactStatus.feature_importance)}</span>
+            <span>Backtest summary: {artifactLabel(artifactStatus.backtest_summary)} - {artifactHint(artifactStatus.backtest_summary)}</span>
+            <span>Equity curve: {artifactLabel(artifactStatus.backtest_equity_curve)} - {artifactHint(artifactStatus.backtest_equity_curve)}</span>
+          </div>
+        </Panel>
+      </section>
     </Shell>
   );
 }

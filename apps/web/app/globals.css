@@ -1603,6 +1603,10 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
+.model-diagnostics-grid {
+  align-items: start;
+}
+
 .metric-card,
 .panel {
   border: 1px solid rgba(68, 49, 28, 0.16);
