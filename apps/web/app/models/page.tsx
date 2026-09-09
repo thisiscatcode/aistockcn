@@ -1,5 +1,7 @@
 import { ReactNode } from "react";
 import { MetricCard, Panel } from "@/components/cards";
+import { ProductSubnav } from "@/components/product-subnav";
+import { quantNavigation } from "@/components/quant-navigation";
 import { Shell } from "@/components/shell";
 import { DataTable } from "@/components/table";
 import { getModelOverview } from "@/lib/api";
@@ -167,15 +169,9 @@ function artifactHint(value: unknown) {
   return updatedAt ? `${path} (${updatedAt})` : path;
 }
 
-export default async function ModelsPage({
-  searchParams
-}: {
-  searchParams?: Promise<{ profile?: string }>;
-}) {
+export async function ModelsDashboard({ requestedProfile, quantView = false }: { requestedProfile?: string; quantView?: boolean }) {
   const user = await requireAdmin();
   const copy = getMessages(user.locale);
-  const params = (await searchParams) ?? {};
-  const requestedProfile = typeof params.profile === "string" ? params.profile : undefined;
   const overview = await getModelOverview(requestedProfile);
   const training = (overview.training_metadata ?? {}) as TableRow;
   const metrics = (training.metrics ?? {}) as Record<string, number>;
@@ -226,13 +222,14 @@ export default async function ModelsPage({
       username={user.username}
       role={user.role}
     >
+      {quantView ? <ProductSubnav active="models" items={quantNavigation("CN", user.role)} /> : null}
       <section className="model-view-header">
         <div>
           <p className="model-view-kicker">Currently viewing model</p>
           <h2>{currentProfile} <span>{currentProfileLabel}</span></h2>
           <p className="panel-copy">Paper trading active model: {activeProfileLabel} ({activeProfile})</p>
         </div>
-        <ProfileSelector profiles={profiles} selectedProfile={currentProfile} />
+        <ProfileSelector profiles={profiles} selectedProfile={currentProfile} basePath={quantView ? "/cn/quant?view=models" : "/models"} />
       </section>
 
       <section className="metrics-grid">
@@ -384,6 +381,7 @@ export default async function ModelsPage({
                         ) : user.role === "admin" ? (
                           <form action="/models/activate" method="post">
                             <input type="hidden" name="profile" value={name} />
+                            {quantView ? <input type="hidden" name="return_to" value="/cn/quant?view=models" /> : null}
                             <button className="action-button secondary-button table-action-button" type="submit">Use For Paper Trading</button>
                           </form>
                         ) : (
@@ -402,4 +400,14 @@ export default async function ModelsPage({
       </Panel>
     </Shell>
   );
+}
+
+export default async function ModelsPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ profile?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const requestedProfile = typeof params.profile === "string" ? params.profile : undefined;
+  return <ModelsDashboard requestedProfile={requestedProfile} />;
 }

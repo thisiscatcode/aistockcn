@@ -13,7 +13,7 @@ export async function QuantMethodologyPage({ market, view, user }: { market: "CN
   const capability = capabilities?.by_stage.quant;
   return (
     <Shell title="Quant" subtitle="Signals, validation and market data" locale={user.locale} username={user.displayName} role={user.role} market={market}>
-      <ProductSubnav items={quantNavigation(market)} active={view} />
+      <ProductSubnav items={quantNavigation(market, user.role)} active={view} />
       <section className="product-stage-heading">
         <div><span className="stage-icon">⌁</span><div><h1>{view === "methodology" ? "Quantitative Methodology" : "Walk-forward Validation"}</h1><p>{market === "US" ? "US-specific 5-day research pipeline" : "CN stock production signal pipeline"}</p></div></div>
         {capability ? <span className={`capability-label status-${capability.status}`}>{capability.status.replaceAll("_", " ")}</span> : null}

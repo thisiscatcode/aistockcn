@@ -32,7 +32,8 @@ export function ProfileSelector({
         onChange={(event) => {
           const profile = event.target.value;
           startTransition(() => {
-            router.push(`${basePath}?profile=${encodeURIComponent(profile)}` as Route);
+            const separator = basePath.includes("?") ? "&" : "?";
+            router.push(`${basePath}${separator}profile=${encodeURIComponent(profile)}` as Route);
           });
         }}
       >

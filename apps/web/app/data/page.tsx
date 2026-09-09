@@ -169,7 +169,7 @@ export default async function DataPage({
       username={user.username}
       role={user.role}
     >
-      <ProductSubnav active="explorer" items={quantNavigation("CN")} />
+      <ProductSubnav active="explorer" items={quantNavigation("CN", user.role)} />
       <section className="metrics-grid">
         <MetricCard label="Current Dataset" value={dataset.label} hint={dataset.key} />
         <MetricCard label="Total Rows" value={formatNumber(result.total_rows, user.locale)} hint="Rows in saved parquet" />

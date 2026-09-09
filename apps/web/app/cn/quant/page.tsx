@@ -1,5 +1,6 @@
 import DataPage from "../../data/page";
 import PicksPage from "../../picks/page";
+import { ModelsDashboard } from "../../models/page";
 import { CnQuantPerformancePage } from "@/components/cn-quant-performance-page";
 import { QuantMethodologyPage } from "@/components/quant-methodology-page";
 import { requireAuth } from "@/lib/auth";
@@ -20,6 +21,10 @@ export default async function CnQuantPage({
   }
   if (params.view === "explorer") {
     return <DataPage searchParams={Promise.resolve(params)} />;
+  }
+  if (params.view === "models") {
+    const profile = typeof params.profile === "string" ? params.profile : undefined;
+    return <ModelsDashboard requestedProfile={profile} quantView />;
   }
   if (params.view === "signals") {
     const profile = typeof params.profile === "string" ? params.profile : undefined;
