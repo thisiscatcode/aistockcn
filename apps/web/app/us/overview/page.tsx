@@ -34,7 +34,6 @@ export default async function UsOverviewPage() {
         <MetricCard label="Daily Coverage" value={`${formatNumber(coverage.latest_coverage_pct, user.locale, { maximumFractionDigits: 1 })}%`} hint="Latest date / active universe" />
         <MetricCard label="Adjusted History" value={`${formatNumber(gate.available_trading_dates, user.locale)} days`} hint={`${formatNumber(gate.available_symbols_with_history, user.locale)} / ${formatNumber(gate.required_symbols_with_history, user.locale)} symbols ready`} />
         <MetricCard label="Selection" value={overview.selection.method === "rules_based" ? "Rules-based" : overview.selection.method} hint={formatDate(overview.selection.date, user.locale)} />
-        <MetricCard label="US Paper" value="Gated" hint="Unlocks only after model validation" />
       </section>
 
       <section className="two-col-grid">
