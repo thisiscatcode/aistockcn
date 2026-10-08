@@ -436,6 +436,7 @@ def main() -> int:
     metadata = {
         "feature_cols": feature_cols,
         "categorical_cols": categorical_cols,
+        "category_mappings": category_mappings,
         "profile_name": feature_metadata.get("profile_name"),
         "label_horizon": feature_metadata.get("label_horizon"),
         "label_threshold": feature_metadata.get("label_threshold"),

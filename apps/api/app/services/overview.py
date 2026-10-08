@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.benchmark import BENCHMARK_CODE, BENCHMARK_NAME, benchmark_history_path
 from app.services.model import get_latest_picks
+from app.services.market_calendar import expected_china_signal_date
 from app.services.paper import (
     get_paper_trading_daily_history,
     get_paper_trading_overview,
@@ -279,6 +280,22 @@ def get_portfolio_overview() -> dict[str, Any]:
     latest_target_date = _latest_date(target_rows, "signal_date")
     latest_pick_date = picks.get("latest_date")
     latest_signal_date = latest_target_date or latest_pick_date
+    source_date = picks.get("raw_sync_date") or picks.get("source_close_date")
+    if source_date and latest_signal_date and str(latest_signal_date)[:10] < str(source_date)[:10]:
+        warnings.append(
+            f"Paper trading signal is stale: {str(latest_signal_date)[:10]}; "
+            f"latest downloaded market data is {str(source_date)[:10]}. "
+            "Waiting for refreshed model predictions."
+        )
+    elif latest_signal_date:
+        expected_date = expected_china_signal_date()
+        if expected_date and str(latest_signal_date)[:10] < expected_date:
+            warnings.append(
+                f"Daily market data update is pending for {expected_date}; "
+                f"latest paper trading signal is {str(latest_signal_date)[:10]}."
+            )
+    if state.get("last_error"):
+        warnings.append(f"Paper trading error: {state['last_error']}")
     new_signals_today = sum(1 for row in pick_rows if row.get("signal_date") == latest_pick_date) if latest_pick_date else 0
 
     live_error = paper_overview.get("live_error")

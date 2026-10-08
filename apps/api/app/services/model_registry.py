@@ -614,9 +614,23 @@ def resolve_active_model(
     return {
         **deployment,
         "artifact_dir": str(artifact_dir),
-        "scores_path": str(artifact_dir / "inference_scores_latest.parquet"),
+        "scores_path": str(_deployed_scores_path(artifact_dir, market, settings)),
         "training_metadata_path": str(artifact_dir / "training_metadata.json"),
     }
+
+
+def _deployed_scores_path(artifact_dir: Path, market: str, settings: Settings | None) -> Path:
+    from app.services.admin_settings import _ensure_project_root_importable
+
+    _ensure_project_root_importable()
+    from active_model_inference import published_scores
+
+    resolved = settings or get_settings()
+    if market.upper() == "CN":
+        current_scores = published_scores(resolved.quant_dir, artifact_dir, market)
+        if current_scores is not None:
+            return current_scores
+    return artifact_dir / "inference_scores_latest.parquet"
 
 
 def _model_by_reference(cursor: Any, *, market: str, model_version: str | None, profile: str | None) -> dict[str, Any] | None:

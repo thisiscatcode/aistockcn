@@ -13,6 +13,43 @@ from app.services import overview as overview_service
 
 
 class PortfolioOverviewTests(unittest.TestCase):
+    def test_holiday_gap_has_no_calendar_age_warning_but_missing_due_update_is_visible(self) -> None:
+        with (
+            mock.patch.object(overview_service, "get_paper_trading_overview", return_value={}),
+            mock.patch.object(overview_service, "get_paper_trading_daily_history", return_value={"daily": []}),
+            mock.patch.object(overview_service, "get_paper_trading_targets", return_value={
+                "targets": [{"signal_date": "2026-09-30"}]
+            }),
+            mock.patch.object(overview_service, "get_latest_picks", return_value={
+                "latest_date": "2026-09-30", "raw_sync_date": "2026-09-30", "picks": []
+            }),
+            mock.patch.object(overview_service, "expected_china_signal_date", return_value="2026-09-30") as expected,
+        ):
+            result = overview_service.get_portfolio_overview()
+            self.assertFalse(any("signal" in warning or "calendar days" in warning for warning in result["warnings"]))
+            expected.return_value = "2026-10-08"
+            result = overview_service.get_portfolio_overview()
+            self.assertIn("Daily market data update is pending for 2026-10-08", " ".join(result["warnings"]))
+
+    def test_stale_paper_signal_and_worker_error_are_visible(self) -> None:
+        with (
+            mock.patch.object(overview_service, "get_paper_trading_overview", return_value={
+                "state": {"last_error": "features are stale"}
+            }),
+            mock.patch.object(overview_service, "get_paper_trading_daily_history", return_value={"daily": []}),
+            mock.patch.object(overview_service, "get_paper_trading_targets", return_value={
+                "targets": [{"signal_date": "2026-09-09"}]
+            }),
+            mock.patch.object(overview_service, "get_latest_picks", return_value={
+                "latest_date": "2026-09-30", "raw_sync_date": "2026-09-30", "picks": []
+            }),
+        ):
+            result = overview_service.get_portfolio_overview()
+        warnings = " ".join(result["warnings"])
+        self.assertIn("signal is stale: 2026-09-09", warnings)
+        self.assertIn("latest downloaded market data is 2026-09-30", warnings)
+        self.assertIn("Paper trading error: features are stale", warnings)
+
     def test_portfolio_overview_uses_daily_snapshots_for_pnl_and_history(self) -> None:
         daily_history = {
             "rows": 2,

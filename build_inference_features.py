@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
@@ -135,7 +137,12 @@ def main() -> int:
 
     latest_df = build_inference_frame(data_dir, args.limit, as_of_date)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    latest_df.to_parquet(output_path, index=False)
+    temporary = output_path.with_name(f".{output_path.name}.{uuid4().hex}.tmp")
+    try:
+        latest_df.to_parquet(temporary, index=False)
+        os.replace(temporary, output_path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
     print(f"Inference features completed, shape: {latest_df.shape}")
     print(f"Output file: {output_path}")

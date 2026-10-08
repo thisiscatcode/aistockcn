@@ -11,7 +11,7 @@ import pyarrow as pa
 from app.config import get_settings
 from app.serializers import records_to_json, to_jsonable
 from app.services.files import read_json
-from app.services.admin_settings import filter_model_candidate_rows
+from app.services.admin_settings import _ensure_project_root_importable, filter_model_candidate_rows
 from app.services.model_profiles import get_model_profile_catalog, resolve_model_profile
 from app.services.model_registry import (
     ModelRegistryError,
@@ -389,6 +389,13 @@ def _scores_path_for_profile(profile_name: str | None) -> tuple[str | None, Path
         if model is None:
             raise ModelRegistryError("no active CN model deployment")
     artifact_dir = resolve_artifact_path(model["artifact_path"], settings)
+    if not selected_profile:
+        _ensure_project_root_importable()
+        from active_model_inference import published_scores
+
+        current_scores = published_scores(settings.quant_dir, artifact_dir)
+        if current_scores is not None:
+            return str(model["profile"]), current_scores
     return str(model["profile"]), artifact_dir / "inference_scores_latest.parquet"
 
 

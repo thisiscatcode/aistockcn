@@ -71,7 +71,7 @@ function dateKey(value: unknown) {
 }
 
 function monthTitle(monthDate: Date, locale: string) {
-  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+  return new Intl.DateTimeFormat(locale === "zh-Hant" ? "zh-TW" : "en-US", {
     year: "numeric",
     month: "long",
     timeZone: "UTC"
@@ -151,6 +151,7 @@ function PnlCalendar({ dailyRows, monthDate, locale }: { dailyRows: DashboardRow
   const pnlCalendar = calendarCells(dailyRows, monthDate);
   const previousMonth = addMonths(pnlCalendar.monthDate, -1);
   const nextMonth = addMonths(pnlCalendar.monthDate, 1);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
   return (
     <section className="panel overview-calendar-panel" aria-label="Daily trading P&amp;L calendar">
@@ -167,9 +168,12 @@ function PnlCalendar({ dailyRows, monthDate, locale }: { dailyRows: DashboardRow
           {pnlCalendar.cells.map((cell) => {
             const tone = cell.pnl === null || cell.pnl === 0 ? "neutral" : cell.pnl > 0 ? "positive" : "negative";
             const className = `pnl-calendar-day ${cell.inMonth ? "" : "pnl-calendar-day-muted"} pnl-calendar-day-${tone}`;
+            const emptyLabel = cell.key > today
+              ? locale === "zh-Hant" ? "未到日期" : "Upcoming"
+              : locale === "zh-Hant" ? "無成交紀錄" : "No fills";
             const body = <>
               <span className="pnl-calendar-date">{cell.inMonth ? cell.day : ""}</span>
-              {cell.inMonth ? cell.trades ? <><strong>{cell.pnl === null ? "—" : formatSignedNumber(cell.pnl)}</strong><span>{`${formatNumber(cell.trades, locale)} trades`}</span></> : <strong className="pnl-calendar-empty">——</strong> : null}
+              {cell.inMonth ? cell.trades ? <><strong>{cell.pnl === null ? "—" : formatSignedNumber(cell.pnl)}</strong><span>{`${formatNumber(cell.trades, locale)} trades`}</span></> : <><strong className="pnl-calendar-empty">—</strong><span>{emptyLabel}</span></> : null}
             </>;
             return cell.inMonth && cell.trades ? (
               <a className={`${className} pnl-calendar-day-link`} href={`/holdings/daily/${encodeURIComponent(cell.key)}`} key={cell.key} rel="noopener noreferrer" target="_blank">{body}</a>
@@ -267,7 +271,7 @@ export async function CnQuantPerformancePage({ month }: { month?: string }) {
   const requestedMonthRange = requestedMonthDate ? monthDateRange(requestedMonthDate) : null;
   const [overview, dailyHistory, holdingsSnapshot, targets] = await Promise.all([
     getPortfolioOverview(),
-    getPaperDbDailyHistory(120, 5000, requestedMonthRange?.startDate, requestedMonthRange?.endDate).catch(() => ({ rows: 0, daily: [] })),
+    getPaperDbDailyHistory(120, 5000, requestedMonthRange?.startDate, requestedMonthRange?.endDate).catch(() => ({ rows: 0, daily: [], error: "Trading history is unavailable. Please retry." })),
     getPaperHoldings(1000, 300, 5000).catch(() => ({ positions: [], positions_rows: 0, raw_positions_rows: 0 })),
     getPaperTargets(200).catch(() => ({ rows: 0, targets: [] }))
   ]);
@@ -282,6 +286,7 @@ export async function CnQuantPerformancePage({ month }: { month?: string }) {
       {overview.warnings.length ? <section className="portfolio-warning-list" aria-label="Overview data warnings">
         {overview.warnings.map((warning) => <p key={warning}>{warning}</p>)}
       </section> : null}
+      {"error" in dailyHistory && dailyHistory.error ? <p className="banner banner-error">{user.locale === "zh-Hant" ? "成交紀錄暫時無法讀取" : "Trading history unavailable"}: {String(dailyHistory.error)}</p> : null}
 
       <section className="overview-summary-layout" aria-label="Portfolio summary">
         <PnlCalendar dailyRows={dailyRows} monthDate={requestedMonthDate} locale={user.locale} />

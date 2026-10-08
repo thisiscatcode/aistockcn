@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.market_calendar import cache_china_trade_dates
+
 try:
     import akshare as ak
 except ImportError:  # pragma: no cover - depends on image build
@@ -77,6 +79,7 @@ def _trade_calendar_status(local_date: str) -> tuple[str | None, bool]:
     df = ak.tool_trade_date_hist_sina()
     if df.empty or "trade_date" not in df.columns:
         return None, False
+    cache_china_trade_dates(df["trade_date"])
     trade_dates = pd.to_datetime(df["trade_date"], errors="coerce").dropna()
     trade_dates = trade_dates[(trade_dates >= start_ts) & (trade_dates <= end_ts)]
     if trade_dates.empty:

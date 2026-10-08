@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from active_model_inference import refresh_predictions
+
 try:
     import psycopg
     from psycopg.types.json import Jsonb
@@ -619,6 +621,9 @@ def resolve_paper_model(config: SyncConfig) -> tuple[SyncConfig, dict[str, Any]]
         "activated_at": model["activated_at"],
         "trained_at": model["trained_at"],
     }
+    if config.market.upper() == "CN":
+        scores_path = refresh_predictions(project_root / "quant_data", artifact_dir, config.market)
+        context["prediction_path"] = str(scores_path)
     return replace(config, scores_path=scores_path), context
 
 
