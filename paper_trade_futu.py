@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from active_model_inference import refresh_predictions
+from cn_signal_calendar import expected_signal_date
 
 try:
     import psycopg
@@ -536,6 +537,27 @@ class SyncConfig:
 
 class GatewayError(RuntimeError):
     pass
+
+
+class StaleSignalError(RuntimeError):
+    pass
+
+
+def require_current_paper_signal(config: SyncConfig, signal_date: str) -> None:
+    if config.market.upper() != "CN" or not config.paper_db_url:
+        return
+    expected = expected_signal_date(
+        quant_dir_for_scores_path(config.scores_path),
+        scheduled_time=os.getenv("PIPELINE_AUTO_RUN_TIME", "18:00"),
+        scheduled_timezone=os.getenv("PIPELINE_AUTO_RUN_TIMEZONE", "Asia/Shanghai"),
+    )
+    if expected is None:
+        raise StaleSignalError("Paper trading blocked: verified exchange calendar is unavailable.")
+    if signal_date[:10] < expected:
+        raise StaleSignalError(
+            f"Paper trading blocked: signal {signal_date[:10]} is stale; expected {expected}. "
+            "Waiting for the daily data and scoring pipeline to catch up."
+        )
 
 
 def _artifact_digest(path: Path) -> dict[str, Any]:
@@ -2184,9 +2206,10 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
     try:
         config, model_context = resolve_paper_model(config)
         state = update_state(paths, active_model=model_context)
-        gateway = GatewayClient(config)
         latest_scores, signal_date, signature = load_latest_scores(config)
         last_signal_date = signal_date
+        require_current_paper_signal(config, signal_date)
+        gateway = GatewayClient(config)
         previous_signature = str(state.get("last_score_signature") or "")
 
         health_payload = gateway.health()
@@ -2631,6 +2654,13 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         )
         record_sync_history(paths, config, result, append_legacy_jsonl=True)
         return 0, updated
+    except StaleSignalError as exc:
+        blocked = update_state(
+            paths, last_attempt_at=now_iso(), last_status="blocked",
+            last_message=str(exc), score_signal_date=last_signal_date,
+            last_error=None, last_traceback=None,
+        )
+        return 0, blocked
     except Exception as exc:
         message = str(exc)
         repeated_error = state.get("last_status") == "error" and state.get("last_error") == message

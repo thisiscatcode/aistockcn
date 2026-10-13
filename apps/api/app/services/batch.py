@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -255,7 +256,8 @@ def _default_batch_args() -> dict[str, str]:
     settings = get_settings()
     state = read_json(settings.state_file)
     china_today = _china_today()
-    end_date = china_today.strftime("%Y%m%d")
+    target_date = os.getenv("PIPELINE_TARGET_TRADE_DATE")
+    end_date = datetime.strptime(target_date, "%Y-%m-%d").strftime("%Y%m%d") if target_date else china_today.strftime("%Y%m%d")
     return {
         # Daily control-panel runs refresh only the newest tail. Existing
         # per-symbol parquet history is merged in batch_download_all_a.py, so

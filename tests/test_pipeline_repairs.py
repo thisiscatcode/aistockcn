@@ -1087,7 +1087,7 @@ class PipelineRepairTests(unittest.TestCase):
             with mock.patch.object(
                 source_readiness,
                 "_run_provider_probe",
-                side_effect=source_readiness.ProviderProbeTimeoutError("provider probe timed out after 30s"),
+                side_effect=[("2026-05-12", True), source_readiness.ProviderProbeTimeoutError("provider probe timed out after 30s")],
             ):
                 result = source_readiness.get_china_market_data_readiness(local_date="2026-05-12")
 

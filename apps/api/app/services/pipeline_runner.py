@@ -260,7 +260,11 @@ def _run_model_promotion() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timestamp", required=True)
+    parser.add_argument("--trade-date", help="Verified exchange date to download, including overdue sessions.")
     args = parser.parse_args()
+    if args.trade_date:
+        datetime.strptime(args.trade_date, "%Y-%m-%d")
+        os.environ["PIPELINE_TARGET_TRADE_DATE"] = args.trade_date
 
     global LOG_PATH
     settings = get_settings()
@@ -271,7 +275,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
 
-    _write_state(status="running", started_at=_now_iso(), finished_at=None, completed_steps=[], failed_step_key=None, error_message=None)
+    _write_state(status="running", started_at=_now_iso(), finished_at=None, completed_steps=[], failed_step_key=None, error_message=None, target_trade_date=args.trade_date)
     _log("Daily pipeline orchestration booted.")
 
     ordered_steps = [

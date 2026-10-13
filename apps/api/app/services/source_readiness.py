@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - depends on image build
 BAOSTOCK_PROBE_CODE = "sh.600000"
 AKSHARE_PROBE_SYMBOL = "600000"
 PROVIDER_PROBE_TIMEOUT_SECONDS = 30.0
+UNIVERSE_PROBE_TIMEOUT_SECONDS = 90.0
 
 
 class ProviderProbeTimeoutError(TimeoutError):
@@ -130,34 +131,20 @@ def _probe_akshare_market_cap() -> str | None:
     return latest_value.date().isoformat()
 
 
-def _probe_baostock_readiness(local_date: str) -> dict[str, Any]:
-    expected_trade_date, is_trading_day = _trade_calendar_status(local_date)
-    payload: dict[str, Any] = {
-        "expected_trade_date": expected_trade_date,
-        "is_trading_day": bool(is_trading_day),
-        "daily_kline_date": None,
-        "all_stock_date": None,
-        "all_stock_row_count": 0,
-        "ready": False,
-    }
-    if not is_trading_day or expected_trade_date is None:
-        return payload
-
+def _probe_baostock_session(trade_date: str, *, universe: bool) -> Any:
     _quiet_baostock_login()
     try:
-        daily_kline_date = _probe_baostock_daily_kline(expected_trade_date)
-        all_stock_probe = _probe_baostock_all_stock(expected_trade_date)
-        payload.update(
-            {
-                "daily_kline_date": daily_kline_date,
-                "all_stock_date": all_stock_probe["latest_date"],
-                "all_stock_row_count": all_stock_probe["row_count"],
-                "ready": daily_kline_date == expected_trade_date and bool(all_stock_probe["ready"]),
-            }
-        )
-        return payload
+        return _probe_baostock_all_stock(trade_date) if universe else _probe_baostock_daily_kline(trade_date)
     finally:
         _quiet_baostock_logout()
+
+
+def _probe_daily_session(trade_date: str) -> str | None:
+    return _probe_baostock_session(trade_date, universe=False)
+
+
+def _probe_universe_session(trade_date: str) -> dict[str, Any]:
+    return _probe_baostock_session(trade_date, universe=True)
 
 
 def _provider_probe_entry(result_queue: Any, func: Any, args: tuple[Any, ...]) -> None:
@@ -222,20 +209,32 @@ def get_china_market_data_readiness(*, local_date: str) -> dict[str, Any]:
         return result
 
     try:
-        baostock_probe = _run_provider_probe(_probe_baostock_readiness, local_date)
-        expected_trade_date = baostock_probe["expected_trade_date"]
+        expected_trade_date, is_trading_day = _run_provider_probe(_trade_calendar_status, local_date)
         result["expected_trade_date"] = expected_trade_date
-        result["is_trading_day"] = bool(baostock_probe["is_trading_day"])
-        result["baostock"]["daily_kline_date"] = baostock_probe["daily_kline_date"]
-        result["baostock"]["all_stock_date"] = baostock_probe["all_stock_date"]
-        result["baostock"]["all_stock_row_count"] = baostock_probe["all_stock_row_count"]
-        result["baostock"]["ready"] = bool(baostock_probe["ready"])
+        result["is_trading_day"] = bool(is_trading_day)
         if not result["is_trading_day"]:
             result["reason"] = "non_trading_day"
             return result
+    except Exception as exc:
+        result["reason"] = "calendar_probe_timeout" if isinstance(exc, ProviderProbeTimeoutError) else "calendar_probe_failed"
+        result["calendar_error"] = str(exc)
+        return result
+
+    probe_stage = "daily_kline"
+    try:
+        daily_date = _run_provider_probe(_probe_daily_session, expected_trade_date)
+        result["baostock"]["daily_kline_date"] = daily_date
+        probe_stage = "all_stock"
+        universe = _run_provider_probe(
+            _probe_universe_session, expected_trade_date, timeout_seconds=UNIVERSE_PROBE_TIMEOUT_SECONDS
+        )
+        result["baostock"]["all_stock_date"] = universe["latest_date"]
+        result["baostock"]["all_stock_row_count"] = universe["row_count"]
+        result["baostock"]["ready"] = daily_date == expected_trade_date and bool(universe["ready"])
     except ProviderProbeTimeoutError as exc:
         result["reason"] = "baostock_probe_timeout"
         result["baostock"]["error"] = str(exc)
+        result["baostock"]["failed_probe"] = probe_stage
         return result
     except Exception as exc:
         error_text = str(exc)

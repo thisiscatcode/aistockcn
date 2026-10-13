@@ -725,6 +725,7 @@ export default async function PaperPage({
         <span className="capability-label status-live">Live</span>
       </section>
       {flash ? <p className={`banner banner-${flash.tone}`}>{flash.text}</p> : null}
+      {state.last_status === "blocked" ? <p className="banner banner-error">{latestMessage}</p> : null}
       {!gateway.healthy ? <p className="banner banner-error">{copy.paper.gatewayOffline}</p> : null}
       {overview.live_error ? (
         <p className="banner banner-info">Showing the latest saved paper-trading state while the live broker snapshot refreshes.</p>

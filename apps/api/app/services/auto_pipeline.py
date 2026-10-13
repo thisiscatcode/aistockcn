@@ -13,6 +13,7 @@ from app.services.data import get_pipeline_summary
 from app.services.files import read_json
 from app.services.pipeline_control import get_pipeline_run_status, start_pipeline_run
 from app.services.source_readiness import get_china_market_data_readiness
+from app.services.market_calendar import expected_china_signal_date
 
 _LOCK = threading.Lock()
 _STOP_EVENT: threading.Event | None = None
@@ -71,14 +72,27 @@ def _maybe_start_pipeline() -> None:
     scheduled_hour, scheduled_minute = _schedule_parts(settings.pipeline_auto_run_time)
     local_date = local_now.date().isoformat()
 
-    if local_now.weekday() >= 5:
+    expected_date = expected_china_signal_date(settings, now=local_now)
+    if expected_date:
+        target_date = expected_date
+    elif local_now.weekday() < 5 and (local_now.hour, local_now.minute) >= (scheduled_hour, scheduled_minute):
+        target_date = local_date
+    else:
         return
-    if (local_now.hour, local_now.minute) < (scheduled_hour, scheduled_minute):
+    latest_score_date = _latest_score_date()
+    if latest_score_date and latest_score_date >= target_date:
         return
-    if state.get("last_trigger_local_date") == local_date:
+    pipeline_status = get_pipeline_run_status()
+    if pipeline_status.get("is_running"):
         return
+    if state.get("last_trigger_trade_date") == target_date:
+        if pipeline_status.get("status") not in {"failed", "error", "stopped"}:
+            return
+        last_trigger = state.get("last_triggered_at")
+        if last_trigger and (local_now - datetime.fromisoformat(last_trigger)).total_seconds() < 900:
+            return
 
-    readiness = get_china_market_data_readiness(local_date=local_date)
+    readiness = get_china_market_data_readiness(local_date=target_date)
     checked_state = {
         **state,
         "last_checked_at": _now_iso(),
@@ -86,6 +100,7 @@ def _maybe_start_pipeline() -> None:
         "last_checked_timezone": settings.pipeline_auto_run_timezone,
         "last_readiness": readiness,
         "last_trigger_scheduled_time": settings.pipeline_auto_run_time,
+        "catchup_trade_date": target_date if target_date < local_date else None,
     }
     expected_trade_date = readiness.get("expected_trade_date")
 
@@ -93,9 +108,6 @@ def _maybe_start_pipeline() -> None:
         checked_state["last_skipped_local_date"] = local_date
         checked_state["last_skip_reason"] = readiness.get("reason") or "non_trading_day"
         _write_state(checked_state)
-        return
-
-    if state.get("last_trigger_trade_date") == expected_trade_date:
         return
 
     if expected_trade_date and _latest_score_date() == expected_trade_date:
@@ -118,18 +130,16 @@ def _maybe_start_pipeline() -> None:
         )
         return
 
-    pipeline_status = get_pipeline_run_status()
-    if pipeline_status.get("is_running"):
-        return
-
     next_state = {
         **checked_state,
         "last_trigger_local_date": local_date,
         "last_trigger_trade_date": expected_trade_date,
         "last_trigger_timezone": settings.pipeline_auto_run_timezone,
+        "last_skip_reason": None,
+        "last_error": None,
     }
     try:
-        result = start_pipeline_run()
+        result = start_pipeline_run(trade_date=expected_trade_date)
         next_state["last_triggered_at"] = _now_iso()
         next_state["last_result"] = {
             "ok": bool(result.get("ok")),
@@ -138,6 +148,8 @@ def _maybe_start_pipeline() -> None:
             "container_name": result.get("container_name"),
         }
     except BatchControlError as exc:
+        next_state.pop("last_trigger_trade_date", None)
+        next_state.pop("last_trigger_local_date", None)
         next_state["last_triggered_at"] = _now_iso()
         next_state["last_result"] = {
             "ok": False,

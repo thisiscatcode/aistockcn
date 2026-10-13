@@ -592,7 +592,9 @@ def _full_pipeline_state() -> dict[str, Any]:
     return read_json(_state_file(FULL_PIPELINE_STATE_FILE))
 
 
-def start_pipeline_run() -> dict[str, Any]:
+def start_pipeline_run(*, trade_date: str | None = None) -> dict[str, Any]:
+    if trade_date:
+        datetime.strptime(trade_date, "%Y-%m-%d")
     active = _full_pipeline_container()
     if active is not None and active.status == "running":
         raise BatchControlError("already_running", f"Daily pipeline is already running in {active.name}.", status_code=409)
@@ -641,7 +643,8 @@ def start_pipeline_run() -> dict[str, Any]:
     try:
         container = client.containers.run(
             ORCHESTRATOR_IMAGE,
-            command=["python", "-m", "app.services.pipeline_runner", "--timestamp", timestamp],
+            command=["python", "-m", "app.services.pipeline_runner", "--timestamp", timestamp,
+                     *(["--trade-date", trade_date] if trade_date else [])],
             name=container_name,
             detach=True,
             working_dir="/app",

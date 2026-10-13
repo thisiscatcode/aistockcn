@@ -22,6 +22,7 @@ COPY train_lightgbm.py .
 COPY train_profile_runner.py .
 COPY model_registry_artifacts.py .
 COPY active_model_inference.py .
+COPY cn_signal_calendar.py .
 COPY backtest_walk_forward.py .
 COPY batch_download_all_a.py .
 COPY repair_valuation_reference_fields.py .

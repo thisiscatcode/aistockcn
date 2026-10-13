@@ -206,6 +206,8 @@ Activation updates the deployment and audit event in one transaction. Consumers 
 | Duplicate document | SHA-256 deduplication and accession lineage |
 | Interrupted background work | Durable PostgreSQL state, atomic claim and bounded retry |
 | Conflicting model consumers | Transactional Model Registry deployment row |
+| Stale market files and signals | Exchange-calendar freshness gate blocks paper execution before gateway calls |
+| Slow provider universe query | Independent readiness budgets and automatic catch-up of overdue sessions |
 | Unauthorized operations | Signed session, role checks and private API network boundary |
 | Opaque retrieval change | Persisted Top-1, MRR and lexical-baseline evaluation |
 

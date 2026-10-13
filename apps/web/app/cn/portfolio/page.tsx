@@ -32,7 +32,7 @@ export default async function CnPortfolioPage() {
   const user = await requireAuth();
   const [overview, holdings, targets] = await Promise.all([
     getPortfolioOverview(),
-    getPaperHoldings(120, 0, 3200).catch((error) => ({
+    getPaperHoldings(120, 1, 3200).catch((error) => ({
       summary: {},
       balance: [],
       positions_rows: 0,

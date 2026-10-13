@@ -18,5 +18,6 @@ RUN pip install --upgrade pip \
 COPY apps/api /app
 COPY control_settings.py /workspace/control_settings.py
 COPY active_model_inference.py /workspace/active_model_inference.py
+COPY cn_signal_calendar.py /workspace/cn_signal_calendar.py
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

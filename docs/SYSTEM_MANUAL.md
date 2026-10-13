@@ -141,6 +141,10 @@ Run the health checks and inspect logs after every recreation.
 
 `batch_download_all_a.py` coordinates A-share universe and raw market-data refresh. Persisted outputs include stock registry snapshots, daily price files and valuation data.
 
+The automatic scheduler checks the exchange calendar, BaoStock daily prices, BaoStock universe and valuation availability separately. Calendar, daily-price and valuation probes each have a 30-second budget; the paginated universe query has 90 seconds. A universe timeout retains the verified trade date and daily-price evidence in `run/pipeline_auto_run_state.json`.
+
+Overdue sessions are checked before the next evening schedule. The orchestrator carries the verified target date into Step 1, so a morning catch-up downloads the previous session rather than incomplete current-day bars. Failed pipeline attempts can retry after a 15-minute cooldown; an already-running pipeline cannot be launched twice.
+
 ### 2. Training features
 
 `feature_engineering.py` builds a model-ready panel with profile-specific future-return targets. Training data includes labels and must never be used as the live inference input.
@@ -182,6 +186,8 @@ The profile catalog in `run/model_profiles.json` defines training parameters and
 ### 7. Paper reconciliation
 
 `paper_trade_futu.py` resolves the paper-enabled deployment, verifies its manifest and keeps that model revision fixed for the reconciliation cycle. `paper_trade_daemon.py` starts a new cycle only when a new eligible signal snapshot is available. After Step 4, the daily pipeline records the configured paper-only validation decision and atomically promotes a passing candidate so the daemon can observe the new immutable snapshot.
+
+CN execution also compares its score date against the verified exchange calendar and daily update deadline. If both market files and scores are stale, execution reports `blocked` before contacting the order gateway. A missing verified calendar also blocks execution. Repeated stale-data checks remain at the normal daemon interval rather than flooding the rebalance ledger. Confirm recovery using the raw-market date, inference date, published active-model score date and daemon state; container uptime alone is insufficient.
 
 ## Research workflow
 
