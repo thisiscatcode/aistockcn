@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from active_model_inference import refresh_predictions
+from active_model_inference import StaleInferenceError, refresh_predictions
 from cn_signal_calendar import expected_signal_date
 
 try:
@@ -2654,10 +2654,10 @@ def sync_once(config: SyncConfig) -> tuple[int, dict[str, Any]]:
         )
         record_sync_history(paths, config, result, append_legacy_jsonl=True)
         return 0, updated
-    except StaleSignalError as exc:
+    except (StaleSignalError, StaleInferenceError) as exc:
         blocked = update_state(
             paths, last_attempt_at=now_iso(), last_status="blocked",
-            last_message=str(exc), score_signal_date=last_signal_date,
+            last_message=str(exc), score_signal_date=last_signal_date or state.get("score_signal_date"),
             last_error=None, last_traceback=None,
         )
         return 0, blocked

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "apps" / "api")]
 from app.services import auto_pipeline, source_readiness, batch
 from paper_trade_futu import StaleSignalError, require_current_paper_signal, sync_once
+from active_model_inference import StaleInferenceError
 
 
 class CatchupTests(unittest.TestCase):
@@ -73,6 +74,16 @@ class CatchupTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(state["last_status"], "blocked")
             gateway.assert_not_called()
+
+    def test_partial_pipeline_updates_block_without_error_ledger_or_gateway_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = SimpleNamespace(state_dir=Path(tmp) / "paper")
+            with mock.patch("paper_trade_futu.resolve_paper_model", side_effect=StaleInferenceError("inference features are stale")), mock.patch("paper_trade_futu.GatewayClient") as gateway, mock.patch("paper_trade_futu.record_sync_history") as history:
+                code, state = sync_once(config)
+            self.assertEqual(code, 0)
+            self.assertEqual(state["last_status"], "blocked")
+            gateway.assert_not_called()
+            history.assert_not_called()
 
 
 if __name__ == "__main__":

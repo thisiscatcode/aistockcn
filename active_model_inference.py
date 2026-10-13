@@ -17,6 +17,10 @@ import pandas as pd
 from control_settings import exclude_st_from_model_candidates, filter_model_candidate_rows
 
 
+class StaleInferenceError(RuntimeError):
+    """A data-readiness gate, rather than an executor or model failure."""
+
+
 def file_digest(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -44,7 +48,7 @@ def _require_current_inputs(quant_dir: Path, signal_date: str) -> None:
         dates = pd.read_parquet(benchmark, columns=["date"])["date"]
         latest = pd.to_datetime(dates, errors="coerce").max()
         if pd.notna(latest) and pd.Timestamp(signal_date) < latest.normalize():
-            raise RuntimeError(
+            raise StaleInferenceError(
                 f"inference features are stale ({signal_date}); latest downloaded market date is {latest.date()}"
             )
 
